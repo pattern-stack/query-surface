@@ -1,0 +1,46 @@
+{
+  "name": "@pattern-stack/query-surface",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Agent-aware semantic query + aggregation surface (describe/query/fetch/aggregate/compare) over a host schema — hexagonal, backend-pluggable.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./nest": {
+      "types": "./dist/presentation/nest/index.d.ts",
+      "default": "./dist/presentation/nest/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "build:watch": "tsc --build --watch",
+    "check:type": "tsc --noEmit",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test": "bun test"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/swagger": "^11.0.0",
+    "drizzle-orm": "^0.45.2",
+    "rxjs": "^7.0.0",
+    "typescript": "^5",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/swagger": "^11.0.0",
+    "@types/bun": "^1.3.14",
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.20.0",
+    "drizzle-orm": "^0.45.2",
+    "pg": "^8.21.0",
+    "rxjs": "^7.0.0",
+    "typescript": "^5.6.0",
+    "zod": "^3.23.0"
+  }
+}
