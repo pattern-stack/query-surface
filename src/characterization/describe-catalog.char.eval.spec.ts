@@ -17,15 +17,16 @@
 //
 // Public surface first (h.service.describe + the index-exported
 // columnTypeFromDataType/columnTypeFromPg). projectCatalog/publicKeySet are NOT
-// re-exported from index.ts, so they are deep-imported from ../nest/projection
-// — the only internal reach here (noted in usedInternalImports).
+// re-exported from index.ts, so they are deep-imported from
+// ../presentation/nest/projection — the only internal reach here (noted in
+// usedInternalImports).
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import {
   columnTypeFromDataType, // index-exported pure mapper
-} from '../catalog.ts';
-import { projectCatalog, publicKeySet } from '../nest/projection.ts'; // NOT in index.ts — internal reach
+} from '../adapters/drizzle/registry/catalog.ts';
+import { projectCatalog, publicKeySet } from '../presentation/nest/projection.ts'; // NOT in index.ts — internal reach
 import { type QuerySurfaceHarness, makeQuerySurface } from './harness.ts';
 
 const DBURL = process.env.DBURL;

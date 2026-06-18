@@ -6,33 +6,36 @@ export type {
   EntityCatalog,
   ExampleFilter,
   RelationshipInfo,
-} from './catalog.ts';
+} from './adapters/drizzle/registry/catalog.ts';
 export {
   buildEntityCatalog,
   columnTypeFromDataType,
   columnTypeFromPg,
-} from './catalog.ts';
+} from './adapters/drizzle/registry/catalog.ts';
 export type {
   EntityKind,
   EntityMeta,
   FieldMeta,
   FieldMetaMap,
-} from './define-entity.ts';
-export { qEntity, qField, qJunction, readEntityMeta } from './define-entity.ts';
+} from './adapters/drizzle/registry/define-entity.ts';
+export {
+  qEntity,
+  qField,
+  qJunction,
+  readEntityMeta,
+} from './adapters/drizzle/registry/define-entity.ts';
 export type {
   DiagnoseOptions,
   Finding,
   FindingCode,
   FormatOptions,
   Severity,
-} from './doctor.ts';
-export { diagnose, formatFindings } from './doctor.ts';
-export { compile } from './engine/compiler.ts';
+} from './adapters/drizzle/diagnostics/doctor.ts';
+export { diagnose, formatFindings } from './adapters/drizzle/diagnostics/doctor.ts';
+export { compile } from './adapters/drizzle/compile/compiler.ts';
 // Aggregate (collapse to grouped rows) — the governed, grain-safe stage.
 export {
   TENANT_GLOBAL,
-  aggregate,
-  analyticsFromRegistry,
   andFilter,
   assertAggregateSafe,
   belongsToPaths,
@@ -41,12 +44,13 @@ export {
   measuresFromRegistry,
   normalizeAggregate,
   resolveJoinPlan,
-  runAggregateDrizzle,
   runCompare,
   stitchCompare,
   validateMeasureDef,
   validateRatioDef,
-} from './engine/aggregate/index.ts';
+} from './internal/analytics/index.ts';
+export { aggregate, runAggregateDrizzle } from './adapters/drizzle/execute/run-drizzle.ts';
+export { analyticsFromRegistry } from './adapters/drizzle/registry/analytics-from-registry.ts';
 export type {
   Additivity,
   Agg,
@@ -54,7 +58,6 @@ export type {
   AggFieldMeta,
   Aggregate,
   AggregateInput,
-  AggregateModel,
   AggregatePlan,
   AggregateResponse,
   AggRegistry,
@@ -76,8 +79,9 @@ export type {
   MeasureRef,
   RatioMeasureDef,
   ScopeFor,
-} from './engine/aggregate/index.ts';
-export { runFetch, runSearch, runSearchMulti } from './engine/runners.ts';
+} from './internal/analytics/index.ts';
+export type { AggregateModel } from './adapters/drizzle/registry/model.ts';
+export { runFetch, runSearch, runSearchMulti } from './adapters/drizzle/execute/runners.ts';
 export type {
   AggregateRequest,
   FetchOptions,
@@ -91,20 +95,27 @@ export type {
   EntityDescriptor,
   EntityRegistration,
   RelDescriptor,
-} from './registry.ts';
-export { buildRegistry, configureQueryRegistry, registry } from './registry.ts';
+} from './adapters/drizzle/registry/registry.ts';
+export {
+  buildRegistry,
+  configureQueryRegistry,
+  registry,
+} from './adapters/drizzle/registry/registry.ts';
 export type {
   CatalogEntry,
   TableCatalog,
   ValueTableCatalog,
-} from './runtime-registry.ts';
-export { entityRegistrations, loadRegistrations } from './runtime-registry.ts';
-export type { RegisterSchemaOptions } from './schema-registry.ts';
+} from './adapters/drizzle/registry/runtime-registry.ts';
+export {
+  entityRegistrations,
+  loadRegistrations,
+} from './adapters/drizzle/registry/runtime-registry.ts';
+export type { RegisterSchemaOptions } from './adapters/drizzle/registry/schema-registry.ts';
 export {
   buildRegistrationsFromSchema,
   registerFromDb,
   registerSchema,
-} from './schema-registry.ts';
+} from './adapters/drizzle/registry/schema-registry.ts';
 export type {
   EntityName,
   FetchRequest,
@@ -117,4 +128,4 @@ export type {
   SearchResponse,
   SingleSearchQuery,
   Sort,
-} from './types.ts';
+} from './internal/language/types.ts';

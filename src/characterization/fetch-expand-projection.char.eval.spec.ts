@@ -29,14 +29,18 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
-import { type CatalogField, type EntityCatalog, buildEntityCatalog } from '../catalog.ts';
+import {
+  type CatalogField,
+  type EntityCatalog,
+  buildEntityCatalog,
+} from '../adapters/drizzle/registry/catalog.ts';
+import { RANK_SCORE_KEY, RANK_SNIPPET_KEY, SNIPPETS_KEY } from '../internal/language/types.ts';
 import {
   buildProjectionIndex,
   projectRow,
   projectRowDeep,
   publicKeySet,
-} from '../nest/projection.ts';
-import { RANK_SCORE_KEY, RANK_SNIPPET_KEY, SNIPPETS_KEY } from '../types.ts';
+} from '../presentation/nest/projection.ts';
 import { type QuerySurfaceHarness, makeQuerySurface } from './harness.ts';
 
 const DBURL = process.env.DBURL;

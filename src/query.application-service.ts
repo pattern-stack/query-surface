@@ -14,28 +14,24 @@
 // cached). See docs/field-catalog-design.md.
 
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { type EntityCatalog, buildEntityCatalog } from './catalog.ts';
-import { type EavContext, loadFieldMaps } from './eav/field-map.ts';
-import {
-  TENANT_GLOBAL,
-  conformedDimensions,
-  aggregate as runAggregate,
-  runCompare,
-} from './engine/aggregate/index.ts';
+import { type EavContext, loadFieldMaps } from './adapters/drizzle/eav/field-map.ts';
+import { aggregate as runAggregate } from './adapters/drizzle/execute/run-drizzle.ts';
+import { runFetch, runSearch } from './adapters/drizzle/execute/runners.ts';
+import { type EntityCatalog, buildEntityCatalog } from './adapters/drizzle/registry/catalog.ts';
+import type { AggregateModel } from './adapters/drizzle/registry/model.ts';
+import { registry } from './adapters/drizzle/registry/registry.ts';
+import { TENANT_GLOBAL, conformedDimensions, runCompare } from './internal/analytics/index.ts';
 import type {
   AggregateInput,
-  AggregateModel,
   AggregateResponse,
   CompareRequest,
   CompareResponse,
   CompareSeparateResponse,
   ConformedDim,
   ScopeFor,
-} from './engine/aggregate/index.ts';
-import { ENGINE_ERROR } from './engine/error-messages.ts';
-import { normalizeRankBy } from './engine/rank-normalize.ts';
-import { runFetch, runSearch } from './engine/runners.ts';
-import { registry } from './registry.ts';
+} from './internal/analytics/index.ts';
+import { ENGINE_ERROR } from './internal/language/error-messages.ts';
+import { normalizeRankBy } from './internal/language/rank-normalize.ts';
 import type {
   EntityName,
   FetchResponse,
@@ -44,7 +40,7 @@ import type {
   SearchEntityResult,
   Sort,
   WindowMeasure,
-} from './types.ts';
+} from './internal/language/types.ts';
 
 /**
  * Per-entity scope predicate — a mandatory, caller-derived filter AND-ed into

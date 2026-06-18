@@ -32,18 +32,18 @@
 //      behavior are unchanged — the extra columns are purely additive.
 
 import { relations, sql } from 'drizzle-orm';
-import { POC_ACTOR_USER_ID } from '../eav/field-map.ts';
-import { type DrizzleDb, makeDb } from '../engine/aggregate/drizzle-db.ts';
-import { loadDealbrainModel } from '../engine/aggregate/model.dealbrain.ts';
+import { POC_ACTOR_USER_ID } from '../adapters/drizzle/eav/field-map.ts';
+import { type DrizzleDb, makeDb } from '../adapters/drizzle/execute/drizzle-db.ts';
+import { configureQueryRegistry } from '../adapters/drizzle/registry/registry.ts';
+import { loadDealbrainModel } from '../adapters/reference/model.dealbrain.ts';
 import {
   accounts,
   accountsRelations,
   fieldValues,
   opportunities,
   opportunitiesRelations,
-} from '../engine/aggregate/schema.dealbrain.ts';
+} from '../adapters/reference/schema.dealbrain.ts';
 import { QueryApplicationService } from '../query.application-service.ts';
-import { configureQueryRegistry } from '../registry.ts';
 
 import { customType, jsonb, pgTable, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
 
