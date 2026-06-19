@@ -25,9 +25,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import {
   columnTypeFromDataType, // index-exported pure mapper
-} from '../adapters/drizzle/registry/catalog.ts';
-import { projectCatalog, publicKeySet } from '../presentation/nest/projection.ts'; // NOT in index.ts — internal reach
-import { type QuerySurfaceHarness, makeQuerySurface } from './harness.ts';
+} from '../../adapters/drizzle/registry/catalog.ts';
+import { projectCatalog, publicKeySet } from '../../presentation/nest/projection.ts'; // NOT in index.ts — internal reach
+import { type QuerySurfaceHarness, makeQuerySurface } from '../harness.ts';
 
 const DBURL = process.env.DBURL;
 const suite = DBURL ? describe : describe.skip;

@@ -30,10 +30,10 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
-import { POC_ACTOR_USER_ID } from '../adapters/drizzle/eav/field-map.ts';
-import { loadDealbrainModel } from '../adapters/reference/model.dealbrain.ts';
-import { QueryApplicationService } from '../query.application-service.ts';
-import { DEALBRAIN_ORG, type QuerySurfaceHarness, makeQuerySurface } from './harness.ts';
+import { POC_ACTOR_USER_ID } from '../../adapters/drizzle/eav/field-map.ts';
+import { loadDealbrainModel } from '../../adapters/reference/model.dealbrain.ts';
+import { QueryApplicationService } from '../../query.application-service.ts';
+import { DEALBRAIN_ORG, type QuerySurfaceHarness, makeQuerySurface } from '../harness.ts';
 
 const DBURL = process.env.DBURL;
 const suite = DBURL ? describe : describe.skip;

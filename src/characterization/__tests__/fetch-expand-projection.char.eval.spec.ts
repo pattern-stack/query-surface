@@ -33,15 +33,15 @@ import {
   type CatalogField,
   type EntityCatalog,
   buildEntityCatalog,
-} from '../adapters/drizzle/registry/catalog.ts';
-import { RANK_SCORE_KEY, RANK_SNIPPET_KEY, SNIPPETS_KEY } from '../internal/language/types.ts';
+} from '../../adapters/drizzle/registry/catalog.ts';
+import { RANK_SCORE_KEY, RANK_SNIPPET_KEY, SNIPPETS_KEY } from '../../internal/language/types.ts';
 import {
   buildProjectionIndex,
   projectRow,
   projectRowDeep,
   publicKeySet,
-} from '../presentation/nest/projection.ts';
-import { type QuerySurfaceHarness, makeQuerySurface } from './harness.ts';
+} from '../../presentation/nest/projection.ts';
+import { type QuerySurfaceHarness, makeQuerySurface } from '../harness.ts';
 
 const DBURL = process.env.DBURL;
 const suite = DBURL ? describe : describe.skip;

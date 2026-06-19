@@ -24,7 +24,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
-import { type QuerySurfaceHarness, makeQuerySurface } from './harness.ts';
+import { type QuerySurfaceHarness, makeQuerySurface } from '../harness.ts';
 
 const DBURL = process.env.DBURL;
 const suite = DBURL ? describe : describe.skip;
