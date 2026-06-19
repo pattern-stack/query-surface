@@ -6,15 +6,15 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
-import { assertAggregateSafe } from '../../../internal/analytics/doctor';
+import { assertAggregateSafe } from '../../../../internal/analytics/doctor';
 import type {
   AtomicMeasureDef,
   RatioMeasureDef,
-} from '../../../internal/analytics/measure-catalog';
-import { type DealbrainModel, loadDealbrainModel } from '../../reference/model.dealbrain';
-import { compileNaiveDrizzle } from '../compile/compile-drizzle';
-import { type DrizzleDb, makeDb } from './drizzle-db';
-import { aggregate, runAggregateDrizzle } from './run-drizzle';
+} from '../../../../internal/analytics/measure-catalog';
+import { type DealbrainModel, loadDealbrainModel } from '../../../reference/model.dealbrain';
+import { compileNaiveDrizzle } from '../../compile/compile-drizzle';
+import { type DrizzleDb, makeDb } from '../drizzle-db';
+import { aggregate, runAggregateDrizzle } from '../run-drizzle';
 
 const DBURL = process.env.DBURL;
 const suite = DBURL ? describe : describe.skip;

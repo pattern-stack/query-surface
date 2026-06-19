@@ -1,7 +1,7 @@
 // B3 — {ref} expansion. Pure unit (no DB): normalizeAggregate over an in-memory catalog.
 import { describe, expect, it } from 'bun:test';
-import type { MeasureCatalog } from './measure-catalog';
-import { normalizeAggregate } from './normalize';
+import type { MeasureCatalog } from '../measure-catalog';
+import { normalizeAggregate } from '../normalize';
 
 const catalog: MeasureCatalog = {
   revenue: { kind: 'atomic', on: 'amount', agg: 'sum', source: 'opps', additivity: 'additive' },

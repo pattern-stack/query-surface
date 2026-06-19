@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { normalizeFilter } from './filter-normalize.ts';
+import { normalizeFilter } from '../filter-normalize.ts';
 
 describe('normalizeFilter — natural DSL → canonical AST', () => {
   it('maps a scalar to eq', () => {

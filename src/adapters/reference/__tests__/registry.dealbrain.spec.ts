@@ -3,7 +3,7 @@
 // from idiomatic Drizzle relations() — not a hand-built map. Pure, no DB.
 
 import { describe, expect, it } from 'bun:test';
-import { buildRegistry } from '../drizzle/registry/registry';
+import { buildRegistry } from '../../drizzle/registry/registry';
 import {
   accounts,
   accountsRelations,
@@ -12,7 +12,7 @@ import {
   observationsRelations,
   opportunities,
   opportunitiesRelations,
-} from './schema.dealbrain';
+} from '../schema.dealbrain';
 
 describe('dealbrain Drizzle registry — cardinality graph from relations()', () => {
   const reg = buildRegistry([

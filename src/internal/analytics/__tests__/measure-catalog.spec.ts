@@ -2,8 +2,12 @@
 // Pure unit (no DB): measuresFromRegistry / validateMeasureDef operate on an in-memory
 // AggRegistry, so these run in CI without DBURL.
 import { describe, expect, it } from 'bun:test';
-import { type AtomicMeasureDef, measuresFromRegistry, validateMeasureDef } from './measure-catalog';
-import type { AggRegistry } from './types';
+import {
+  type AtomicMeasureDef,
+  measuresFromRegistry,
+  validateMeasureDef,
+} from '../measure-catalog';
+import type { AggRegistry } from '../types';
 
 const reg: AggRegistry = {
   opps: {

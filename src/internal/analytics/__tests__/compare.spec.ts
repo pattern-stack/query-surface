@@ -7,7 +7,7 @@ import {
   andFilter,
   runCompare,
   stitchCompare,
-} from './compare';
+} from '../compare';
 
 type Rows = Record<string, unknown>[];
 

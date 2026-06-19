@@ -13,8 +13,8 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { type ArgumentMetadata, BadRequestException, NotFoundException } from '@nestjs/common';
-import { type DrizzleDb, makeDb } from '../../adapters/drizzle/execute/drizzle-db';
-import { loadDealbrainModel } from '../../adapters/reference/model.dealbrain';
+import { type DrizzleDb, makeDb } from '../../../adapters/drizzle/execute/drizzle-db';
+import { loadDealbrainModel } from '../../../adapters/reference/model.dealbrain';
 import {
   accounts,
   accountsRelations,
@@ -23,18 +23,18 @@ import {
   observationsRelations,
   opportunities,
   opportunitiesRelations,
-} from '../../adapters/reference/schema.dealbrain';
-import { QuerySurfaceService } from './query-surface.service';
-import { QueryController } from './rest/query.controller';
-import { compareRequestSchema } from './rest/query.dto';
-import { ZodValidationPipe } from './rest/zod-validation.pipe';
+} from '../../../adapters/reference/schema.dealbrain';
+import { QuerySurfaceService } from '../query-surface.service';
+import { QueryController } from '../rest/query.controller';
+import { compareRequestSchema } from '../rest/query.dto';
+import { ZodValidationPipe } from '../rest/zod-validation.pipe';
 import {
   AggregateUseCase,
   CompareUseCase,
   DescribeUseCase,
   FetchUseCase,
   SearchUseCase,
-} from './use-cases';
+} from '../use-cases';
 
 const DBURL = process.env.DBURL;
 const suite = DBURL ? describe : describe.skip;

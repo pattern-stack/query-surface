@@ -6,8 +6,8 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
-import type { SearchEntityResult } from '../../../internal/language/types';
-import { QueryApplicationService } from '../../../query.application-service';
+import type { SearchEntityResult } from '../../../../internal/language/types';
+import { QueryApplicationService } from '../../../../query.application-service';
 import {
   accounts,
   accountsRelations,
@@ -16,9 +16,9 @@ import {
   observationsRelations,
   opportunities,
   opportunitiesRelations,
-} from '../../reference/schema.dealbrain';
-import { configureQueryRegistry } from '../registry/registry';
-import { type DrizzleDb, makeDb } from './drizzle-db';
+} from '../../../reference/schema.dealbrain';
+import { configureQueryRegistry } from '../../registry/registry';
+import { type DrizzleDb, makeDb } from '../drizzle-db';
 
 const DBURL = process.env.DBURL;
 const suite = DBURL ? describe : describe.skip;

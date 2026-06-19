@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import type { CatalogField, EntityCatalog } from '../../adapters/drizzle/registry/catalog.ts';
-import { buildProjectionIndex, projectRowDeep } from './projection.ts';
+import type { CatalogField, EntityCatalog } from '../../../adapters/drizzle/registry/catalog.ts';
+import { buildProjectionIndex, projectRowDeep } from '../projection.ts';
 
 // Minimal catalog builders — the projection functions read only key/eav/type
 // from fields and name/target from relationships, so the rest is filled with

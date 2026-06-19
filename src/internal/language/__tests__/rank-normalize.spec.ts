@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { normalizeRankBy } from './rank-normalize.ts';
+import { normalizeRankBy } from '../rank-normalize.ts';
 
 describe('normalizeRankBy — method value aliases', () => {
   it('conforms semantic synonyms', () => {

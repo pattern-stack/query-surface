@@ -1,8 +1,8 @@
 // Error-classification contract: the aggregate engine's caller-input throws must
 // map to typed errors (→ 400/404), not the catch-all 500. Pure unit — no DB.
 import { describe, expect, it } from 'bun:test';
-import { ENGINE_ERROR } from '../../internal/language/error-messages';
-import { InvalidQueryError, UnknownEntityError, translateEngineErrors } from './errors';
+import { ENGINE_ERROR } from '../../../internal/language/error-messages';
+import { InvalidQueryError, UnknownEntityError, translateEngineErrors } from '../errors';
 
 const throwing = (msg: string) => () =>
   translateEngineErrors(() => {

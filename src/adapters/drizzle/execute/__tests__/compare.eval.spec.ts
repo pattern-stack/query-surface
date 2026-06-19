@@ -10,12 +10,12 @@ import {
   type CompareRequest,
   runCompare,
   stitchCompare,
-} from '../../../internal/analytics/compare';
-import type { AggregateInput } from '../../../internal/analytics/measure-catalog';
-import { QueryApplicationService } from '../../../query.application-service';
-import { type DealbrainModel, loadDealbrainModel } from '../../reference/model.dealbrain';
-import { type DrizzleDb, makeDb } from './drizzle-db';
-import { runAggregateDrizzle } from './run-drizzle';
+} from '../../../../internal/analytics/compare';
+import type { AggregateInput } from '../../../../internal/analytics/measure-catalog';
+import { QueryApplicationService } from '../../../../query.application-service';
+import { type DealbrainModel, loadDealbrainModel } from '../../../reference/model.dealbrain';
+import { type DrizzleDb, makeDb } from '../drizzle-db';
+import { runAggregateDrizzle } from '../run-drizzle';
 
 const DBURL = process.env.DBURL;
 const suite = DBURL ? describe : describe.skip;

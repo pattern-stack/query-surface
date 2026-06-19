@@ -10,11 +10,11 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
-import { conformedDimensions } from '../../../internal/analytics/join-plan';
-import { TENANT_GLOBAL } from '../../../internal/analytics/types';
-import { type DealbrainModel, loadDealbrainModel } from '../../reference/model.dealbrain';
-import { type DrizzleDb, makeDb } from './drizzle-db';
-import { runAggregateDrizzle } from './run-drizzle';
+import { conformedDimensions } from '../../../../internal/analytics/join-plan';
+import { TENANT_GLOBAL } from '../../../../internal/analytics/types';
+import { type DealbrainModel, loadDealbrainModel } from '../../../reference/model.dealbrain';
+import { type DrizzleDb, makeDb } from '../drizzle-db';
+import { runAggregateDrizzle } from '../run-drizzle';
 
 const DBURL = process.env.DBURL;
 const suite = DBURL ? describe : describe.skip;

@@ -5,8 +5,8 @@
 // characterization net proved the retrieval path silently mis-resolves.
 
 import { describe, expect, it } from 'bun:test';
-import { belongsToPaths, conformedDimensions, resolveJoinPlan } from './join-plan';
-import type { AggRegistry } from './types';
+import { belongsToPaths, conformedDimensions, resolveJoinPlan } from '../join-plan';
+import type { AggRegistry } from '../types';
 
 const reg: AggRegistry = {
   accounts: {

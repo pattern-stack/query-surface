@@ -6,12 +6,12 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
-import { TENANT_GLOBAL } from '../../../internal/analytics/types';
-import type { ScopeFor } from '../../../internal/analytics/types';
-import { QueryApplicationService } from '../../../query.application-service';
-import { type DealbrainModel, loadDealbrainModel } from '../../reference/model.dealbrain';
-import { type DrizzleDb, makeDb } from './drizzle-db';
-import { aggregate, runAggregateDrizzle } from './run-drizzle';
+import { TENANT_GLOBAL } from '../../../../internal/analytics/types';
+import type { ScopeFor } from '../../../../internal/analytics/types';
+import { QueryApplicationService } from '../../../../query.application-service';
+import { type DealbrainModel, loadDealbrainModel } from '../../../reference/model.dealbrain';
+import { type DrizzleDb, makeDb } from '../drizzle-db';
+import { aggregate, runAggregateDrizzle } from '../run-drizzle';
 
 const DBURL = process.env.DBURL;
 const suite = DBURL ? describe : describe.skip;
