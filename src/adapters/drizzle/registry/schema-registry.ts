@@ -19,7 +19,12 @@ import { PgTable } from 'drizzle-orm/pg-core';
 import { fieldDefinitions, fieldValues, fieldValuesJsonb } from '../eav/schema.ts';
 import type { FieldMetaMap } from './define-entity.ts';
 import { readEntityMeta } from './define-entity.ts';
-import { type EavStrategy, type EntityRegistration, configureQueryRegistry } from './registry.ts';
+import {
+  type ComputedFieldSpec,
+  type EavStrategy,
+  type EntityRegistration,
+  configureQueryRegistry,
+} from './registry.ts';
 
 // EAV substrate + the runtime-registry table are plumbing, not domain entities.
 // Names are derived from the actual table objects so they can't silently drift
@@ -41,6 +46,9 @@ export interface RegisterSchemaOptions {
    *  defined with plain pgTable (no qEntity) or when the host wants to add
    *  isKeyField / label / isVisible annotations without touching the DB schema. */
   fieldMeta?: Record<string, FieldMetaMap>;
+  /** Per-entity computed metrics (keyed by exposed entity name) — aggregate-over-
+   *  relationship fields surfaced as first-class, filterable/sortable columns. */
+  computed?: Record<string, ComputedFieldSpec[]>;
 }
 
 /** Walk a Drizzle schema object → EntityRegistration[] (no code-side list needed). */
@@ -77,6 +85,7 @@ export function buildRegistrationsFromSchema(
       fieldMeta,
       meta,
       eav: options.eav?.[name] ?? options.eav?.[tableName],
+      computed: options.computed?.[name] ?? options.computed?.[tableName],
     });
   }
   return out;

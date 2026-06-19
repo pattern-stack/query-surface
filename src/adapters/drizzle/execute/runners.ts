@@ -23,6 +23,7 @@ import {
 } from '../../../internal/language/types.ts';
 import { buildSnippets } from '../../../internal/retrieval/snippets.ts';
 import { PARTITION_RN_KEY, compile } from '../compile/compiler.ts';
+import { computedSelectShape } from '../compile/computed.ts';
 import type { EavContext } from '../eav/field-map.ts';
 import { hydrateEavRows } from '../eav/read.ts';
 import { registry } from '../registry/registry.ts';
@@ -105,6 +106,14 @@ export async function runSearch(
   if (previewCols) {
     for (const [alias, col] of Object.entries(previewCols)) {
       selectShape[alias] = col;
+    }
+  }
+
+  // Computed metrics flagged for preview — the at-a-glance evidence/recency signal
+  // (e.g. observation_count) shown on first-pass rows, before any fetch.
+  if (pv?.computed) {
+    for (const [alias, expr] of Object.entries(pv.computed)) {
+      selectShape[alias] = expr;
     }
   }
 
@@ -284,7 +293,12 @@ export async function runFetch(
   // db.select() would key rows by Drizzle's camelCase prop and any multi-word
   // column would be dropped by projection. Flat shape → rows are flat even with
   // filter leftJoins (no rootTable nesting to unwrap).
-  const selectShape = nativeSelectShape(req.entity, eav?.fieldMaps[req.entity]);
+  // Native columns + every computed metric, so a fetched row carries its inline
+  // context (observation_count, last_activity_at, …) without a 2nd call.
+  const selectShape: Record<string, PgColumn | SQL.Aliased> = {
+    ...nativeSelectShape(req.entity, eav?.fieldMaps[req.entity]),
+    ...computedSelectShape(req.entity),
+  };
   // biome-ignore lint/suspicious/noExplicitAny: Drizzle query-builder type narrows per chained leftJoin; the accumulator cannot be statically typed across a dynamic join list
   let q: any = db.select(selectShape).from(compiled.rootTable);
   for (const j of compiled.joins) q = q.leftJoin(j.table, j.on);

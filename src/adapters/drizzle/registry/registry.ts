@@ -22,7 +22,10 @@
 import type { Relations } from 'drizzle-orm';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 
-import type { EntityName } from '../../../internal/language/types.ts';
+import type { EntityName, Op } from '../../../internal/language/types.ts';
+// Type-only import (erased at compile) — keeps the catalog↔registry cycle
+// type-level; catalog.ts value-imports `registry`, never the reverse at runtime.
+import type { ColumnType } from './catalog.ts';
 import type { EntityMeta, FieldMetaMap } from './define-entity.ts';
 import { evaluateRelations, tableColumns, tableName } from './introspect.ts';
 
@@ -65,6 +68,48 @@ export type EavStrategy =
       validToColumn: string; // property key of the valid_to column (e.g. 'validTo')
     };
 
+/**
+ * A computed metric: a cheap aggregate over an EXISTING relationship, surfaced
+ * as a first-class field (filterable, sortable, projected inline). Declared
+ * host-side and resolved at query time from the introspected relational graph —
+ * no materialized column, no write-path, always correct. The SQL synthesis lives
+ * in adapters/drizzle/compile/computed.ts.
+ *
+ * Examples:
+ *   { key: 'observation_count', agg: 'count', over: 'observations', type: 'integer' }
+ *   { key: 'last_activity_at',  agg: 'max',   over: 'observations', field: 'occurred_at', type: 'datetime' }
+ */
+export interface ComputedFieldSpec {
+  /** Consumer-facing snake_case key (what the agent filters/sorts/reads). */
+  key: string;
+  /** Aggregate function. `count` ignores `field`; the rest require it. */
+  agg: 'count' | 'max' | 'min' | 'sum';
+  /** has_many relationship name(s) on THIS entity to aggregate over. An array
+   *  (max/min only) folds per-relationship aggregates via GREATEST/LEAST. */
+  over: string | string[];
+  /** Target column (snake_case) on the related entity for max/min/sum. */
+  field?: string;
+  /** Catalog type of the result (drives describe + value coercion). */
+  type: ColumnType;
+  label?: string;
+  description?: string;
+  /** Surface in default preview rows (first-pass search), not just on fetch. */
+  preview?: boolean;
+  previewOrder?: number;
+  /** Optional predicate AND-ed inside the aggregate subquery, over the related
+   *  entity's columns — e.g. observations carry retracted_at IS NULL + scope='deal'
+   *  so the count matches the agent-retrievable evidence set. */
+  filter?: ComputedFilterLeaf[];
+}
+
+/** A predicate leaf inside a computed metric's sub-filter, over a column of the
+ *  related (child) entity. `on` is the child column key (snake_case). */
+export interface ComputedFilterLeaf {
+  on: string;
+  op: Op;
+  value?: unknown;
+}
+
 export interface EntityDescriptor {
   name: EntityName;
   table: PgTable;
@@ -78,6 +123,8 @@ export interface EntityDescriptor {
   fieldMeta?: FieldMetaMap;
   /** Entity-level semantics (summary, …). */
   meta?: EntityMeta;
+  /** Aggregate-over-relationship metrics surfaced as first-class fields. */
+  computed?: ComputedFieldSpec[];
 }
 
 // ---------------------------------------------------------------------------
@@ -96,6 +143,8 @@ export interface EntityRegistration {
   eav?: EavStrategy;
   fieldMeta?: FieldMetaMap;
   meta?: EntityMeta;
+  /** Aggregate-over-relationship metrics for this entity. */
+  computed?: ComputedFieldSpec[];
 }
 
 // Drizzle introspection helpers (tableName / tableColumns / evaluateRelations)
@@ -180,6 +229,7 @@ export function buildRegistry(
       eav: spec.eav,
       fieldMeta: spec.fieldMeta,
       meta: spec.meta,
+      computed: spec.computed,
     };
   }
 

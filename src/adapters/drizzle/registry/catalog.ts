@@ -53,6 +53,9 @@ export interface CatalogField {
   column?: string;
   /** True when this field is resolved through field_values (EAV), not a real column. */
   eav: boolean;
+  /** True when this field is a computed aggregate over a relationship (no backing
+   *  column; derived at read time). Mutually exclusive with `eav`. */
+  computed?: boolean;
   // mechanics
   type: ColumnType;
   nullable: boolean;
@@ -316,6 +319,25 @@ export function buildEntityCatalog(entity: EntityName, fieldMap?: FieldMap): Ent
         sources,
       });
     }
+  }
+
+  // 3) Computed metrics — aggregate-over-relationship fields. Mechanics from the
+  //    spec (type; count never null, max/min/sum nullable). Always exposed
+  //    (derived, not a raw column), non-searchable, optionally previewed.
+  for (const spec of desc.computed ?? []) {
+    fields.push({
+      key: spec.key,
+      eav: false,
+      computed: true,
+      type: spec.type,
+      nullable: spec.agg !== 'count',
+      label: spec.label,
+      note: spec.description,
+      searchable: false,
+      preview: spec.preview ?? false,
+      previewOrder: spec.previewOrder,
+      sources: { type: 'derived', nullable: 'derived' },
+    });
   }
 
   // Native first; EAV after, ordered by keyFieldOrder.

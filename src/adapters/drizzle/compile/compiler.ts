@@ -43,6 +43,7 @@ import {
 import type { EavContext, FieldMap } from '../eav/field-map.ts';
 import { coercionCategory, valueColumnForDataType } from '../eav/mapping.ts';
 import { registry } from '../registry/registry.ts';
+import { buildComputedExpr } from './computed.ts';
 
 // camelCase helper — Drizzle column refs are camelCase; YAML/JSON uses snake_case.
 function camel(s: string): string {
@@ -73,9 +74,24 @@ type EavExprResolution = {
   coerceAs: string;
 };
 
+type ComputedResolution = {
+  // Computed metric — a self-contained correlated aggregate subquery. Carries no
+  // joins of its own (it correlates to the entity's pk); any `joins` are the
+  // belongs_to hops taken to REACH the entity. Rides the eav_expr op path.
+  kind: 'computed';
+  // Comparable form (raw aggregate) — used in WHERE / ORDER BY.
+  expr: SQL;
+  // Display form (ISO-8601 text for datetime aggregates) — used in projection.
+  // Same as `expr` for count/number metrics.
+  displayExpr: SQL;
+  joins: Join[];
+  coerceAs: string;
+};
+
 type PathResolution =
   | ColumnResolution
   | EavExprResolution
+  | ComputedResolution
   | {
       kind: 'has_many';
       target: PgTable; // the child/junction table — FROM of the EXISTS
@@ -84,7 +100,7 @@ type PathResolution =
       // The op target INSIDE the EXISTS, plus any belongs_to joins from the child
       // onward (e.g. opportunity_contacts → contacts → contacts.email). Lets a
       // has_many be followed by a belongs_to chain, not just a single child column.
-      inner: ColumnResolution | EavExprResolution;
+      inner: ColumnResolution | EavExprResolution | ComputedResolution;
     };
 
 // jsonb value → typed SQL expression for Shape B. `value` stores the scalar as
@@ -188,6 +204,21 @@ function resolveFrom(
   const nativeCol = (finalDesc.columns as Record<string, PgColumn>)[camel(finalSeg)];
   if (nativeCol) {
     return { kind: 'column', column: nativeCol, joins };
+  }
+
+  // Computed metric — a correlated aggregate subquery over a relationship.
+  // Self-contained (correlates to this entity's pk); `joins` carry only the
+  // belongs_to hops taken to reach this entity. Comparable expr for filter/sort,
+  // display expr (ISO-8601 for datetime) for projection.
+  const computedSpec = finalDesc.computed?.find((c) => c.key === finalSeg);
+  if (computedSpec) {
+    return {
+      kind: 'computed',
+      expr: buildComputedExpr(currentEntity, computedSpec),
+      displayExpr: buildComputedExpr(currentEntity, computedSpec, { display: true }),
+      joins,
+      coerceAs: computedSpec.type,
+    };
   }
 
   if (finalDesc.eav) {
@@ -514,8 +545,10 @@ function compileLeaf(ctx: CompileContext, leaf: LeafFilter): SQL {
     }
     return compileLeafOp(resolved.column, leaf.op, leaf.value, resolved.coerceAs);
   }
-  if (resolved.kind === 'eav_expr') {
-    // EAV Shape B (jsonb) — value is a cast expression behind a LEFT JOIN.
+  if (resolved.kind === 'eav_expr' || resolved.kind === 'computed') {
+    // Expression-backed field: EAV Shape B jsonb cast (behind a LEFT JOIN) or a
+    // computed aggregate subquery (self-contained). Both compile ops against the
+    // SQL expression, coerced by the field's logical type.
     for (const j of resolved.joins) pushJoin(ctx, j);
     return compileLeafOpExpr(resolved.expr, leaf.op, leaf.value, resolved.coerceAs);
   }
@@ -561,7 +594,7 @@ function compileSort(ctx: CompileContext, sort: Sort): SQLWrapper {
   // which buried every valued row under the null-valued ones on sparse
   // EAV-backed sorts like amount (D3, 2026-06-11). ASC is nulls-last by
   // default and stays untouched.
-  if (resolved.kind === 'eav_expr') {
+  if (resolved.kind === 'eav_expr' || resolved.kind === 'computed') {
     return sort.dir === 'desc' ? sql`${resolved.expr} desc nulls last` : sql`${resolved.expr} asc`;
   }
   return sort.dir === 'desc' ? sql`${resolved.column} desc nulls last` : asc(resolved.column);
@@ -697,8 +730,14 @@ export function compile(
       ctx.joinKeys.add(key);
       previewJoins.push(j);
     }
-    // Native / Shape A → column; Shape B → aliased cast expression. Row key = f.
-    projection[f] = resolved.kind === 'eav_expr' ? resolved.expr.as(f) : resolved.column;
+    // Native / Shape A → column; Shape B → cast expr; computed → display form
+    // (ISO-8601 for datetime aggregates). Row key = f.
+    projection[f] =
+      resolved.kind === 'computed'
+        ? resolved.displayExpr.as(f)
+        : resolved.kind === 'eav_expr'
+          ? resolved.expr.as(f)
+          : resolved.column;
   }
 
   // rank_by — a ranking method over one text column. Owns ordering + limit when
@@ -763,7 +802,7 @@ export function compile(
         throw new Error(`${ENGINE_ERROR.RANK} cannot rank_by a has_many path: ${rb.on}`);
       }
       for (const j of resolved.joins) pushJoin(ctx, j);
-      const colExpr: SQL = resolved.kind === 'eav_expr' ? resolved.expr : sql`${resolved.column}`;
+      const colExpr: SQL = resolved.kind === 'column' ? sql`${resolved.column}` : resolved.expr;
       const tsq = sql`replace(plainto_tsquery('english', ${rb.query})::text, ' & ', ' | ')::tsquery`;
       const rankExpr = sql`ts_rank_cd(to_tsvector('english', ${colExpr}::text), ${tsq})`;
       scoreExpr = rankExpr;
@@ -795,7 +834,7 @@ export function compile(
         );
       }
       for (const j of part.joins) pushJoin(ctx, j);
-      const partExpr: SQL = part.kind === 'eav_expr' ? part.expr : sql`${part.column}`;
+      const partExpr: SQL = part.kind === 'column' ? sql`${part.column}` : part.expr;
       // Exclude rows whose partition key is NULL: SQL collapses all NULLs into one phantom
       // "group", so a null-keyed row can't meaningfully be "top-K within its group". Dropping
       // them keeps the result to real groups (e.g. real accounts, not the account-less lump).
@@ -816,7 +855,7 @@ export function compile(
       // without it the consumer can't reassemble the groups.
       if (!(rb.partition_by in projection)) {
         projection[rb.partition_by] =
-          part.kind === 'eav_expr' ? part.expr.as(rb.partition_by) : part.column;
+          part.kind === 'column' ? part.column : part.expr.as(rb.partition_by);
       }
     }
   }
@@ -837,7 +876,7 @@ export function compile(
         throw new Error(`${ENGINE_ERROR.RANK} window: cannot aggregate a has_many path: ${wm.on}`);
       }
       for (const j of onRes.joins) pushJoin(ctx, j);
-      aggExpr = onRes.kind === 'eav_expr' ? onRes.expr : sql`${onRes.column}`;
+      aggExpr = onRes.kind === 'column' ? sql`${onRes.column}` : onRes.expr;
     }
     const partExprs: SQL[] = [];
     for (const pb of wm.partition_by) {
@@ -846,7 +885,7 @@ export function compile(
         throw new Error(`${ENGINE_ERROR.RANK} window: cannot partition_by a has_many path: ${pb}`);
       }
       for (const j of pbRes.joins) pushJoin(ctx, j);
-      partExprs.push(pbRes.kind === 'eav_expr' ? pbRes.expr : sql`${pbRes.column}`);
+      partExprs.push(pbRes.kind === 'column' ? sql`${pbRes.column}` : pbRes.expr);
     }
     const partClause = partExprs.length ? sql`partition by ${sql.join(partExprs, sql`, `)}` : sql``;
     let core: SQL;
