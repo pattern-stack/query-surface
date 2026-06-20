@@ -21,6 +21,7 @@ import type {
   ScopeFor,
 } from '../../../internal/analytics/types';
 import { ENGINE_ERROR } from '../../../internal/language/error-messages';
+import type { Leaf, Op } from '../../../internal/language/types';
 import type { DealbrainModel } from '../../reference/model.dealbrain';
 
 // biome-ignore lint/suspicious/noExplicitAny: Drizzle's query-builder + WithSubquery types don't survive dynamic join chains / dynamic select shapes; the package uses `any` accumulators here (see runners.ts).
@@ -138,6 +139,19 @@ export function applyLeafOp(expr: SQL, type: AggColType, op: string, value: unkn
 // Predicate → SQL via a column resolver (LOCAL columns only: scope, having, measure.where).
 // Boolean composition here; leaf ops via applyLeafOp. The graph-aware q.filter path uses
 // compileSourceFilter instead (it resolves dotted paths to joins/semijoins per leaf).
+// Wave-2: a `relevant` leaf is crispified into sim_gte/sim_topk by normalize() BEFORE
+// compile, and those sim leaves are lowered by the vector / ranked-CTE paths — never via
+// applyLeafOp's value path. Reaching the value path with one is an internal error (fail
+// loud, never read a missing `.value`). The vector lowering lands in the steps below.
+function valueLeaf(leaf: Leaf): { op: Op; value: unknown } {
+  if (leaf.op === 'relevant' || leaf.op === 'sim_gte' || leaf.op === 'sim_topk') {
+    throw new Error(
+      `${ENGINE_ERROR.AGGREGATE} relevance op '${leaf.op}' is not lowered in the aggregate predicate compiler yet`,
+    );
+  }
+  return { op: leaf.op, value: leaf.value };
+}
+
 function compilePredicateSql(resolve: Resolver, pred: Predicate): SQL {
   if ('and' in pred)
     return sql`(${sql.join(
@@ -151,7 +165,8 @@ function compilePredicateSql(resolve: Resolver, pred: Predicate): SQL {
     )})`;
   if ('not' in pred) return sql`(not ${compilePredicateSql(resolve, pred.not)})`;
   const { expr, type } = resolve(pred.on);
-  return applyLeafOp(expr, type, pred.op, pred.value);
+  const { op, value } = valueLeaf(pred);
+  return applyLeafOp(expr, type, op, value);
 }
 
 // Aggregate function as a fixed switch — no sql.raw(agg). An unknown agg throws
@@ -321,6 +336,7 @@ function compileSourceFilter(
     )})`;
   if ('not' in pred)
     return sql`(not ${compileSourceFilter(model, source, pred.not, joins, scopeFor)})`;
+  const { op, value } = valueLeaf(pred);
   const plan = resolveJoinPlan(model.analytics, source, pred.on, 'filter');
   switch (plan.kind) {
     case 'local': {
@@ -330,12 +346,12 @@ function compileSourceFilter(
         throw new Error(`${ENGINE_ERROR.AGGREGATE} unknown column "${plan.column}" on ${source}`);
       }
       const { expr, type } = nativeColSql(model, source, plan.column);
-      return applyLeafOp(expr, type, pred.op, pred.value);
+      return applyLeafOp(expr, type, op, value);
     }
     case 'to-one': {
       const lowered = lowerToOne(model, plan.hops, plan.target, plan.column, scopeFor);
       for (const j of lowered.joins) joins.push(j);
-      return applyLeafOp(lowered.expr, lowered.type, pred.op, pred.value);
+      return applyLeafOp(lowered.expr, lowered.type, op, value);
     }
     case 'semijoin':
       return lowerSemijoin(
@@ -345,8 +361,8 @@ function compileSourceFilter(
         plan.fk,
         plan.parentPk,
         plan.column,
-        pred.op,
-        pred.value,
+        op,
+        value,
         scopeFor,
       );
     default: // reject — the guard rejects non-conforming leaves pre-compile; reaching here is a bug.
