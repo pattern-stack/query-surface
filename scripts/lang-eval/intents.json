@@ -1,0 +1,102 @@
+[
+  {
+    "id": 1,
+    "description": "Simple equality: account name equals \"Acme Corp\"",
+    "text": "Find accounts where the account name equals \"Acme Corp\""
+  },
+  {
+    "id": 2,
+    "description": "Numeric greater-than: opportunity amount > 50000",
+    "text": "Find opportunities where the amount is greater than 50000"
+  },
+  {
+    "id": 3,
+    "description": "Numeric less-than: opportunity amount < 10000",
+    "text": "Find opportunities where the amount is less than 10000"
+  },
+  {
+    "id": 4,
+    "description": "Between: opportunity amount between 10000 and 100000",
+    "text": "Find opportunities where the amount is between 10000 and 100000"
+  },
+  {
+    "id": 5,
+    "description": "In-list: dealstage in [\"proposal\", \"negotiation\", \"closed_won\"]",
+    "text": "Find opportunities where the dealstage is one of: proposal, negotiation, or closed_won"
+  },
+  {
+    "id": 6,
+    "description": "Not-in-list: dealstage not in [\"closed_lost\", \"disqualified\"]",
+    "text": "Find opportunities where the dealstage is NOT in the list: closed_lost, disqualified"
+  },
+  {
+    "id": 7,
+    "description": "Null check: opportunity closedate is null",
+    "text": "Find opportunities where the closedate is null (not set)"
+  },
+  {
+    "id": 8,
+    "description": "Not-null check: opportunity closedate is not null",
+    "text": "Find opportunities where the closedate is not null (has a value)"
+  },
+  {
+    "id": 9,
+    "description": "Text contains: account name contains \"tech\"",
+    "text": "Find accounts where the account name contains the word \"tech\""
+  },
+  {
+    "id": 10,
+    "description": "Text startsWith: account name starts with \"Acme\"",
+    "text": "Find accounts where the account name starts with \"Acme\""
+  },
+  {
+    "id": 11,
+    "description": "Compound AND: amount > 50000 AND dealstage = \"negotiation\"",
+    "text": "Find opportunities where the amount is greater than 50000 AND the dealstage equals \"negotiation\""
+  },
+  {
+    "id": 12,
+    "description": "Compound OR: dealstage = \"closed_won\" OR dealstage = \"closed_lost\"",
+    "text": "Find opportunities where the dealstage is either \"closed_won\" OR \"closed_lost\""
+  },
+  {
+    "id": 13,
+    "description": "Nested AND-of-ORs: (dealstage = \"proposal\" OR dealstage = \"negotiation\") AND amount > 20000",
+    "text": "Find opportunities where (dealstage is \"proposal\" OR dealstage is \"negotiation\") AND the amount is greater than 20000"
+  },
+  {
+    "id": 14,
+    "description": "Negation: NOT (dealstage = \"closed_lost\")",
+    "text": "Find opportunities where the dealstage is NOT \"closed_lost\""
+  },
+  {
+    "id": 15,
+    "description": "Date comparison: observation occurred_at > \"2024-01-01\"",
+    "text": "Find observations where occurred_at is after \"2024-01-01\""
+  },
+  {
+    "id": 16,
+    "description": "Multi-field AND: pipeline = \"enterprise\" AND amount >= 100000 AND closedate is not null",
+    "text": "Find opportunities where pipeline equals \"enterprise\" AND amount is at least 100000 AND closedate is not null"
+  },
+  {
+    "id": 17,
+    "description": "Text endsWith: account name ends with \"Inc\"",
+    "text": "Find accounts where the account name ends with \"Inc\""
+  },
+  {
+    "id": 18,
+    "description": "Numeric gte+lte (range): observation occurred_at >= \"2024-01-01\" AND occurred_at <= \"2024-12-31\"",
+    "text": "Find observations where occurred_at is on or after \"2024-01-01\" AND on or before \"2024-12-31\""
+  },
+  {
+    "id": 19,
+    "description": "Type equality: observation type = \"email\"",
+    "text": "Find observations where the type equals \"email\""
+  },
+  {
+    "id": 20,
+    "description": "Complex nested: (type = \"meeting\" OR type = \"call\") AND occurred_at > \"2024-06-01\"",
+    "text": "Find observations where (type is \"meeting\" OR type is \"call\") AND occurred_at is after \"2024-06-01\""
+  }
+]

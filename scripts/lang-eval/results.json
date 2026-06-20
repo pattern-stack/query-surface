@@ -1,0 +1,863 @@
+[
+  {
+    "intent_id": 1,
+    "intent_text": "Find accounts where the account name equals \"Acme Corp\"",
+    "format": "A",
+    "raw_response": "{ \"op\": \"eq\", \"left\": { \"from\": \"entity\", \"path\": \"name\" }, \"right\": { \"from\": \"literal\", \"value\": \"Acme Corp\" } }",
+    "parsed_json": {
+      "op": "eq",
+      "left": {
+        "from": "entity",
+        "path": "name"
+      },
+      "right": {
+        "from": "literal",
+        "value": "Acme Corp"
+      }
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 1,
+    "intent_text": "Find accounts where the account name equals \"Acme Corp\"",
+    "format": "B",
+    "raw_response": "{ \"name\": \"Acme Corp\" }",
+    "parsed_json": {
+      "name": "Acme Corp"
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 2,
+    "intent_text": "Find opportunities where the amount is greater than 50000",
+    "format": "A",
+    "raw_response": "{ \"op\": \"gt\", \"left\": { \"from\": \"entity\", \"path\": \"amount\" }, \"right\": { \"from\": \"literal\", \"value\": 50000 } }",
+    "parsed_json": {
+      "op": "gt",
+      "left": {
+        "from": "entity",
+        "path": "amount"
+      },
+      "right": {
+        "from": "literal",
+        "value": 50000
+      }
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 2,
+    "intent_text": "Find opportunities where the amount is greater than 50000",
+    "format": "B",
+    "raw_response": "{ \"amount\": { \"gt\": 50000 } }",
+    "parsed_json": {
+      "amount": {
+        "gt": 50000
+      }
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 3,
+    "intent_text": "Find opportunities where the amount is less than 10000",
+    "format": "A",
+    "raw_response": "{ \"op\": \"and\", \"clauses\": [ { \"op\": \"lt\", \"left\": { \"from\": \"entity\", \"path\": \"amount\" }, \"right\": { \"from\": \"literal\", \"value\": 10000 } } ] }",
+    "parsed_json": {
+      "op": "and",
+      "clauses": [
+        {
+          "op": "lt",
+          "left": {
+            "from": "entity",
+            "path": "amount"
+          },
+          "right": {
+            "from": "literal",
+            "value": 10000
+          }
+        }
+      ]
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 3,
+    "intent_text": "Find opportunities where the amount is less than 10000",
+    "format": "B",
+    "raw_response": "{ \"amount\": { \"lt\": 10000 } }",
+    "parsed_json": {
+      "amount": {
+        "lt": 10000
+      }
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 4,
+    "intent_text": "Find opportunities where the amount is between 10000 and 100000",
+    "format": "A",
+    "raw_response": "{ \"op\": \"and\", \"clauses\": [ { \"op\": \"gte\", \"left\": { \"from\": \"entity\", \"path\": \"amount\" }, \"right\": { \"from\": \"literal\", \"value\": 10000 } }, { \"op\": \"lte\", \"left\": { \"from\": \"entity\", \"path\": \"amount\" }, \"right\": { \"from\": \"literal\", \"value\": 100000 } } ] }",
+    "parsed_json": {
+      "op": "and",
+      "clauses": [
+        {
+          "op": "gte",
+          "left": {
+            "from": "entity",
+            "path": "amount"
+          },
+          "right": {
+            "from": "literal",
+            "value": 10000
+          }
+        },
+        {
+          "op": "lte",
+          "left": {
+            "from": "entity",
+            "path": "amount"
+          },
+          "right": {
+            "from": "literal",
+            "value": 100000
+          }
+        }
+      ]
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 4,
+    "intent_text": "Find opportunities where the amount is between 10000 and 100000",
+    "format": "B",
+    "raw_response": "{ \"amount\": { \"gte\": 10000, \"lte\": 100000 } }",
+    "parsed_json": {
+      "amount": {
+        "gte": 10000,
+        "lte": 100000
+      }
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 5,
+    "intent_text": "Find opportunities where the dealstage is one of: proposal, negotiation, or closed_won",
+    "format": "A",
+    "raw_response": "{ \"op\": \"or\", \"clauses\": [ { \"op\": \"eq\", \"left\": { \"from\": \"entity\", \"path\": \"dealstage\" }, \"right\": { \"from\": \"literal\", \"value\": \"proposal\" } }, { \"op\": \"eq\", \"left\": { \"from\": \"entity\", \"path\": \"dealstage\" }, \"right\": { \"from\": \"literal\", \"value\": \"negotiation\" } }, { \"op\": \"eq\", \"left\": { \"from\": \"entity\", \"path\": \"dealstage\" }, \"right\": { \"from\": \"literal\", \"value\": \"closed_won\" } } ] }",
+    "parsed_json": {
+      "op": "or",
+      "clauses": [
+        {
+          "op": "eq",
+          "left": {
+            "from": "entity",
+            "path": "dealstage"
+          },
+          "right": {
+            "from": "literal",
+            "value": "proposal"
+          }
+        },
+        {
+          "op": "eq",
+          "left": {
+            "from": "entity",
+            "path": "dealstage"
+          },
+          "right": {
+            "from": "literal",
+            "value": "negotiation"
+          }
+        },
+        {
+          "op": "eq",
+          "left": {
+            "from": "entity",
+            "path": "dealstage"
+          },
+          "right": {
+            "from": "literal",
+            "value": "closed_won"
+          }
+        }
+      ]
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 5,
+    "intent_text": "Find opportunities where the dealstage is one of: proposal, negotiation, or closed_won",
+    "format": "B",
+    "raw_response": "{ \"dealstage\": { \"in\": [\"proposal\", \"negotiation\", \"closed_won\"] } }",
+    "parsed_json": {
+      "dealstage": {
+        "in": [
+          "proposal",
+          "negotiation",
+          "closed_won"
+        ]
+      }
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 6,
+    "intent_text": "Find opportunities where the dealstage is NOT in the list: closed_lost, disqualified",
+    "format": "A",
+    "raw_response": "{ \"op\": \"not\", \"clause\": { \"op\": \"in\", \"left\": { \"from\": \"entity\", \"path\": \"dealstage\" }, \"right\": { \"from\": \"literal\", \"value\": [ \"closed_lost\", \"disqualified\" ] } } }",
+    "parsed_json": {
+      "op": "not",
+      "clause": {
+        "op": "in",
+        "left": {
+          "from": "entity",
+          "path": "dealstage"
+        },
+        "right": {
+          "from": "literal",
+          "value": [
+            "closed_lost",
+            "disqualified"
+          ]
+        }
+      }
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 6,
+    "intent_text": "Find opportunities where the dealstage is NOT in the list: closed_lost, disqualified",
+    "format": "B",
+    "raw_response": "{ \"dealstage\": { \"nin\": [\"closed_lost\", \"disqualified\"] } }",
+    "parsed_json": {
+      "dealstage": {
+        "nin": [
+          "closed_lost",
+          "disqualified"
+        ]
+      }
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 7,
+    "intent_text": "Find opportunities where the closedate is null (not set)",
+    "format": "A",
+    "raw_response": "{ \"op\": \"isNull\", \"left\": { \"from\": \"entity\", \"path\": \"closedate\" } }",
+    "parsed_json": {
+      "op": "isNull",
+      "left": {
+        "from": "entity",
+        "path": "closedate"
+      }
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 7,
+    "intent_text": "Find opportunities where the closedate is null (not set)",
+    "format": "B",
+    "raw_response": "{ \"closedate\": { \"is_null\": true } }",
+    "parsed_json": {
+      "closedate": {
+        "is_null": true
+      }
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 8,
+    "intent_text": "Find opportunities where the closedate is not null (has a value)",
+    "format": "A",
+    "raw_response": "{ \"op\": \"not\", \"clause\": { \"op\": \"isNull\", \"left\": { \"from\": \"entity\", \"path\": \"closedate\" } } }",
+    "parsed_json": {
+      "op": "not",
+      "clause": {
+        "op": "isNull",
+        "left": {
+          "from": "entity",
+          "path": "closedate"
+        }
+      }
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 8,
+    "intent_text": "Find opportunities where the closedate is not null (has a value)",
+    "format": "B",
+    "raw_response": "{ \"closedate\": { \"is_not_null\": true } }",
+    "parsed_json": {
+      "closedate": {
+        "is_not_null": true
+      }
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 9,
+    "intent_text": "Find accounts where the account name contains the word \"tech\"",
+    "format": "A",
+    "raw_response": "{ \"op\": \"contains\", \"left\": { \"from\": \"entity\", \"path\": \"name\" }, \"pattern\": \"tech\" }",
+    "parsed_json": {
+      "op": "contains",
+      "left": {
+        "from": "entity",
+        "path": "name"
+      },
+      "pattern": "tech"
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 9,
+    "intent_text": "Find accounts where the account name contains the word \"tech\"",
+    "format": "B",
+    "raw_response": "{ \"name\": { \"contains\": \"tech\" } }",
+    "parsed_json": {
+      "name": {
+        "contains": "tech"
+      }
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 10,
+    "intent_text": "Find accounts where the account name starts with \"Acme\"",
+    "format": "A",
+    "raw_response": "{ \"op\": \"startsWith\", \"left\": { \"from\": \"entity\", \"path\": \"name\" }, \"pattern\": \"Acme\" }",
+    "parsed_json": {
+      "op": "startsWith",
+      "left": {
+        "from": "entity",
+        "path": "name"
+      },
+      "pattern": "Acme"
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 10,
+    "intent_text": "Find accounts where the account name starts with \"Acme\"",
+    "format": "B",
+    "raw_response": "{ \"name\": { \"startswith\": \"Acme\" } }",
+    "parsed_json": {
+      "name": {
+        "startswith": "Acme"
+      }
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 11,
+    "intent_text": "Find opportunities where the amount is greater than 50000 AND the dealstage equals \"negotiation\"",
+    "format": "A",
+    "raw_response": "{\n  \"op\": \"and\",\n  \"clauses\": [\n    {\n      \"op\": \"gt\",\n      \"left\": {\n        \"from\": \"entity\",\n        \"path\": \"amount\"\n      },\n      \"right\": {\n        \"from\": \"literal\",\n        \"value\": 50000\n      }\n    },\n    {\n      \"op\": \"eq\",\n      \"left\": {\n        \"from\": \"entity\",\n        \"path\": \"dealstage\"\n      },\n      \"right\": {\n        \"from\": \"literal\",\n        \"value\": \"negotiation\"\n      }\n    }\n  ]\n}",
+    "parsed_json": {
+      "op": "and",
+      "clauses": [
+        {
+          "op": "gt",
+          "left": {
+            "from": "entity",
+            "path": "amount"
+          },
+          "right": {
+            "from": "literal",
+            "value": 50000
+          }
+        },
+        {
+          "op": "eq",
+          "left": {
+            "from": "entity",
+            "path": "dealstage"
+          },
+          "right": {
+            "from": "literal",
+            "value": "negotiation"
+          }
+        }
+      ]
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 11,
+    "intent_text": "Find opportunities where the amount is greater than 50000 AND the dealstage equals \"negotiation\"",
+    "format": "B",
+    "raw_response": "{ \"amount\": { \"gt\": 50000 }, \"dealstage\": \"negotiation\" }",
+    "parsed_json": {
+      "amount": {
+        "gt": 50000
+      },
+      "dealstage": "negotiation"
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 12,
+    "intent_text": "Find opportunities where the dealstage is either \"closed_won\" OR \"closed_lost\"",
+    "format": "A",
+    "raw_response": "{ \"op\": \"or\", \"clauses\": [ { \"op\": \"eq\", \"left\": { \"from\": \"entity\", \"path\": \"dealstage\" }, \"right\": { \"from\": \"literal\", \"value\": \"closed_won\" } }, { \"op\": \"eq\", \"left\": { \"from\": \"entity\", \"path\": \"dealstage\" }, \"right\": { \"from\": \"literal\", \"value\": \"closed_lost\" } } ] }",
+    "parsed_json": {
+      "op": "or",
+      "clauses": [
+        {
+          "op": "eq",
+          "left": {
+            "from": "entity",
+            "path": "dealstage"
+          },
+          "right": {
+            "from": "literal",
+            "value": "closed_won"
+          }
+        },
+        {
+          "op": "eq",
+          "left": {
+            "from": "entity",
+            "path": "dealstage"
+          },
+          "right": {
+            "from": "literal",
+            "value": "closed_lost"
+          }
+        }
+      ]
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 12,
+    "intent_text": "Find opportunities where the dealstage is either \"closed_won\" OR \"closed_lost\"",
+    "format": "B",
+    "raw_response": "{ \"or\": [ { \"dealstage\": \"closed_won\" }, { \"dealstage\": \"closed_lost\" } ] }",
+    "parsed_json": {
+      "or": [
+        {
+          "dealstage": "closed_won"
+        },
+        {
+          "dealstage": "closed_lost"
+        }
+      ]
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 13,
+    "intent_text": "Find opportunities where (dealstage is \"proposal\" OR dealstage is \"negotiation\") AND the amount is greater than 20000",
+    "format": "A",
+    "raw_response": "{\n  \"op\": \"and\",\n  \"clauses\": [\n    {\n      \"op\": \"or\",\n      \"clauses\": [\n        {\n          \"op\": \"eq\",\n          \"left\": {\n            \"from\": \"entity\",\n            \"path\": \"dealstage\"\n          },\n          \"right\": {\n            \"from\": \"literal\",\n            \"value\": \"proposal\"\n          }\n        },\n        {\n          \"op\": \"eq\",\n          \"left\": {\n            \"from\": \"entity\",\n            \"path\": \"dealstage\"\n          },\n          \"right\": {\n            \"from\": \"literal\",\n            \"value\": \"negotiation\"\n          }\n        }\n      ]\n    },\n    {\n      \"op\": \"gt\",\n      \"left\": {\n        \"from\": \"entity\",\n        \"path\": \"amount\"\n      },\n      \"right\": {\n        \"from\": \"literal\",\n        \"value\": 20000\n      }\n    }\n  ]\n}",
+    "parsed_json": {
+      "op": "and",
+      "clauses": [
+        {
+          "op": "or",
+          "clauses": [
+            {
+              "op": "eq",
+              "left": {
+                "from": "entity",
+                "path": "dealstage"
+              },
+              "right": {
+                "from": "literal",
+                "value": "proposal"
+              }
+            },
+            {
+              "op": "eq",
+              "left": {
+                "from": "entity",
+                "path": "dealstage"
+              },
+              "right": {
+                "from": "literal",
+                "value": "negotiation"
+              }
+            }
+          ]
+        },
+        {
+          "op": "gt",
+          "left": {
+            "from": "entity",
+            "path": "amount"
+          },
+          "right": {
+            "from": "literal",
+            "value": 20000
+          }
+        }
+      ]
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 13,
+    "intent_text": "Find opportunities where (dealstage is \"proposal\" OR dealstage is \"negotiation\") AND the amount is greater than 20000",
+    "format": "B",
+    "raw_response": "{ \"and\": [ { \"or\": [ { \"dealstage\": \"proposal\" }, { \"dealstage\": \"negotiation\" } ] }, { \"amount\": { \"gt\": 20000 } } ] }",
+    "parsed_json": {
+      "and": [
+        {
+          "or": [
+            {
+              "dealstage": "proposal"
+            },
+            {
+              "dealstage": "negotiation"
+            }
+          ]
+        },
+        {
+          "amount": {
+            "gt": 20000
+          }
+        }
+      ]
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 14,
+    "intent_text": "Find opportunities where the dealstage is NOT \"closed_lost\"",
+    "format": "A",
+    "raw_response": "{ \"op\": \"not\", \"clause\": { \"op\": \"eq\", \"left\": { \"from\": \"entity\", \"path\": \"dealstage\" }, \"right\": { \"from\": \"literal\", \"value\": \"closed_lost\" } } }",
+    "parsed_json": {
+      "op": "not",
+      "clause": {
+        "op": "eq",
+        "left": {
+          "from": "entity",
+          "path": "dealstage"
+        },
+        "right": {
+          "from": "literal",
+          "value": "closed_lost"
+        }
+      }
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 14,
+    "intent_text": "Find opportunities where the dealstage is NOT \"closed_lost\"",
+    "format": "B",
+    "raw_response": "{ \"dealstage\": { \"ne\": \"closed_lost\" } }",
+    "parsed_json": {
+      "dealstage": {
+        "ne": "closed_lost"
+      }
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 15,
+    "intent_text": "Find observations where occurred_at is after \"2024-01-01\"",
+    "format": "A",
+    "raw_response": "{ \"op\": \"gt\", \"left\": { \"from\": \"entity\", \"path\": \"occurred_at\" }, \"right\": { \"from\": \"literal\", \"value\": \"2024-01-01\" } }",
+    "parsed_json": {
+      "op": "gt",
+      "left": {
+        "from": "entity",
+        "path": "occurred_at"
+      },
+      "right": {
+        "from": "literal",
+        "value": "2024-01-01"
+      }
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 15,
+    "intent_text": "Find observations where occurred_at is after \"2024-01-01\"",
+    "format": "B",
+    "raw_response": "{ \"occurred_at\": { \"gt\": \"2024-01-01\" } }",
+    "parsed_json": {
+      "occurred_at": {
+        "gt": "2024-01-01"
+      }
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 16,
+    "intent_text": "Find opportunities where pipeline equals \"enterprise\" AND amount is at least 100000 AND closedate is not null",
+    "format": "A",
+    "raw_response": "{\n  \"op\": \"and\",\n  \"clauses\": [\n    {\n      \"op\": \"eq\",\n      \"left\": {\n        \"from\": \"entity\",\n        \"path\": \"pipeline\"\n      },\n      \"right\": {\n        \"from\": \"literal\",\n        \"value\": \"enterprise\"\n      }\n    },\n    {\n      \"op\": \"gte\",\n      \"left\": {\n        \"from\": \"entity\",\n        \"path\": \"amount\"\n      },\n      \"right\": {\n        \"from\": \"literal\",\n        \"value\": 100000\n      }\n    },\n    {\n      \"op\": \"isNotNull\",\n      \"left\": {\n        \"from\": \"entity\",\n        \"path\": \"closedate\"\n      }\n    }\n  ]\n}",
+    "parsed_json": {
+      "op": "and",
+      "clauses": [
+        {
+          "op": "eq",
+          "left": {
+            "from": "entity",
+            "path": "pipeline"
+          },
+          "right": {
+            "from": "literal",
+            "value": "enterprise"
+          }
+        },
+        {
+          "op": "gte",
+          "left": {
+            "from": "entity",
+            "path": "amount"
+          },
+          "right": {
+            "from": "literal",
+            "value": 100000
+          }
+        },
+        {
+          "op": "isNotNull",
+          "left": {
+            "from": "entity",
+            "path": "closedate"
+          }
+        }
+      ]
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 16,
+    "intent_text": "Find opportunities where pipeline equals \"enterprise\" AND amount is at least 100000 AND closedate is not null",
+    "format": "B",
+    "raw_response": "{ \"pipeline\": \"enterprise\", \"amount\": { \"gte\": 100000 }, \"closedate\": { \"is_not_null\": true } }",
+    "parsed_json": {
+      "pipeline": "enterprise",
+      "amount": {
+        "gte": 100000
+      },
+      "closedate": {
+        "is_not_null": true
+      }
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 17,
+    "intent_text": "Find accounts where the account name ends with \"Inc\"",
+    "format": "A",
+    "raw_response": "{ \"op\": \"endsWith\", \"left\": { \"from\": \"entity\", \"path\": \"name\" }, \"pattern\": \"Inc\" }",
+    "parsed_json": {
+      "op": "endsWith",
+      "left": {
+        "from": "entity",
+        "path": "name"
+      },
+      "pattern": "Inc"
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 17,
+    "intent_text": "Find accounts where the account name ends with \"Inc\"",
+    "format": "B",
+    "raw_response": "{ \"name\": { \"endswith\": \"Inc\" } }",
+    "parsed_json": {
+      "name": {
+        "endswith": "Inc"
+      }
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 18,
+    "intent_text": "Find observations where occurred_at is on or after \"2024-01-01\" AND on or before \"2024-12-31\"",
+    "format": "A",
+    "raw_response": "{\n  \"op\": \"and\",\n  \"clauses\": [\n    {\n      \"op\": \"gte\",\n      \"left\": {\n        \"from\": \"entity\",\n        \"path\": \"occurred_at\"\n      },\n      \"right\": {\n        \"from\": \"literal\",\n        \"value\": \"2024-01-01\"\n      }\n    },\n    {\n      \"op\": \"lte\",\n      \"left\": {\n        \"from\": \"entity\",\n        \"path\": \"occurred_at\"\n      },\n      \"right\": {\n        \"from\": \"literal\",\n        \"value\": \"2024-12-31\"\n      }\n    }\n  ]\n}",
+    "parsed_json": {
+      "op": "and",
+      "clauses": [
+        {
+          "op": "gte",
+          "left": {
+            "from": "entity",
+            "path": "occurred_at"
+          },
+          "right": {
+            "from": "literal",
+            "value": "2024-01-01"
+          }
+        },
+        {
+          "op": "lte",
+          "left": {
+            "from": "entity",
+            "path": "occurred_at"
+          },
+          "right": {
+            "from": "literal",
+            "value": "2024-12-31"
+          }
+        }
+      ]
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 18,
+    "intent_text": "Find observations where occurred_at is on or after \"2024-01-01\" AND on or before \"2024-12-31\"",
+    "format": "B",
+    "raw_response": "{ \"occurred_at\": { \"gte\": \"2024-01-01\", \"lte\": \"2024-12-31\" } }",
+    "parsed_json": {
+      "occurred_at": {
+        "gte": "2024-01-01",
+        "lte": "2024-12-31"
+      }
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 19,
+    "intent_text": "Find observations where the type equals \"email\"",
+    "format": "A",
+    "raw_response": "{ \"op\": \"eq\", \"left\": { \"from\": \"entity\", \"path\": \"type\" }, \"right\": { \"from\": \"literal\", \"value\": \"email\" } }",
+    "parsed_json": {
+      "op": "eq",
+      "left": {
+        "from": "entity",
+        "path": "type"
+      },
+      "right": {
+        "from": "literal",
+        "value": "email"
+      }
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 19,
+    "intent_text": "Find observations where the type equals \"email\"",
+    "format": "B",
+    "raw_response": "{ \"type\": \"email\" }",
+    "parsed_json": {
+      "type": "email"
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 20,
+    "intent_text": "Find observations where (type is \"meeting\" OR type is \"call\") AND occurred_at is after \"2024-06-01\"",
+    "format": "A",
+    "raw_response": "{\n  \"op\": \"and\",\n  \"clauses\": [\n    {\n      \"op\": \"or\",\n      \"clauses\": [\n        {\n          \"op\": \"eq\",\n          \"left\": {\n            \"from\": \"entity\",\n            \"path\": \"type\"\n          },\n          \"right\": {\n            \"from\": \"literal\",\n            \"value\": \"meeting\"\n          }\n        },\n        {\n          \"op\": \"eq\",\n          \"left\": {\n            \"from\": \"entity\",\n            \"path\": \"type\"\n          },\n          \"right\": {\n            \"from\": \"literal\",\n            \"value\": \"call\"\n          }\n        }\n      ]\n    },\n    {\n      \"op\": \"gt\",\n      \"left\": {\n        \"from\": \"entity\",\n        \"path\": \"occurred_at\"\n      },\n      \"right\": {\n        \"from\": \"literal\",\n        \"value\": \"2024-06-01T00:00:00Z\"\n      }\n    }\n  ]\n}",
+    "parsed_json": {
+      "op": "and",
+      "clauses": [
+        {
+          "op": "or",
+          "clauses": [
+            {
+              "op": "eq",
+              "left": {
+                "from": "entity",
+                "path": "type"
+              },
+              "right": {
+                "from": "literal",
+                "value": "meeting"
+              }
+            },
+            {
+              "op": "eq",
+              "left": {
+                "from": "entity",
+                "path": "type"
+              },
+              "right": {
+                "from": "literal",
+                "value": "call"
+              }
+            }
+          ]
+        },
+        {
+          "op": "gt",
+          "left": {
+            "from": "entity",
+            "path": "occurred_at"
+          },
+          "right": {
+            "from": "literal",
+            "value": "2024-06-01T00:00:00Z"
+          }
+        }
+      ]
+    },
+    "valid": true,
+    "error": null
+  },
+  {
+    "intent_id": 20,
+    "intent_text": "Find observations where (type is \"meeting\" OR type is \"call\") AND occurred_at is after \"2024-06-01\"",
+    "format": "B",
+    "raw_response": "{ \"and\": [ { \"or\": [ { \"type\": \"meeting\" }, { \"type\": \"call\" } ] }, { \"occurred_at\": { \"gt\": \"2024-06-01\" } } ] }",
+    "parsed_json": {
+      "and": [
+        {
+          "or": [
+            {
+              "type": "meeting"
+            },
+            {
+              "type": "call"
+            }
+          ]
+        },
+        {
+          "occurred_at": {
+            "gt": "2024-06-01"
+          }
+        }
+      ]
+    },
+    "valid": true,
+    "error": null
+  }
+]
