@@ -58,8 +58,19 @@
       .simbar { height: 5px; background: #0e1420; border-radius: 3px; overflow: hidden; margin-top: 3px; }
       .simbar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
       .snip { font-size: 13px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .bound { display: flex; gap: 26px; flex-wrap: wrap; margin-top: 11px; font-size: 12px; }
-      .bound .in { color: var(--accent2); } .bound .out { color: var(--bad); } .bound code { color: var(--ink); }
+      /* decision boundary — the actual rows straddling the cut, with their text */
+      .bpanel { margin-top: 13px; border-top: 1px solid var(--line); padding-top: 12px; }
+      .bphead { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); margin-bottom: 9px; }
+      .brow { border-left: 3px solid; border-radius: 0 8px 8px 0; padding: 8px 12px; margin: 7px 0; background: #0e1420; }
+      .brow.binc { border-color: var(--accent2); } .brow.bexc { border-color: var(--bad); }
+      .bhead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+      .blbl { font-size: 11px; letter-spacing: 0.04em; } .binc .blbl { color: var(--accent2); } .bexc .blbl { color: var(--bad); }
+      .bsim { font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 700; } .binc .bsim { color: var(--accent2); } .bexc .bsim { color: var(--bad); }
+      .bsnip { font-size: 13px; color: var(--ink); line-height: 1.5; }
+
+      /* group breakdown table */
+      .gbar { height: 6px; background: #0e1420; border-radius: 3px; overflow: hidden; margin-top: 4px; }
+      .gbar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
 
       .metric { background: linear-gradient(135deg, var(--panel2), var(--panel)); border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px; display: flex; align-items: baseline; gap: 16px; }
       .metric .v { font-size: 38px; font-weight: 800; letter-spacing: -0.02em; color: #fff; font-variant-numeric: tabular-nums; }
@@ -111,7 +122,8 @@
       <div class="tabs">
         <div class="tab on" data-screen="metric">① Cohort metric</div>
         <div class="tab" data-screen="explore">② Explore evidence</div>
-        <div class="tab" data-screen="catalog">③ Catalog</div>
+        <div class="tab" data-screen="group">③ Group (conformed)</div>
+        <div class="tab" data-screen="catalog">④ Catalog</div>
       </div>
 
       <!-- shared controls -->
@@ -128,6 +140,14 @@
               <option value="pipeline">Weighted pipeline (Σ)</option>
               <option value="win_rate">Avg win probability</option>
               <option value="deals">Opportunity count</option>
+            </select>
+          </div>
+          <div class="field" style="max-width: 250px; display:none" id="groupWrap">
+            <label>Group the cohort by</label>
+            <select id="groupDim">
+              <option value="accounts.name">accounts.name — to-one ✓</option>
+              <option value="state_of_deal_status">state_of_deal_status — own dim ✓</option>
+              <option value="observations.type">observations.type — to-many ✗</option>
             </select>
           </div>
         </div>
@@ -150,6 +170,7 @@
 
       <div class="screen on" id="screen-metric"><div class="result" id="r-metric"></div></div>
       <div class="screen" id="screen-explore"><div class="result" id="r-explore"></div></div>
+      <div class="screen" id="screen-group"><div class="result" id="r-group"></div></div>
       <div class="screen" id="screen-catalog">
         <div class="controls" style="margin-bottom:16px"><div class="row">
           <div class="field" style="max-width:240px"><label>Entity</label>
@@ -176,6 +197,7 @@
         document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('on', x === t));
         document.querySelectorAll('.screen').forEach((s) => s.classList.toggle('on', s.id === 'screen-' + screen));
         $('measureWrap').style.display = screen === 'metric' ? '' : 'none';
+        $('groupWrap').style.display = screen === 'group' ? '' : 'none';
         $('controls').style.display = screen === 'catalog' ? 'none' : '';
         runActive();
       });
@@ -226,14 +248,19 @@
         const exHtml = (c.exemplars||[]).map((e)=>{ const w=Math.max(2,Math.min(100,Math.round(e.similarity*100)));
           return '<div class="exrow"><div class="sim">'+e.similarity.toFixed(4)+'<div class="simbar"><i style="width:'+w+'%"></i></div></div><div class="snip" title="'+esc(e.snippet)+'">'+esc(e.snippet)+'</div></div>'; }).join('');
         const lo=c.boundary&&c.boundary.lowest_included, hi=c.boundary&&c.boundary.highest_excluded;
+        // The decision boundary — the actual TEXT at the cut. What barely made it vs barely missed:
+        // this is where the threshold's meaning becomes concrete.
+        const bRow = (cls, lbl, r) => r ? ('<div class="brow '+cls+'"><div class="bhead"><span class="blbl">'+lbl+'</span><span class="bsim">'+r.similarity.toFixed(4)+'</span></div><div class="bsnip">'+esc(r.snippet)+'</div></div>') : '';
+        const boundaryPanel = (lo||hi) ? ('<div class="bpanel"><div class="bphead">the decision boundary — the rows straddling the cut</div>'+
+          bRow('binc','▸ lowest INCLUDED', lo)+bRow('bexc','▸ highest EXCLUDED', hi)+'</div>') : '';
         const cutoffTxt = c.mode==='top_k' ? ('top '+c.match_count+' most relevant <span class="timing">(weakest sim <code class="c">'+(c.cutoff!=null?c.cutoff.toFixed(4):'—')+'</code>)</span>') : ('similarity ≥ <code class="c">'+c.cutoff+'</code>');
         out.innerHTML = withRaw(
           '<div class="cohort"><p class="k">the cohort — what counted</p>'+
             '<div class="def">opportunities with an observation <b>relevant to “'+esc(c.query)+'”</b> · '+cutoffTxt+'</div>'+
             '<div class="meta"><div><b>'+(c.match_count!=null?intf(c.match_count):'—')+'</b> matching observations <span class="timing">(evidence)</span></div>'+
               '<div><b>'+(deals!=null?intf(deals):'—')+'</b> opportunities in the cohort <span class="timing">(measured)</span></div></div>'+
-            '<div class="ex"><div class="h"><span>matched exemplars (similarity)</span><span class="timing">decision boundary →</span></div>'+exHtml+
-            '<div class="bound">'+(lo?'<span class="in">▸ lowest included <code>'+lo.similarity.toFixed(4)+'</code></span>':'')+(hi?'<span class="out">▸ highest excluded <code>'+hi.similarity.toFixed(4)+'</code></span>':'')+'</div></div>'+
+            '<div class="ex"><div class="h"><span>matched exemplars (similarity)</span></div>'+exHtml+'</div>'+
+            boundaryPanel+
           '</div>'+
           '<div class="metric"><div class="v">'+fmtV(d.measure.fmt, mv)+'</div><div class="l">'+esc(d.measure.label)+'<br>over the cohort above</div></div>'+
           sqlPanel(d.sql, d.ms, 'grain-safe EXISTS semijoin', d.params), d.sql);
@@ -256,7 +283,29 @@
           sqlPanel(d.sql, d.ms, 'query() + semantic rank', d.params), d.sql);
       }
 
-      // ---------- screen 3: catalog ----------
+      // ---------- screen 3: group (conformed dimensions) ----------
+      async function runGroup() {
+        const out = $('r-group'); out.innerHTML = '<p class="loading">resolving the dimension against the join graph …</p>';
+        const dim = $('groupDim').value;
+        const payload = { query: $('q').value.trim(), dim, mode };
+        if (mode==='threshold') payload.threshold = Number(cutoff.value); else payload.top_k = kVal();
+        let d; try { const r = await fetch('/api/group', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)}); d = await r.json(); if(!r.ok) throw new Error(d.error); }
+        catch(e){ out.innerHTML =
+          '<div class="cohort" style="border-left-color:var(--bad)"><p class="k" style="color:var(--bad)">REFUSED — the graph rejected this dimension (fail-closed)</p>'+
+          '<div class="def">group_by <code class="c">'+esc(dim)+'</code> is not grain-legal at <b>opportunities</b> grain:</div>'+
+          '<div class="err" style="margin-top:11px">'+esc(e.message||e)+'</div>'+
+          '<p class="note" style="margin-top:11px">A to-many dimension would <b>fan out</b> the measure (count it once per matching child). The engine derives this from the join graph and refuses, rather than silently returning an inflated number — the same no-silent-fabrication discipline as the cohort itself.</p></div>'; return; }
+        const max = Math.max(...d.rows.map((r)=>Number(r.pipeline)||0), 1);
+        const rows = d.rows.map((r)=>{ const p = Number(r.pipeline)||0; const w = Math.max(1, Math.round(p/max*100));
+          return '<tr><td class="txt">'+esc(r[dim])+'</td><td class="s">$'+Math.round(p).toLocaleString()+'<div class="gbar"><i style="width:'+w+'%"></i></div></td><td class="t">'+intf(r.deals)+'</td></tr>'; }).join('');
+        out.innerHTML = withRaw(
+          '<div class="cohort"><p class="k">conformed group — the cohort split by a grain-legal dimension</p>'+
+          '<div class="def">pipeline for opportunities relevant to “'+esc($('q').value.trim())+'”, grouped by <code class="c">'+esc(dim)+'</code> <span class="timing">('+d.rows.length+' groups, to-one ⇒ a grain-safe LEFT JOIN)</span></div></div>'+
+          '<table><thead><tr><th>'+esc(dim)+'</th><th>weighted pipeline</th><th>deals</th></tr></thead><tbody>'+rows+'</tbody></table>'+
+          sqlPanel(d.sql, d.ms, 'conformed group_by', d.params), d.sql);
+      }
+
+      // ---------- screen 4: catalog ----------
       async function runCatalog() {
         const out = $('r-catalog'); out.innerHTML = '<p class="loading">describing …</p>';
         const ent = $('catEntity').value;
@@ -274,8 +323,9 @@
           '<p class="timing" style="margin-top:10px">describe('+esc(d.entity)+') · '+d.ms+' ms</p>';
       }
 
-      function runActive(){ syncCutoff(); if(screen==='metric') runMetric(); else if(screen==='explore') runExplore(); else runCatalog(); }
+      function runActive(){ syncCutoff(); if(screen==='metric') runMetric(); else if(screen==='explore') runExplore(); else if(screen==='group') runGroup(); else runCatalog(); }
       $('go').onclick = runActive;
+      $('groupDim').onchange = runGroup;
       $('catEntity').onchange = runCatalog;
       $('q').addEventListener('keydown', (e)=>{ if(e.key==='Enter') runActive(); });
       runMetric();
