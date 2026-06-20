@@ -90,6 +90,8 @@
       pre.sql { margin: 0; padding: 14px 15px; background: var(--code); border-top: 1px solid var(--line); border-radius: 0 0 10px 10px; overflow-x: auto; font: 12.5px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; color: #cfe3f7; white-space: pre-wrap; word-break: break-word; }
       pre.sql .kw { color: #ff9d7a; } pre.sql .fn { color: var(--accent2); } pre.sql .pm { color: var(--warn); } pre.sql .st { color: #9ee37d; }
       .timing { color: var(--dim); font-size: 11px; }
+      .actions { display: flex; gap: 8px; margin-top: 11px; }
+      .actions .copy { padding: 6px 12px; font-size: 12px; }
       /* bound-parameter legend */
       .params { border-top: 1px solid var(--line); padding: 12px 15px; background: #0c121d; border-radius: 0 0 10px 10px; }
       .params .ph { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); margin-bottom: 7px; }
@@ -247,6 +249,14 @@
         '<pre class="sql">'+hlSql(sql)+'</pre>'+paramLegend(params)+'</details></div>') : '';
       const withRaw = (html, sql) => { const d=document.createElement('div'); d.innerHTML=html; const det=d.querySelector('details'); if(det) det.dataset.raw=sql||''; return d.innerHTML; };
 
+      // QoL: reproduce any call as a cURL, and (metric) copy the raw auditable citation JSON.
+      const b64 = (s) => btoa(unescape(encodeURIComponent(s)));
+      const curlFor = (path, payload) => "curl -s http://localhost:7878"+path+" \\\n  -H 'content-type: application/json' \\\n  -d '"+JSON.stringify(payload).replace(/'/g,"'\\''")+"' | jq";
+      const copyBtn = (label, text) => '<button class="copy" data-c="'+b64(text)+'" onclick="navigator.clipboard.writeText(decodeURIComponent(escape(atob(this.dataset.c))));const t=this.textContent;this.textContent=\'copied ✓\';setTimeout(()=>this.textContent=t,1200)">'+label+'</button>';
+      const actionsBar = (path, payload, citation) =>
+        '<div class="actions">'+copyBtn('copy as cURL', curlFor(path, payload))+
+        (citation?copyBtn('copy citation JSON', JSON.stringify(citation, null, 2)):'')+'</div>';
+
       // ---------- screen 1: cohort metric ----------
       async function runMetric() {
         const out = $('r-metric'); out.innerHTML = '<p class="loading">embedding · ranking observations · folding the cohort …</p>';
@@ -274,7 +284,8 @@
             boundaryPanel+
           '</div>'+
           '<div class="metric"><div class="v">'+fmtV(d.measure.fmt, mv)+'</div><div class="l">'+esc(d.measure.label)+'<br>over the cohort above</div></div>'+
-          sqlPanel(d.sql, d.ms, 'grain-safe EXISTS semijoin', d.params), d.sql);
+          sqlPanel(d.sql, d.ms, 'grain-safe EXISTS semijoin', d.params)+
+          actionsBar('/api/relevant', payload, d.citation), d.sql);
       }
 
       // ---------- screen 2: explore evidence ----------
@@ -291,7 +302,8 @@
           '<div class="cohort" style="border-left-color:var(--accent)"><p class="k" style="color:var(--accent)">the evidence — observations in the cohort</p>'+
           '<div class="def"><b>'+intf(d.total)+'</b> observations relevant to “'+esc($('q').value.trim())+'” · showing top '+(d.rows||[]).length+' by similarity</div></div>'+
           '<table><thead><tr><th>type</th><th>observation text</th><th>similarity</th></tr></thead><tbody>'+rows+'</tbody></table>'+
-          sqlPanel(d.sql, d.ms, 'query() + semantic rank', d.params), d.sql);
+          sqlPanel(d.sql, d.ms, 'query() + semantic rank', d.params)+
+          actionsBar('/api/explore', payload), d.sql);
       }
 
       // ---------- screen 3: group (conformed dimensions) ----------
@@ -313,7 +325,8 @@
           '<div class="cohort"><p class="k">conformed group — the cohort split by a grain-legal dimension</p>'+
           '<div class="def">pipeline for opportunities relevant to “'+esc($('q').value.trim())+'”, grouped by <code class="c">'+esc(dim)+'</code> <span class="timing">('+d.rows.length+' groups, to-one ⇒ a grain-safe LEFT JOIN)</span></div></div>'+
           '<table><thead><tr><th>'+esc(dim)+'</th><th>weighted pipeline</th><th>deals</th></tr></thead><tbody>'+rows+'</tbody></table>'+
-          sqlPanel(d.sql, d.ms, 'conformed group_by', d.params), d.sql);
+          sqlPanel(d.sql, d.ms, 'conformed group_by', d.params)+
+          actionsBar('/api/group', payload), d.sql);
       }
 
       // ---------- screen 4: catalog ----------
