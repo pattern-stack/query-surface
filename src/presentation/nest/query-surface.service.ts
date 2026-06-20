@@ -52,6 +52,7 @@ export class QuerySurfaceService implements OnModuleInit {
     registerSchema(this.options.schema as never, {
       ...(this.options.eav ? { eav: this.options.eav } : {}),
       ...(this.options.fieldMeta ? { fieldMeta: this.options.fieldMeta } : {}),
+      ...(this.options.computed ? { computed: this.options.computed } : {}),
     });
   }
 

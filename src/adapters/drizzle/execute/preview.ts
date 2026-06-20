@@ -7,8 +7,10 @@
 // preview fields project real columns; EAV preview fields project through
 // field_values joins. The consumer sees one flat row.
 
+import type { SQL } from 'drizzle-orm';
 import type { PgColumn } from 'drizzle-orm/pg-core';
 import type { EntityName } from '../../../internal/language/types.ts';
+import { computedSelectShape } from '../compile/computed.ts';
 import type { FieldMap } from '../eav/field-map.ts';
 import { buildEntityCatalog } from '../registry/catalog.ts';
 import { registry } from '../registry/registry.ts';
@@ -18,6 +20,8 @@ export interface PreviewSelection {
   nativeColumns: Record<string, PgColumn>;
   /** EAV field keys to project via field_values joins. */
   eavKeys: string[];
+  /** Computed metrics flagged for preview, keyed by snake_case metric key. */
+  computed: Record<string, SQL.Aliased>;
 }
 
 /** Curated preview fields for an entity, split into native columns + EAV keys. */
@@ -31,10 +35,12 @@ export function catalogPreview(entity: EntityName, fieldMap?: FieldMap): Preview
   const nativeColumns: Record<string, PgColumn> = {};
   const eavKeys: string[] = [];
   for (const f of preview) {
+    if (f.computed) continue; // computed previews come from computedSelectShape
     if (f.eav) eavKeys.push(f.key);
     else if (f.column && cols[f.column]) nativeColumns[f.key] = cols[f.column];
   }
-  return { nativeColumns, eavKeys };
+  const computed = computedSelectShape(entity, { previewOnly: true });
+  return { nativeColumns, eavKeys, computed };
 }
 
 /**
