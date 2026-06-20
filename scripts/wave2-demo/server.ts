@@ -119,6 +119,35 @@ async function apiExplore(body: any) {
   };
 }
 
+// ── conformed dimensions: group the cohort by a dimension; the GRAPH decides what's legal ──
+// A to-one dim (accounts.name) → a grain-safe LEFT JOIN. A to-many dim (observations.type) →
+// REFUSED (it would fan out the measure). The legality is derived from the join graph, not listed.
+async function apiGroup(body: any) {
+  const dim = String(body.dim ?? 'accounts.name');
+  const t0 = performance.now();
+  const res = await h.service.aggregate(
+    'opportunities',
+    {
+      group_by: [dim],
+      measures: [
+        { on: 'weighted_amount', agg: 'sum', as: 'pipeline' },
+        { on: '*', agg: 'count', as: 'deals' },
+      ],
+      filter: { on: 'observations.normalized_text', op: 'relevant', query: body.query, ...crispFrom(body) },
+      order_by: [{ on: 'pipeline', dir: 'desc' }],
+      limit: 25,
+    },
+    { include_sql: true },
+  );
+  return {
+    dim,
+    rows: res.rows,
+    sql: pretty(res.sql),
+    params: displayParams(res.params, body.query),
+    ms: Math.round(performance.now() - t0),
+  };
+}
+
 // ── the host-supplied catalog: describe(entity) — native ⊕ EAV fields + the relation graph ──
 async function apiDescribe(entity: string) {
   const t0 = performance.now();
@@ -129,6 +158,7 @@ async function apiDescribe(entity: string) {
 const ROUTES: Record<string, (body: any) => Promise<unknown>> = {
   '/api/relevant': apiRelevant,
   '/api/explore': apiExplore,
+  '/api/group': apiGroup,
 };
 
 const server = Bun.serve({
