@@ -17,6 +17,9 @@
       h1 { font-size: 19px; margin: 0 0 2px; letter-spacing: -0.01em; }
       .sub { color: var(--dim); font-size: 13px; margin: 0 0 18px; }
       .sub code, code.c { color: var(--accent2); background: #0e1420; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+      .badge { font-size: 11px; font-weight: 500; padding: 2px 9px; border-radius: 20px; vertical-align: middle; margin-left: 8px; }
+      .badge.stub { background: #2a2416; color: var(--warn); border: 1px solid #4a3f1f; }
+      .badge.live { background: #14302a; color: var(--accent2); border: 1px solid #1f4a3f; }
 
       .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 18px; }
       .tab { padding: 9px 16px; color: var(--dim); cursor: pointer; font-size: 14px; border-bottom: 2px solid transparent; margin-bottom: -1px; }
@@ -116,7 +119,7 @@
   </head>
   <body>
     <div class="wrap">
-      <h1>query-surface · relevance as a selection</h1>
+      <h1>query-surface · relevance as a selection <span id="embedBadge" class="badge"></span></h1>
       <p class="sub">A metric over a <b>relevance-defined cohort</b>, the cohort shown <b>before</b> the number — with the SQL, the evidence, and the host-supplied catalog it all derives from.</p>
 
       <div class="tabs">
@@ -191,6 +194,14 @@
       const chips = $('chips');
       for (const p of PRESETS) { const c = document.createElement('span'); c.className='chip'; c.textContent=p;
         c.onclick = () => { $('q').value = p; runActive(); }; chips.appendChild(c); }
+
+      // embed mode badge — stub (verbatim phrase) vs a live model (true free-text concepts)
+      fetch('/api/info').then(r=>r.json()).then((info)=>{
+        const b = $('embedBadge'); b.className = 'badge ' + (info.real ? 'live' : 'stub');
+        b.textContent = 'embed: ' + info.embedMode;
+        const note = document.querySelector('.note');
+        if (info.real && note) note.innerHTML = 'Live embedder (<code>'+info.model+'</code>) — the concept is a TRUE free-text query against the stored vectors. Try anything, not just the chips.';
+      }).catch(()=>{});
 
       document.querySelectorAll('.tab').forEach((t) => t.onclick = () => {
         screen = t.dataset.screen;
