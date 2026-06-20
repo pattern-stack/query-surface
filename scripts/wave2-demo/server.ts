@@ -93,57 +93,64 @@ type ResolvedMeasure = { key: string; name: string; agg: string; additivity: str
 type ResolvedDimension = { key: string; name: string; label: string };
 type ResolvedModel = { measures: ResolvedMeasure[]; dimensions: ResolvedDimension[]; gated: { total: number; exposed: number; dormant: number } };
 
-const MEASURES: Record<string, MDef> = {
-  deals: { on: '*', agg: 'count', as: 'deals', label: 'Opportunity count', fmt: 'int' }, // built-in (not EAV)
-};
-// Group-by dimensions offered on the ③ Group screen: the resolved EAV dims (config-driven) + a
-// fixed pair that demonstrates the conformed rule — accounts.name (to-one ✓) and the REFUSAL.
-const GROUP_DIMS: { dim: string; label: string }[] = [];
-let measureSpecs: NonNullable<Parameters<typeof makeQuerySurface>[1]>['measureSpecs'];
-let dimensionSpecs: NonNullable<Parameters<typeof makeQuerySurface>[1]>['dimensionSpecs'];
-let SEMANTIC_SOURCE: string;
+// Mutable model state — REBUILT (rebuild()) on boot and on POST /api/refresh, so curating a field
+// in the field-management UI lights up here WITHOUT a restart (the live curate→surface loop).
+let MEASURES: Record<string, MDef> = {};
+let GROUP_DIMS: { dim: string; label: string }[] = [];
+let SEMANTIC_SOURCE = '';
 let SEMANTIC_GATED = { total: 0, exposed: 0, dormant: 0 };
+let DEFAULT_MEASURE = 'deals';
+let h: ReturnType<typeof makeQuerySurface>;
 
-let resolved: ResolvedModel | null = null;
-try {
-  const r = await fetch(`${CRM_API}/resolved-model/opportunity`); // baseline (closed-by-default)
-  if (r.ok) resolved = (await r.json()) as ResolvedModel;
-} catch {
-  /* app not running — fall through to defaults */
-}
+async function rebuild(): Promise<void> {
+  MEASURES = { deals: { on: '*', agg: 'count', as: 'deals', label: 'Opportunity count', fmt: 'int' } }; // built-in count
+  GROUP_DIMS = [];
+  let measureSpecs: NonNullable<Parameters<typeof makeQuerySurface>[1]>['measureSpecs'];
+  let dimensionSpecs: NonNullable<Parameters<typeof makeQuerySurface>[1]>['dimensionSpecs'];
 
-if (resolved && resolved.measures.length) {
-  measureSpecs = resolved.measures.map((m) => ({
-    name: m.name,
-    key: m.key,
-    agg: m.agg as MDef['agg'],
-    additivity: (m.additivity === 'additive' ? 'additive' : 'non') as 'additive' | 'non',
-  }));
-  for (const m of resolved.measures) {
-    MEASURES[m.name] = { on: m.name, agg: m.agg as MDef['agg'], as: m.name, label: m.label, fmt: (m.format ?? 'usd') as MDef['fmt'] };
+  let resolved: ResolvedModel | null = null;
+  try {
+    const r = await fetch(`${CRM_API}/resolved-model/opportunity`); // baseline (closed-by-default)
+    if (r.ok) resolved = (await r.json()) as ResolvedModel;
+  } catch {
+    /* app not running — fall through to defaults */
   }
-  // EAV dimensions (groupable select/text fields) — config-driven from the resolved model.
-  dimensionSpecs = resolved.dimensions.map((d) => ({ name: d.name, key: d.key }));
-  for (const d of resolved.dimensions) GROUP_DIMS.push({ dim: d.name, label: `${d.label} — EAV ✓` });
-  SEMANTIC_GATED = resolved.gated;
-  SEMANTIC_SOURCE = `field-management app · baseline-gated (${resolved.measures.length} measures, ${resolved.dimensions.length} dims, ${resolved.gated.dormant} of ${resolved.gated.total} fields dormant)`;
-} else {
-  // Fallback: the built-in default measures (the field-management app isn't reachable).
-  MEASURES.weighted_amount = { on: 'weighted_amount', agg: 'sum', as: 'weighted_amount', label: 'Weighted pipeline (default)', fmt: 'usd' };
-  MEASURES.deal_probability = { on: 'deal_probability', agg: 'avg', as: 'deal_probability', label: 'Avg win probability (default)', fmt: 'pct' };
-  SEMANTIC_SOURCE = 'built-in default (field-management app not reachable)';
+
+  if (resolved && resolved.measures.length) {
+    measureSpecs = resolved.measures.map((m) => ({
+      name: m.name,
+      key: m.key,
+      agg: m.agg as MDef['agg'],
+      additivity: (m.additivity === 'additive' ? 'additive' : 'non') as 'additive' | 'non',
+    }));
+    for (const m of resolved.measures) {
+      MEASURES[m.name] = { on: m.name, agg: m.agg as MDef['agg'], as: m.name, label: m.label, fmt: (m.format ?? 'usd') as MDef['fmt'] };
+    }
+    dimensionSpecs = resolved.dimensions.map((d) => ({ name: d.name, key: d.key }));
+    for (const d of resolved.dimensions) GROUP_DIMS.push({ dim: d.name, label: `${d.label} — EAV ✓` });
+    SEMANTIC_GATED = resolved.gated;
+    SEMANTIC_SOURCE = `field-management app · baseline-gated (${resolved.measures.length} measures, ${resolved.dimensions.length} dims, ${resolved.gated.dormant} of ${resolved.gated.total} fields dormant)`;
+  } else {
+    MEASURES.weighted_amount = { on: 'weighted_amount', agg: 'sum', as: 'weighted_amount', label: 'Weighted pipeline (default)', fmt: 'usd' };
+    MEASURES.deal_probability = { on: 'deal_probability', agg: 'avg', as: 'deal_probability', label: 'Avg win probability (default)', fmt: 'pct' };
+    SEMANTIC_SOURCE = 'built-in default (field-management app not reachable)';
+  }
+
+  // The two fixed dims that teach the conformed rule, after the resolved EAV dims:
+  GROUP_DIMS.push({ dim: 'accounts.name', label: 'accounts.name — to-one ✓' });
+  GROUP_DIMS.push({ dim: 'observations.type', label: 'observations.type — to-many ✗ (refused)' });
+
+  const prev = h;
+  h = makeQuerySurface(DBURL, {
+    ...(realEmbed ? { embed: realEmbed } : {}),
+    ...(measureSpecs ? { measureSpecs } : {}),
+    ...(dimensionSpecs ? { dimensionSpecs } : {}),
+  });
+  DEFAULT_MEASURE = Object.keys(MEASURES).find((k) => k !== 'deals') ?? 'deals';
+  if (prev) await prev.close().catch(() => {}); // release the previous pool
 }
 
-// Always offer the two fixed dims that teach the conformed rule, after the resolved EAV dims:
-GROUP_DIMS.push({ dim: 'accounts.name', label: 'accounts.name — to-one ✓' });
-GROUP_DIMS.push({ dim: 'observations.type', label: 'observations.type — to-many ✗ (refused)' });
-
-const h = makeQuerySurface(DBURL, {
-  ...(realEmbed ? { embed: realEmbed } : {}),
-  ...(measureSpecs ? { measureSpecs } : {}),
-  ...(dimensionSpecs ? { dimensionSpecs } : {}),
-});
-const DEFAULT_MEASURE = Object.keys(MEASURES).find((k) => k !== 'deals') ?? 'deals';
+await rebuild();
 
 function crispFrom(body: { mode?: string; threshold?: number; top_k?: number }) {
   return body.mode === 'top_k'
@@ -247,6 +254,13 @@ const server = Bun.serve({
     const url = new URL(req.url);
     if (url.pathname === '/' || url.pathname === '/index.html') {
       return new Response(HTML, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+    }
+    if (url.pathname === '/api/refresh' && req.method === 'POST') {
+      // Re-pull the resolved model from the field-management app + rebuild the aggregate model.
+      // Curate a field there → POST here → it's live (no restart).
+      return rebuild()
+        .then(() => Response.json({ ok: true, semanticSource: SEMANTIC_SOURCE, gated: SEMANTIC_GATED }))
+        .catch((e) => Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 }));
     }
     if (url.pathname === '/api/info') {
       return Response.json({
