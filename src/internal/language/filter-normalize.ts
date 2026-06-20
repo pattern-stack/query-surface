@@ -200,7 +200,9 @@ function normalizeRelevantLeaf(input: Record<string, unknown>): RelevantLeaf {
   } else {
     const k = Number(topKRaw);
     if (!Number.isInteger(k) || k <= 0) {
-      throw new Error(`${E} 'relevant' "top_k" must be a positive integer (got ${String(topKRaw)})`);
+      throw new Error(
+        `${E} 'relevant' "top_k" must be a positive integer (got ${String(topKRaw)})`,
+      );
     }
     leaf.top_k = k;
   }
@@ -243,6 +245,16 @@ export function normalizeFilter(input: unknown): FilterExpression {
   // value op (CANONICAL_OPS). The service resolves its vector/embeddingColumn before compile.
   if ('on' in input && 'op' in input && stripKey(String(input.op)) === 'relevant') {
     return normalizeRelevantLeaf(input);
+  }
+
+  // Crispified relevance leaves (sim_gte / sim_topk) — the PRIVATE shapes crispifyRelevant emits
+  // BEFORE compile. The retrieval compiler re-runs this front-door normalizer on the (already
+  // canonical) crispified filter, so the normalizer must be IDEMPOTENT over them: pass through
+  // verbatim (they are not value ops, carry no `value`, and are never caller-authored). Without
+  // this, a crisp leaf hits the legacy-leaf branch below and is rejected as an "unknown op".
+  if ('on' in input && 'op' in input) {
+    const op = stripKey(String(input.op));
+    if (op === 'sim_gte' || op === 'sim_topk') return input as unknown as FilterExpression;
   }
 
   // Legacy explicit leaf {on, op, value} — kept as an escape hatch (and back-compat).

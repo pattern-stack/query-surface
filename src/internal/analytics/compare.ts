@@ -11,7 +11,7 @@
 
 import { ENGINE_ERROR } from '../language/error-messages';
 import type { AggregateInput, MeasureRef } from './measure-catalog';
-import type { FilterExpression, Measure, Predicate } from './types';
+import type { FilterExpression, Measure, Predicate, RelevanceCitation } from './types';
 
 type Row = Record<string, unknown>;
 
@@ -55,6 +55,9 @@ export interface CompareResponse {
   derives: CompareDerive[];
   rows: Row[];
   warnings?: string[];
+  /** ON whenever the BASE filter carried a `relevant` leaf (ruling b: the ONE cohort def
+   *  for all variants). Additive — computed by a row-grain companion query, flows to the wire. */
+  citation?: RelevanceCitation;
 }
 
 /** Separate delivery: the N labeled aggregate results, unstitched (client aligns). */
@@ -64,6 +67,8 @@ export interface CompareSeparateResponse {
   baseline: string;
   variants: Array<{ label: string; rows: Row[]; row_count: number }>;
   warnings?: string[];
+  /** ON whenever the BASE filter carried a `relevant` leaf (ruling b). Additive. */
+  citation?: RelevanceCitation;
 }
 
 /** AND a base filter with a variant filter (either may be absent). */

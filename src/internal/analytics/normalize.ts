@@ -12,13 +12,15 @@
 // tracked in the uniqueness set, so a user alias can never silently collide with one.
 
 import { ENGINE_ERROR } from '../language/error-messages';
+import type { FilterExpression, RelevantLeaf, SimGteLeaf, SimTopkLeaf } from '../language/types';
+import { mapLeaves } from './filter-columns';
 import {
   type AggregateInput,
   type AtomicMeasureDef,
   type MeasureCatalog,
   validateRatioDef,
 } from './measure-catalog';
-import type { Aggregate, CompositeColumn, Measure } from './types';
+import type { Aggregate, CompositeColumn, Measure, Predicate } from './types';
 
 const legAlias = (as: string, side: 'num' | 'den') => `__cmp_${as}_${side}`;
 
@@ -89,4 +91,83 @@ export function normalizeAggregate(catalog: MeasureCatalog, input: AggregateInpu
   }
 
   return { ...input, measures, ...(composites.length ? { composites } : {}) };
+}
+
+// ---------------------------------------------------------------------------
+// Relevance defuzzify (Wave-2 — ADR-0024 §A/Amendment 2) — Step 4
+// ---------------------------------------------------------------------------
+// `crispifyRelevant` lowers every service-stamped `op:'relevant'` leaf into a PRIVATE
+// crisp shape (sim_gte | sim_topk) the predicate compilers know how to emit. It runs
+// AFTER the service's async embed walk has stamped {vector, embeddingColumn} onto each
+// relevant leaf, and BEFORE compile (in run-drizzle, before the fail-closed conform guard,
+// so the crisp leaf's embedding-column `on` rides the wave-1 conform-or-reject guard #5
+// unchanged).
+//
+// This module is DIALECT-FREE (no drizzle import) — it emits only STRUCTURAL leaves; the
+// drizzle predicate compiler lowers sim_gte → a `<=>`-distance `>=` test and sim_topk → a
+// ranked-CTE membership test. Crispify REWRITES `on` from the semantic TEXT column to the
+// resolved EMBEDDING column so the wave-1 join-plan/conform resolver lands on a real column.
+
+const E = ENGINE_ERROR.FILTER;
+
+/** Lower ONE service-stamped relevant leaf into its crisp sim_gte | sim_topk form. Re-asserts
+ *  the XOR (exactly one of threshold|top_k) and vector-present DEFENSIVELY — throws, never
+ *  silently skips (a relevance op that reached compile uncrispified is the valueLeaf landmine). */
+function crispifyLeaf(rel: RelevantLeaf): SimGteLeaf | SimTopkLeaf {
+  if (!rel.vector || rel.vector.length === 0) {
+    throw new Error(
+      `${E} a 'relevant' leaf on '${rel.on}' reached crispify without a resolved vector — the service must stamp {vector, embeddingColumn} before compile`,
+    );
+  }
+  if (!rel.embeddingColumn) {
+    throw new Error(
+      `${E} a 'relevant' leaf on '${rel.on}' reached crispify without a resolved embeddingColumn — the service must stamp it before compile`,
+    );
+  }
+  const hasThreshold = rel.threshold !== undefined;
+  const hasTopK = rel.top_k !== undefined;
+  if (hasThreshold === hasTopK) {
+    throw new Error(
+      `${E} a 'relevant' leaf requires EXACTLY ONE of "threshold" or "top_k" (got ${
+        hasThreshold ? 'both' : 'neither'
+      }) — the crisp set must be explicit, no silent default`,
+    );
+  }
+  // Crispify rewrites `on` from the semantic text column to the resolved embedding column so the
+  // wave-1 conform/semijoin resolver lowers it over a REAL column. For a CROSS-GRAIN leaf the
+  // dotted prefix is LOAD-BEARING (it names the child entity the compiler ranks/EXISTS over), so
+  // rewrite ONLY the final segment (text column → embedding column) and keep the prefix:
+  // `observations.normalized_text` → `observations.embedding`; a bare `on` stays bare.
+  const dot = rel.on.lastIndexOf('.');
+  const crispOn = dot < 0 ? rel.embeddingColumn : `${rel.on.slice(0, dot)}.${rel.embeddingColumn}`;
+  if (hasThreshold) {
+    return {
+      on: crispOn,
+      op: 'sim_gte',
+      vector: rel.vector,
+      embeddingColumn: rel.embeddingColumn,
+      threshold: rel.threshold as number,
+    };
+  }
+  return {
+    on: crispOn,
+    op: 'sim_topk',
+    vector: rel.vector,
+    embeddingColumn: rel.embeddingColumn,
+    top_k: rel.top_k as number,
+    ...(rel.per !== undefined ? { per: rel.per } : {}),
+  };
+}
+
+/**
+ * Recursively rewrite a Predicate, replacing every `op:'relevant'` leaf with its crisp
+ * sim_gte | sim_topk form (defuzzify). Same and/or/not+leaf recursion as `filterColumnPaths`
+ * (reuses `mapLeaves` — no second walker), IMMUTABLE (the input tree is untouched). Value leaves
+ * and the boolean structure pass through unchanged. No-op when no relevant leaf is present.
+ */
+export function crispifyRelevant(pred: Predicate): Predicate {
+  return mapLeaves(pred, (leaf) => {
+    if ((leaf as { op?: unknown }).op !== 'relevant') return leaf;
+    return crispifyLeaf(leaf as RelevantLeaf) as FilterExpression;
+  });
 }

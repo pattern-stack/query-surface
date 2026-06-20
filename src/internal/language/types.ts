@@ -253,6 +253,11 @@ export interface SearchEntityResult {
   warnings?: string[]; // non-fatal advisories (e.g. sort ignored because rank_by owns ordering)
   sql?: string; // debug
   params?: unknown[];
+  /** ON whenever a `relevant` leaf was present in the query filter — the auditable cohort
+   *  definition (cutoff, match_count, exemplars, boundary), computed by a row-grain companion
+   *  query. Additive (flows to the Nest wire verbatim). Defined in analytics/types.ts (the
+   *  dialect-free home, parallel to SnippetEntry); imported type-only to avoid a runtime cycle. */
+  citation?: import('../analytics/types.ts').RelevanceCitation;
 }
 
 // Response shape mirrors the request:

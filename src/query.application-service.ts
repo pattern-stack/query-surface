@@ -15,11 +15,15 @@
 
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { type EavContext, loadFieldMaps } from './adapters/drizzle/eav/field-map.ts';
-import { aggregate as runAggregate } from './adapters/drizzle/execute/run-drizzle.ts';
+import {
+  buildRelevanceCitation,
+  aggregate as runAggregate,
+} from './adapters/drizzle/execute/run-drizzle.ts';
 import { runFetch, runSearch } from './adapters/drizzle/execute/runners.ts';
 import { type EntityCatalog, buildEntityCatalog } from './adapters/drizzle/registry/catalog.ts';
 import type { AggregateModel } from './adapters/drizzle/registry/model.ts';
 import { registry } from './adapters/drizzle/registry/registry.ts';
+import { mapLeaves, walkLeaves } from './internal/analytics/filter-columns.ts';
 import { TENANT_GLOBAL, conformedDimensions, runCompare } from './internal/analytics/index.ts';
 import type {
   AggregateInput,
@@ -28,8 +32,10 @@ import type {
   CompareResponse,
   CompareSeparateResponse,
   ConformedDim,
+  RelevanceCitation,
   ScopeFor,
 } from './internal/analytics/index.ts';
+import { crispifyRelevant } from './internal/analytics/normalize.ts';
 import { ENGINE_ERROR } from './internal/language/error-messages.ts';
 import { normalizeRankBy } from './internal/language/rank-normalize.ts';
 import type {
@@ -37,6 +43,7 @@ import type {
   FetchResponse,
   FilterExpression,
   RankBy,
+  RelevantLeaf,
   SearchEntityResult,
   Sort,
   WindowMeasure,
@@ -101,6 +108,10 @@ export interface QueryOptions {
   window?: WindowMeasure[];
   preview?: boolean;
   include_sql?: boolean;
+  // Citation calibration: when a `relevant` leaf is present, the auditable cohort definition
+  // is ALWAYS attached. `boundary:true` additionally reads the highest_excluded row (the
+  // strongest NON-member, one row past the cutoff) — ON-REQUEST (one extra row scan).
+  citation?: { boundary?: boolean };
 }
 
 export interface FetchOptions {
@@ -211,21 +222,35 @@ export class QueryApplicationService {
     // Semantic rank: resolve the query vector + embedding column here (the
     // service owns the async embed() call; compile stays synchronous).
     const rankSemantic = await this.resolveSemanticRank(entity, rankBy);
-    return runSearch(
-      this.db,
-      {
-        entity,
-        filter: this.scoped(entity, opts.filter),
-        sort: opts.sort,
-        page: opts.page,
-        columns: opts.columns,
-        rankBy,
-        rankSemantic,
-        window: opts.window,
-      },
-      { preview: opts.preview, include_sql: opts.include_sql },
-      eav,
-    );
+    // Defuzzify any `op:'relevant'` filter leaf (embed → {vector, embeddingColumn}) BEFORE scope
+    // is AND-ed on — scope leaves are value ops, so resolving the caller's filter first is safe.
+    // Then crispify (relevant → sim_gte/sim_topk) HERE: compiler.ts's normalizeFilter is sync, so
+    // the async embed walk + this defuzzify are service-owned, lowering the filter to crisp leaves
+    // before compile (the aggregate path crispifies inside run-drizzle instead).
+    const resolved = await this.resolveRelevantFilters(entity, opts.filter);
+    const filter = resolved ? crispifyRelevant(resolved) : resolved;
+    // Citation is MANDATORY whenever a relevant leaf is present — computed from the RESOLVED
+    // (vector-stamped, pre-crispify) filter by a row-grain companion query, in parallel with
+    // the main search (both await below). Absent when no relevant leaf fired.
+    const [result, citation] = await Promise.all([
+      runSearch(
+        this.db,
+        {
+          entity,
+          filter: this.scoped(entity, filter),
+          sort: opts.sort,
+          page: opts.page,
+          columns: opts.columns,
+          rankBy,
+          rankSemantic,
+          window: opts.window,
+        },
+        { preview: opts.preview, include_sql: opts.include_sql },
+        eav,
+      ),
+      this.citationFor(entity, resolved, opts.citation?.boundary),
+    ]);
+    return citation ? { ...result, citation } : result;
   }
 
   /** Default `rank_by.on` to the entity's sole registered semantic text column when the caller
@@ -279,15 +304,116 @@ export class QueryApplicationService {
     return { vector, embeddingColumn };
   }
 
+  /**
+   * Resolve every `op:'relevant'` leaf in a filter tree to its `{ vector, embeddingColumn }`
+   * BEFORE compile (the service owns the async embed() call; compile stays synchronous) — the
+   * tree-level generalization of `resolveSemanticRank`. Walks the predicate with the SAME
+   * and/or/not+leaf recursion as `filterColumnPaths` (no second walker), embeds each leaf's
+   * `query` in parallel, then IMMUTABLY rebuilds the tree stamping `{ vector, embeddingColumn }`
+   * onto each relevant leaf (the caller's `filter` is never mutated).
+   *
+   * Cross-grain: a relevant leaf targets the entity its `on` names — a dotted `on`
+   * (`observations.normalized_text`) targets the prefix entity (the CHILD), a bare `on` targets
+   * `entity` (the root). The embedding column is resolved via
+   * `semanticColumns[<target entity>][<text column>]`, so a cross-grain leaf keys on the child,
+   * not the aggregate root. Fail-loud (ENGINE_ERROR-prefixed): no embed bound, the column isn't
+   * semantically searchable, or the crisp set isn't EXACTLY ONE of threshold|top_k.
+   *
+   * Idempotent: a leaf already carrying a `vector` is skipped (compare() resolves base + every
+   * variant up front, then delegates each variant to aggregate(), which must not re-embed).
+   */
+  private async resolveRelevantFilters(
+    entity: EntityName,
+    filter?: FilterExpression,
+  ): Promise<FilterExpression | undefined> {
+    if (!filter) return filter;
+    const E = ENGINE_ERROR.FILTER;
+
+    // Collect the leaves needing embedding (skip already-resolved ones — idempotency), validating
+    // each as we go so a bad leaf fails before we spend any embed() calls.
+    const pending: RelevantLeaf[] = [];
+    walkLeaves(filter, (leaf) => {
+      if ((leaf as { op?: unknown }).op !== 'relevant') return;
+      const rel = leaf as RelevantLeaf;
+      if (rel.vector) return; // already resolved (compare → variant delegation)
+      // The crisp set is EXPLICIT + MANDATORY — EXACTLY ONE of threshold|top_k (the wave-1
+      // conform-or-reject discipline: no silent default). Re-validated here even though the
+      // front-door normalizer checks it, because a leaf may arrive via the typed object path.
+      const hasThreshold = rel.threshold !== undefined;
+      const hasTopK = rel.top_k !== undefined;
+      if (hasThreshold === hasTopK) {
+        throw new Error(
+          `${E} a 'relevant' leaf requires EXACTLY ONE of "threshold" or "top_k" (got ${
+            hasThreshold ? 'both' : 'neither'
+          }) — the crisp set must be explicit, no silent default`,
+        );
+      }
+      pending.push(rel);
+    });
+    if (pending.length === 0) return filter;
+
+    const embed = this.options.embed;
+    if (!embed) {
+      throw new Error(`${E} semantic 'relevant' filtering is not configured (no embed port)`);
+    }
+
+    // Resolve each leaf's embedding column (against its TARGET entity) + embed its query in
+    // parallel. The vector promises are collected then Promise.all-ed so independent embed() calls
+    // overlap rather than serialize.
+    const resolved = await Promise.all(
+      pending.map(async (rel) => {
+        const { targetEntity, textColumn } = this.relevantTarget(entity, rel.on);
+        const embeddingColumn = this.options.semanticColumns?.[targetEntity]?.[textColumn];
+        if (!embeddingColumn) {
+          throw new Error(
+            `${E} column '${rel.on}' does not support semantic 'relevant' filtering on '${targetEntity}'`,
+          );
+        }
+        const vector = await embed(rel.query);
+        return { rel, vector, embeddingColumn };
+      }),
+    );
+    const byLeaf = new Map(resolved.map((r) => [r.rel, r]));
+
+    // IMMUTABLY rebuild — stamp {vector, embeddingColumn} onto each resolved leaf; everything else
+    // (including already-resolved relevant leaves and value leaves) passes through untouched.
+    return mapLeaves(filter, (leaf) => {
+      const hit = byLeaf.get(leaf as RelevantLeaf);
+      if (!hit) return leaf;
+      return {
+        ...(leaf as RelevantLeaf),
+        vector: hit.vector,
+        embeddingColumn: hit.embeddingColumn,
+      };
+    }) as FilterExpression;
+  }
+
+  /** Split a relevant leaf's `on` into its TARGET entity + text column: a dotted path
+   *  (`observations.normalized_text`) targets the prefix entity (cross-grain → the CHILD); a bare
+   *  `on` targets the root `entity`. Only the LAST segment is the text column (multi-hop dotted
+   *  paths take the final entity.column pair). */
+  private relevantTarget(
+    entity: EntityName,
+    on: string,
+  ): { targetEntity: EntityName; textColumn: string } {
+    const dot = on.lastIndexOf('.');
+    if (dot < 0) return { targetEntity: entity, textColumn: on };
+    return { targetEntity: on.slice(0, dot), textColumn: on.slice(dot + 1) };
+  }
+
   /** Hydrate IDs into full rows, with optional refinement filter + relational expand. */
   async fetch(entity: EntityName, ids: string[], opts: FetchOptions = {}): Promise<FetchResponse> {
     const eav = await this.eav();
+    // Same defuzzify → crispify the query() refinement path runs: resolve any `op:'relevant'`
+    // refinement leaf (async embed) then lower to crisp sim_gte/sim_topk before compile (sync).
+    const resolved = await this.resolveRelevantFilters(entity, opts.filter);
+    const filter = resolved ? crispifyRelevant(resolved) : resolved;
     return runFetch(
       this.db,
       {
         entity,
         ids,
-        filter: this.scoped(entity, opts.filter),
+        filter: this.scoped(entity, filter),
         expand: opts.expand,
         include_sql: opts.include_sql,
       },
@@ -326,7 +452,7 @@ export class QueryApplicationService {
   async aggregate(
     entity: EntityName,
     q: AggregateRequest,
-    opts: { include_sql?: boolean } = {},
+    opts: { include_sql?: boolean; citation?: { boundary?: boolean } } = {},
   ): Promise<AggregateResponse> {
     const model = await this.aggregateModel();
     const scope = this.options.scope;
@@ -338,12 +464,22 @@ export class QueryApplicationService {
     const scopeFor: ScopeFor | undefined = scope
       ? (src) => scope(src as EntityName) ?? (globals.has(src) ? TENANT_GLOBAL : undefined)
       : undefined;
-    return runAggregate(
-      this.db,
-      model,
-      { ...q, entity },
-      { ...(scopeFor ? { scopeFor } : {}), include_sql: opts.include_sql },
-    );
+    // Defuzzify any `op:'relevant'` leaf in the global filter (net-new embed on this path).
+    // Idempotent: a leaf already carrying a vector (compare → per-variant delegation) is skipped,
+    // so this never re-embeds a filter compare() already resolved.
+    const filter = await this.resolveRelevantFilters(entity, q.filter);
+    // Citation is MANDATORY when a relevant leaf is present — a row-grain companion query (the
+    // collapsing aggregate SQL has no row id/text to cite), run in parallel with the aggregate.
+    const [result, citation] = await Promise.all([
+      runAggregate(
+        this.db,
+        model,
+        { ...q, entity, ...(filter !== undefined ? { filter } : {}) },
+        { ...(scopeFor ? { scopeFor } : {}), include_sql: opts.include_sql },
+      ),
+      this.citationFor(entity, filter, opts.citation?.boundary),
+    ]);
+    return citation ? { ...result, citation } : result;
   }
 
   /**
@@ -356,7 +492,70 @@ export class QueryApplicationService {
   async compare(
     entity: EntityName,
     req: CompareRequest,
+    opts: { citation?: { boundary?: boolean } } = {},
   ): Promise<CompareResponse | CompareSeparateResponse> {
-    return runCompare(entity, req, (agg) => this.aggregate(entity, agg));
+    // A relevance cohort is defined ONCE — on the BASE filter only (ruling b). A variant-LOCAL
+    // relevant leaf would fabricate a different cohort per variant (the very cross-variant
+    // mismatch compare() exists to prevent), so REJECT it.
+    for (const v of req.variants ?? []) {
+      if (v.filter && this.hasRelevantLeaf(v.filter)) {
+        throw new Error(
+          `${ENGINE_ERROR.FILTER} a 'relevant' leaf is only allowed in compare()'s base filter, ` +
+            `not in variant '${v.label}' — one cohort is defined for all variants`,
+        );
+      }
+    }
+    // Resolve the base filter's relevant leaves ONCE up front. Each variant then runs through
+    // aggregate(), which is idempotent on already-resolved leaves — so the cohort vector is
+    // embedded exactly once, not re-embedded per variant.
+    const filter = await this.resolveRelevantFilters(entity, req.filter);
+    const resolvedReq: CompareRequest = { ...req, ...(filter !== undefined ? { filter } : {}) };
+    // Citation is MANDATORY when the BASE filter carries a relevant leaf (ruling b: ONE cohort
+    // for all variants). Computed ONCE from the resolved base filter, attached to the result.
+    const [result, citation] = await Promise.all([
+      runCompare(entity, resolvedReq, (agg) => this.aggregate(entity, agg)),
+      this.citationFor(entity, filter, opts.citation?.boundary),
+    ]);
+    return citation ? { ...result, citation } : result;
+  }
+
+  /** True iff a filter tree carries any `op:'relevant'` leaf (resolved or not). */
+  private hasRelevantLeaf(filter: FilterExpression): boolean {
+    return !!this.firstRelevantLeaf(filter);
+  }
+
+  /** The FIRST `op:'relevant'` leaf in a filter tree (undefined when none). Citation is one
+   *  cohort per request, so the first relevant leaf defines it (a relevant leaf is the
+   *  selection axis — multiple would be an unusual compound cohort; v1 cites the first). */
+  private firstRelevantLeaf(filter?: FilterExpression): RelevantLeaf | undefined {
+    if (!filter) return undefined;
+    let hit: RelevantLeaf | undefined;
+    walkLeaves(filter, (leaf) => {
+      if (!hit && (leaf as { op?: unknown }).op === 'relevant') hit = leaf as RelevantLeaf;
+    });
+    return hit;
+  }
+
+  /**
+   * Build the MANDATORY calibration citation for a request whose (already-resolved) filter
+   * carries a relevant leaf. Runs a row-grain COMPANION query over the semantic entity
+   * (run-drizzle.buildRelevanceCitation), reusing the leaf's already-resolved vector (NO second
+   * embed). The semantic entity's tenancy scope is folded in (#3) via the same `scope` resolver
+   * the verbs use. Returns undefined when no relevant leaf is present (citation is then absent).
+   */
+  private async citationFor(
+    entity: EntityName,
+    resolvedFilter?: FilterExpression,
+    boundary?: boolean,
+  ): Promise<RelevanceCitation | undefined> {
+    const leaf = this.firstRelevantLeaf(resolvedFilter);
+    if (!leaf) return undefined;
+    const model = await this.aggregateModel();
+    const { targetEntity } = this.relevantTarget(entity, leaf.on);
+    const scopeForEntity = this.options.scope?.(targetEntity);
+    return buildRelevanceCitation(this.db, model, entity, leaf, {
+      ...(boundary ? { boundary } : {}),
+      ...(scopeForEntity ? { scopeForEntity } : {}),
+    });
   }
 }
