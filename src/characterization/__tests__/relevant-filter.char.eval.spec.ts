@@ -409,4 +409,43 @@ suite('relevance-as-filter (query/fetch) — characterization', () => {
     });
     expect(embedCalls).toBe(2);
   });
+
+  // ---------------------------------------------------------------------------
+  // INVARIANT LANDMINE (c) — the citation companion query is FAIL-CLOSED on a scope-coverage gap
+  // (#3). The companion reads the semantic entity at ROW grain; if a configured `scope` leaves
+  // that entity uncovered AND it is not declared TENANT_GLOBAL, the citation MUST REFUSE rather
+  // than read it unscoped (the cohort number would be computed over rows the citation then leaks).
+  // ---------------------------------------------------------------------------
+  it('citation is FAIL-CLOSED: refuses when scope() leaves the semantic entity uncovered', async () => {
+    const stubEmbed = async (text: string): Promise<number[]> => {
+      const r = await h.db.execute(
+        sql`select embedding::text as e from observations
+            where embedding is not null and normalized_text is not null
+            and normalized_text ilike ${`%${text}%`} order by id limit 1`,
+      );
+      const e = (r.rows[0] as { e?: string } | undefined)?.e;
+      return e ? (JSON.parse(e) as number[]) : new Array(1536).fill(0);
+    };
+    // A scope that covers everything EXCEPT observations (the semantic entity) — a coverage gap,
+    // and observations is NOT in tenantGlobalEntities. So the relevance citation over observations
+    // must fail closed.
+    const gappy = new QueryApplicationService(h.db, {
+      actorUserId: POC_ACTOR_USER_ID,
+      actorOrganizationId: DEALBRAIN_ORG,
+      aggregateModel: () => loadDealbrainModel(h.db),
+      semanticColumns: { observations: { normalized_text: 'embedding' } },
+      embed: stubEmbed,
+      scope: (e) =>
+        e === 'observations'
+          ? undefined // ← the gap: no tenancy predicate for the semantic entity
+          : { on: 'organization_id', op: 'eq', value: DEALBRAIN_ORG },
+      // tenantGlobalEntities omitted → observations is NOT declared global → the gap fails closed.
+    });
+
+    await expect(
+      gappy.query('observations', {
+        filter: { on: 'normalized_text', op: 'relevant', query: ANCHOR, threshold: 0.6 },
+      }),
+    ).rejects.toThrow(/refusing to read it unscoped|scope coverage gap/i);
+  });
 });
