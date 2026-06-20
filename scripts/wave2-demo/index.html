@@ -121,7 +121,7 @@
   </head>
   <body>
     <div class="wrap">
-      <h1>query-surface · relevance as a selection <span id="embedBadge" class="badge"></span></h1>
+      <h1>query-surface · relevance as a selection <span id="embedBadge" class="badge"></span> <button id="syncBtn" class="badge" style="cursor:pointer;border:1px solid var(--line);background:var(--panel2);color:var(--dim)">↻ sync from field-management</button></h1>
       <p class="sub">A metric over a <b>relevance-defined cohort</b>, the cohort shown <b>before</b> the number — with the SQL, the evidence, and the host-supplied catalog it all derives from.</p>
 
       <div class="tabs">
@@ -354,6 +354,17 @@
       $('groupDim').onchange = runGroup;
       $('catEntity').onchange = runCatalog;
       $('q').addEventListener('keydown', (e)=>{ if(e.key==='Enter') runActive(); });
+      // ↻ sync: re-pull the resolved model (curate a field in the field-management UI → click this →
+      // the new measure/dim appears here, no restart), then rebuild the dropdowns + re-run.
+      $('syncBtn').onclick = async () => {
+        const b=$('syncBtn'); const t=b.textContent; b.textContent='↻ syncing…';
+        try { await fetch('/api/refresh',{method:'POST'}); const info=await (await fetch('/api/info')).json();
+          const sel=$('measure'); const cur=sel.value; sel.innerHTML=''; for(const m of (info.measures||[])){const o=document.createElement('option');o.value=m.key;o.textContent=m.label;sel.appendChild(o);} sel.value=[...sel.options].some(o=>o.value===cur)?cur:info.defaultMeasure;
+          const gsel=$('groupDim'); const gcur=gsel.value; gsel.innerHTML=''; for(const dm of (info.dimensions||[])){const o=document.createElement('option');o.value=dm.dim;o.textContent=dm.label;gsel.appendChild(o);} if([...gsel.options].some(o=>o.value===gcur)) gsel.value=gcur;
+          const src=$('measureSrc'); if(src&&info.gated) src.textContent='· '+info.gated.exposed+'/'+info.gated.total+' fields, '+info.gated.dormant+' gated out';
+          b.textContent='↻ synced ✓'; setTimeout(()=>b.textContent=t,1400); runActive();
+        } catch(e){ b.textContent='↻ sync failed'; setTimeout(()=>b.textContent=t,1400); }
+      };
       // initial runMetric() is triggered by the /api/info fetch (after the measure dropdown is built)
     </script>
   </body>
