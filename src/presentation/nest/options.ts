@@ -60,6 +60,9 @@ export interface QuerySurfaceModuleOptions {
    *  Applied on top of any qField metadata stamped on the table — use for plain
    *  pgTable entities where annotations live host-side (e.g. observations). */
   fieldMeta?: RegisterSchemaOptions['fieldMeta'];
+  /** Per-entity computed metrics (see `RegisterSchemaOptions['computed']`) —
+   *  aggregate-over-relationship fields surfaced as first-class columns. */
+  computed?: RegisterSchemaOptions['computed'];
   /** Non-bypassable per-entity tenancy scope for a requester — AND-ed into
    *  every query/fetch. `opts.asUser` (a resolved user id) narrows to one
    *  user's owned rows, composed AFTER the org anchor. */

@@ -91,6 +91,8 @@ export type {
 } from './query.application-service.ts';
 export { QueryApplicationService } from './query.application-service.ts';
 export type {
+  ComputedFieldSpec,
+  ComputedFilterLeaf,
   EavStrategy,
   EntityDescriptor,
   EntityRegistration,

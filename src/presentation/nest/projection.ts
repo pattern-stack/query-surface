@@ -42,6 +42,9 @@ export interface PublicEntityCatalog {
 
 function isPublicField(field: CatalogField, entity: string, expose?: ExposeColumns): boolean {
   if (field.eav) return true;
+  // Computed metrics are curated by declaration (not raw columns), so they pass
+  // the native-column allowlist the same way EAV fields do.
+  if (field.computed) return true;
   if (field.key === 'id') return true;
   if (!expose) return true;
   return (expose[entity] ?? []).includes(field.key);
