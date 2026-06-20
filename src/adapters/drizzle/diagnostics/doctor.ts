@@ -139,17 +139,8 @@ export function diagnose(
         code: 'DANGLING_FK',
         entity,
         column: srcCol,
-        message:
-          `'${entity}.${srcCol}' is a foreign key to '${fk.toTable}' but has no relations() entry — ` +
-          `the surface can't see this relationship (no dotted-path filters, no expand).`,
-        fix:
-          `// in ${entity}'s entity file — merge into the existing relations() if present:\n` +
-          `export const ${srcTable}Relations = relations(${srcTable}, ({ one }) => ({\n` +
-          `  ${relName}: one(${fk.toTable}, {\n` +
-          `    fields: [${srcTable}.${srcProp}],\n` +
-          `    references: [${fk.toTable}.${targetProp}],\n` +
-          `  }),\n` +
-          `}));`,
+        message: `'${entity}.${srcCol}' is a foreign key to '${fk.toTable}' but has no relations() entry — the surface can't see this relationship (no dotted-path filters, no expand).`,
+        fix: `// in ${entity}'s entity file — merge into the existing relations() if present:\nexport const ${srcTable}Relations = relations(${srcTable}, ({ one }) => ({\n  ${relName}: one(${fk.toTable}, {\n    fields: [${srcTable}.${srcProp}],\n    references: [${fk.toTable}.${targetProp}],\n  }),\n}));`,
       });
     }
 
@@ -165,9 +156,7 @@ export function diagnose(
         code: 'HEURISTIC_FK',
         entity,
         column: db,
-        message:
-          `'${entity}.${db}' looks like a foreign key (ends in _id) but has no FK constraint and no relation. ` +
-          `If it references another entity, add a .references() + a relations() entry; otherwise ignore.`,
+        message: `'${entity}.${db}' looks like a foreign key (ends in _id) but has no FK constraint and no relation. If it references another entity, add a .references() + a relations() entry; otherwise ignore.`,
       });
     }
   }

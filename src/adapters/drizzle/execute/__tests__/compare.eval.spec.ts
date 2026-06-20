@@ -369,7 +369,7 @@ suite('compare() — live dealbrain (variant-vs-variant on observation type)', (
     const acct = String(
       (
         await truth(
-          `select account_id from observations where account_id is not null group by account_id order by count(*) desc limit 1`,
+          'select account_id from observations where account_id is not null group by account_id order by count(*) desc limit 1',
         )
       )[0]!.account_id,
     );

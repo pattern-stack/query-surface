@@ -46,9 +46,9 @@ function table(rows: Record<string, unknown>[], max = 14): void {
     return String(v);
   };
   const widths = cols.map((c) => Math.max(c.length, ...show.map((r) => cell(r[c]).length)));
-  const line = (vals: string[]) => '  ' + vals.map((v, i) => v.padEnd(widths[i]!)).join('  ');
+  const line = (vals: string[]) => `  ${vals.map((v, i) => v.padEnd(widths[i]!)).join('  ')}`;
   console.log(line(cols));
-  console.log('  ' + widths.map((w) => '─'.repeat(w)).join('  '));
+  console.log(`  ${widths.map((w) => '─'.repeat(w)).join('  ')}`);
   for (const r of show) console.log(line(cols.map((c) => cell(r[c]))));
   if (rows.length > max) console.log(`  … ${rows.length - max} more rows`);
 }

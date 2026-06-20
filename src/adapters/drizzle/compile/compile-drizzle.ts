@@ -230,8 +230,7 @@ function scopeSqlFor(model: DealbrainModel, entity: string, scopeFor?: ScopeFor)
   const decision = scopeFor(entity);
   if (decision === undefined) {
     throw new Error(
-      `source "${entity}" has no tenancy scope and was not declared TENANT_GLOBAL — ` +
-        'refusing to read it unscoped (server-side scope coverage gap).',
+      `source "${entity}" has no tenancy scope and was not declared TENANT_GLOBAL — refusing to read it unscoped (server-side scope coverage gap).`,
     );
   }
   if (decision === TENANT_GLOBAL) return null;
@@ -527,8 +526,7 @@ function applyOrderLimit(builder: any, q: Aggregate, outputAliases: Set<string>)
       ...q.order_by.map((o) => {
         if (!outputAliases.has(o.on)) {
           throw new Error(
-            `${ENGINE_ERROR.AGGREGATE} order_by references unknown output "${o.on}" — expected a ` +
-              'measure alias or a projected group_by column',
+            `${ENGINE_ERROR.AGGREGATE} order_by references unknown output "${o.on}" — expected a measure alias or a projected group_by column`,
           );
         }
         return sql`${sql.identifier(o.on)} ${sql.raw(o.dir === 'desc' ? 'desc' : 'asc')} nulls last`;
