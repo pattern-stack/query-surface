@@ -96,7 +96,9 @@ export async function loadDealbrainModel(db: DrizzleDb): Promise<DealbrainModel>
     return { valueColumn: PROP_TO_COL[valueColumnForDataType(fd.dataType)]!, defId: fd.defId };
   };
 
-  // EAV measure tags (additivity EXPLICIT — money & % both type 'number', uninferable).
+  // EAV measure tags (additivity EXPLICIT — money & percentage both resolve to
+  // value_number, additivity uninferable). Bean Maxx (Salesforce-shaped) field keys:
+  // weighted/projected amount = `ExpectedRevenue` (money); win % = `Probability` (percentage).
   const eavOverlay: Record<string, Record<string, AggFieldMeta>> = {
     opportunities: {
       weighted_amount: {
@@ -104,14 +106,14 @@ export async function loadDealbrainModel(db: DrizzleDb): Promise<DealbrainModel>
         role: 'measure',
         agg: 'sum',
         additivity: 'additive',
-        eav: eavByKey('hs_projected_amount'),
+        eav: eavByKey('ExpectedRevenue'),
       },
       deal_probability: {
         type: 'number',
         role: 'measure',
         agg: 'avg',
         additivity: 'non',
-        eav: eavByKey('hs_deal_stage_probability'),
+        eav: eavByKey('Probability'),
       },
     },
   };

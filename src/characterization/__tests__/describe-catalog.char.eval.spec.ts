@@ -138,39 +138,88 @@ suite('describe-catalog — characterization', () => {
       // plus the phantom enableRLS.
       expect(native).toEqual(['id', 'account_id', 'state_of_deal_status', 'enableRLS']);
 
-      // EAV keys are the RAW field_definitions keys (amount, dealname,
-      // hs_deal_stage_probability, ...), NOT the aggregate-only logical handles
-      // (weighted_amount/deal_probability). Sorted by previewOrder then key —
-      // here all previewOrder are absent so it's pure key.localeCompare order.
+      // EAV keys are the RAW field_definitions keys (Amount, StageName,
+      // ExpectedRevenue, ...), NOT the aggregate-only logical handles
+      // (weighted_amount/deal_probability). Sorted by previewOrder then key: the
+      // 6 is_key_field defs come FIRST in keyFieldOrder (StageName=1, Amount=2,
+      // CloseDate=3, outcome=4, lead_pain=5, NextStep=6), then the remaining 54
+      // in key.localeCompare order.
       expect(eav).toEqual([
-        'amount',
-        'closed_lost_reason',
-        'closedate',
-        'createdate',
-        'days_to_close',
-        'deal_currency_code',
-        'dealname',
-        'dealstage',
-        'hs_deal_stage_probability',
-        'hs_is_closed',
-        'hs_is_closed_lost',
-        'hs_is_closed_won',
-        'hs_lastmodifieddate',
-        'hubspot_owner_id',
-        'pipeline',
+        // preview block — is_key_field defs, ordered by keyFieldOrder.
+        'StageName',
+        'Amount',
+        'CloseDate',
+        'outcome',
+        'lead_pain',
+        'NextStep',
+        // remaining 54 — key.localeCompare order.
+        'AccountName',
+        'age_days',
+        'bean_maxx_use_case',
+        'buyer_commit',
+        'camera_disposition',
+        'campaign_source',
+        'champion_status',
+        'coffee_program_maturity',
+        'compelling_event',
+        'competitive_context',
+        'competitor',
+        'contract_term_months',
+        'created_date',
+        'customer_story_potential',
+        'data_sources',
+        'days_in_stage',
+        'deal_size_band',
+        'decision_criteria',
+        'decision_process',
+        'discount_percent',
+        'economic_buyer_status',
+        'engagement_profile',
+        'executive_sponsor',
+        'ExpectedRevenue',
+        'fiscal_period',
+        'ForecastCategory',
+        'implementation_timeline',
+        'integration_requirements',
+        'is_closed',
+        'is_won',
+        'last_activity_date',
+        'last_modified_date',
+        'lead_source',
+        'legal_status',
+        'loss_reason',
+        'mutual_action_plan_status',
+        'Name',
+        'next_activity_date',
+        'office_rollout_scope',
+        'owner_name',
+        'pilot_status',
+        'pricing_model',
+        'primary_contact',
+        'privacy_requirements',
+        'Probability',
+        'procurement_status',
+        'product_requests',
+        'record_type',
+        'renewal_date',
+        'risk_level',
+        'security_review_status',
+        'success_metric',
+        'technical_validation_status',
+        'Type',
       ]);
 
       // native block precedes the EAV block in field order.
       const keys = cat.fields.map((f) => f.key);
-      expect(keys.indexOf('state_of_deal_status')).toBeLessThan(keys.indexOf('amount'));
+      expect(keys.indexOf('state_of_deal_status')).toBeLessThan(keys.indexOf('Amount'));
     });
 
     it('EAV field set == the is_visible field_definitions for the org (curation-gated)', async () => {
       // The query/fetch EAV path is GATED to is_visible=true. SUSPECTED-DIVERGENCE
       // worth noting: the aggregate analytics overlay loads the SAME org's defs
-      // UNGATED (408 defs) and resolves measures by KEY remapped to logical
-      // names — two divergent EAV read paths. Current intended behavior (curation
-      // gate vs analytics). — revisit
+      // UNGATED (120 defs across opportunity/account/contact) and resolves
+      // measures by KEY remapped to logical names — two divergent EAV read paths.
+      // Current intended behavior (curation gate vs analytics). — revisit
       const cat = await h.service.describe('opportunities');
       const eavKeys = cat.fields
         .filter((f) => f.eav)
@@ -179,13 +228,13 @@ suite('describe-catalog — characterization', () => {
 
       // GROUND TRUTH: visible opportunity defs for the dealbrain org.
       // truth: select key from field_definitions where
-      //   organization_id='e7e24eb2-49ba-45cb-88b1-43696d1e9ed8'
+      //   organization_id='a30c290d-6798-4da7-b3af-7b48c50212b8'
       //   and entity_type='opportunity' and is_visible=true
       const rows = await truth(
-        "select key from field_definitions where organization_id='e7e24eb2-49ba-45cb-88b1-43696d1e9ed8' and entity_type='opportunity' and is_visible=true order by key",
+        "select key from field_definitions where organization_id='a30c290d-6798-4da7-b3af-7b48c50212b8' and entity_type='opportunity' and is_visible=true order by key",
       );
       const truthKeys = rows.map((r) => r.key as string).sort();
-      expect(truthKeys.length).toBe(15);
+      expect(truthKeys.length).toBe(60);
       expect(eavKeys).toEqual(truthKeys);
 
       // GROUND TRUTH: weighted_amount / deal_probability are aggregate-only
@@ -204,7 +253,7 @@ suite('describe-catalog — characterization', () => {
       // mapper — for every EAV field. Pins the merge applies the same rule.
       // truth: select key, data_type from field_definitions where ... is_visible=true
       const rows = await truth(
-        "select key, data_type from field_definitions where organization_id='e7e24eb2-49ba-45cb-88b1-43696d1e9ed8' and entity_type='opportunity' and is_visible=true",
+        "select key, data_type from field_definitions where organization_id='a30c290d-6798-4da7-b3af-7b48c50212b8' and entity_type='opportunity' and is_visible=true",
       );
       for (const r of rows) {
         const key = r.key as string;
@@ -215,16 +264,17 @@ suite('describe-catalog — characterization', () => {
       }
 
       // Spot-checks of the data_type → ColumnType contract:
-      expect(byKey.get('amount')?.type).toBe('number'); // money   → number
-      expect(byKey.get('hs_deal_stage_probability')?.type).toBe('number'); // percentage → number
-      expect(byKey.get('days_to_close')?.type).toBe('number'); // number  → number
-      expect(byKey.get('closedate')?.type).toBe('datetime'); // datetime → datetime
-      expect(byKey.get('hs_is_closed')?.type).toBe('boolean'); // boolean → boolean
-      expect(byKey.get('dealname')?.type).toBe('string'); // text    → string
-      expect(byKey.get('closed_lost_reason')?.type).toBe('string'); // longtext → string
-      expect(byKey.get('hubspot_owner_id')?.type).toBe('string'); // reference → string
-      expect(byKey.get('deal_currency_code')?.type).toBe('enum'); // select → enum
-      expect(byKey.get('dealstage')?.type).toBe('enum'); // select → enum
+      expect(byKey.get('Amount')?.type).toBe('number'); // money      → number
+      expect(byKey.get('Probability')?.type).toBe('number'); // percentage → number
+      expect(byKey.get('age_days')?.type).toBe('number'); // number     → number
+      expect(byKey.get('CloseDate')?.type).toBe('date'); // date       → date
+      expect(byKey.get('created_date')?.type).toBe('datetime'); // datetime   → datetime
+      expect(byKey.get('is_closed')?.type).toBe('boolean'); // boolean    → boolean
+      expect(byKey.get('Name')?.type).toBe('string'); // text       → string
+      expect(byKey.get('bean_maxx_use_case')?.type).toBe('string'); // longtext   → string
+      expect(byKey.get('owner_name')?.type).toBe('string'); // text       → string (no reference defs in Bean Maxx)
+      expect(byKey.get('StageName')?.type).toBe('enum'); // select     → enum
+      expect(byKey.get('outcome')?.type).toBe('enum'); // select     → enum
     });
 
     it('EAV string-typed fields are searchable; number/date/enum/boolean are not', async () => {
@@ -232,12 +282,12 @@ suite('describe-catalog — characterization', () => {
       // fields opt in, the rest stay eq/in-only.
       const cat = await h.service.describe('opportunities');
       const byKey = new Map(cat.fields.map((f) => [f.key, f]));
-      // string → searchable
-      for (const k of ['dealname', 'closed_lost_reason', 'hubspot_owner_id', 'pipeline']) {
+      // string → searchable (text/longtext data_types map to type 'string')
+      for (const k of ['Name', 'AccountName', 'bean_maxx_use_case', 'owner_name']) {
         expect(byKey.get(k)?.searchable, k).toBe(true);
       }
-      // non-string → not searchable
-      for (const k of ['amount', 'closedate', 'deal_currency_code', 'hs_is_closed']) {
+      // non-string → not searchable (number/date/enum/boolean)
+      for (const k of ['Amount', 'CloseDate', 'StageName', 'is_closed']) {
         expect(byKey.get(k)?.searchable, k).toBe(false);
       }
     });
@@ -247,71 +297,89 @@ suite('describe-catalog — characterization', () => {
       const eav = cat.fields.filter((f) => f.eav);
       // EAV fields are always nullable:true (no per-field NOT NULL on field_values).
       expect(eav.every((f) => f.nullable === true)).toBe(true);
-      // labels carried straight from field_definitions.label.
+      // labels carried straight from field_definitions.label (key != label —
+      // Amount's label is 'ARR', StageName's is 'Stage').
       const byKey = new Map(eav.map((f) => [f.key, f]));
-      expect(byKey.get('amount')?.label).toBe('Amount');
-      expect(byKey.get('deal_currency_code')?.label).toBe('Currency');
+      expect(byKey.get('Amount')?.label).toBe('ARR');
+      expect(byKey.get('StageName')?.label).toBe('Stage');
     });
 
-    it('SUSPECTED-DIVERGENCE: non-enum EAV fields still carry enumValues: []', async () => {
-      // SUSPECTED-DIVERGENCE: catalog.ts sets `enumValues = def.selectOptions ??
-      // undefined`. HubSpot stores selectOptions as [] (not null) for EVERY
-      // field, so even a 'number'/'datetime' EAV field gets enumValues: [] —
-      // an empty array on a non-enum field. (It is dropped later by projection's
-      // length>0 guard, but the internal CatalogField carries it.) — revisit
+    it('non-enum EAV fields carry NO enumValues (selectOptions null → undefined)', async () => {
+      // catalog.ts sets `enumValues = def.selectOptions ?? undefined`. In Bean
+      // Maxx, non-select fields store select_options = NULL (not [] as old HubSpot
+      // did), so a 'number'/'date' EAV field gets enumValues: undefined — the
+      // field carries no enum data at all. (The old fixture pinned an empty [] on
+      // every field, a HubSpot data artifact that Bean Maxx does not reproduce.)
       const cat = await h.service.describe('opportunities');
       const byKey = new Map(cat.fields.map((f) => [f.key, f]));
-      expect(byKey.get('amount')?.type).toBe('number');
-      expect(byKey.get('amount')?.enumValues).toEqual([]); // empty array on a number field
-      // And the genuine enum field ALSO carries [] because its DB select_options
-      // are empty — so there's no enum-vs-non-enum distinction at this layer.
-      expect(byKey.get('deal_currency_code')?.type).toBe('enum');
-      expect(byKey.get('deal_currency_code')?.enumValues).toEqual([]);
+      expect(byKey.get('Amount')?.type).toBe('number');
+      expect(byKey.get('Amount')?.enumValues).toBeUndefined(); // no enum on a number field
+      // The genuine enum field, by contrast, DOES carry its options.
+      expect(byKey.get('StageName')?.type).toBe('enum');
+      expect(byKey.get('StageName')?.enumValues).toBeDefined();
 
-      // GROUND TRUTH: deal_currency_code's select_options really is [] in the DB
-      // (so the empty enum is the data, not a dropped value); dealstage has 7.
-      // truth: select key, json_array_length(select_options) from field_definitions ...
+      // GROUND TRUTH: Amount's select_options is NULL in the DB (so undefined is
+      // the data, not a dropped value); StageName has an 8-element array.
+      // truth: select key, jsonb_typeof(select_options), jsonb_array_length(...)
       const rows = await truth(
-        "select key, coalesce(jsonb_array_length(select_options),-1) as n from field_definitions where organization_id='e7e24eb2-49ba-45cb-88b1-43696d1e9ed8' and entity_type='opportunity' and key in ('deal_currency_code','dealstage','amount')",
+        "select key, jsonb_typeof(select_options) as t, case when jsonb_typeof(select_options)='array' then jsonb_array_length(select_options) else -1 end as n from field_definitions where organization_id='a30c290d-6798-4da7-b3af-7b48c50212b8' and entity_type='opportunity' and key in ('StageName','Amount')",
       );
-      const n = Object.fromEntries(rows.map((r) => [r.key as string, r.n as number]));
-      expect(n.deal_currency_code).toBe(0); // [] in DB
-      expect(n.dealstage).toBe(7); // 7 stages
-      expect(n.amount).toBe(0); // money field, [] in DB
+      const byk = Object.fromEntries(rows.map((r) => [r.key as string, r]));
+      expect(byk.Amount?.t).toBe('null'); // select_options is a jsonb null → enumValues undefined
+      expect(byk.StageName?.t).toBe('array');
+      expect(byk.StageName?.n).toBe(8); // 8 stages
     });
 
-    it('a select EAV field WITH options surfaces them as enumValues (dealstage → 7 stages)', async () => {
-      // Contrast with deal_currency_code (empty []): when the DB select_options
-      // is a non-empty array, the catalog DOES carry it as enumValues. So the
-      // empty-enum behavior above is a data artifact (HubSpot stores [] for
-      // currency), not a catalog dropping bug — the merge propagates whatever
-      // selectOptions the field_definitions row holds.
+    it('a select EAV field WITH options surfaces them as enumValues (StageName → 8 stages)', async () => {
+      // When the DB select_options is a non-empty array, the catalog carries it
+      // as enumValues. Bean Maxx stores options as {label,value} OBJECTS (not the
+      // old flat string array), so enumValues is an array of objects — the merge
+      // propagates whatever selectOptions the field_definitions row holds verbatim.
       const cat = await h.service.describe('opportunities');
       const byKey = new Map(cat.fields.map((f) => [f.key, f]));
-      expect(byKey.get('dealstage')?.type).toBe('enum');
-      const enumValues = byKey.get('dealstage')?.enumValues ?? [];
-      expect(enumValues).toContain('closedwon');
-      expect(enumValues.length).toBe(7);
+      expect(byKey.get('StageName')?.type).toBe('enum');
+      // NOTE: CatalogField.enumValues is declared `readonly string[]`, but Bean
+      // Maxx carries {label,value} OBJECTS at runtime — the declared type lies
+      // about the shape (a SUSPECTED-DIVERGENCE in the catalog typing), so we cast
+      // through unknown to read the genuine object array.
+      const enumValues = (byKey.get('StageName')?.enumValues ?? []) as unknown as Array<{
+        label: string;
+        value: string;
+      }>;
+      expect(enumValues.map((o) => o.value)).toContain('closed_won');
+      expect(enumValues.length).toBe(8);
 
       // GROUND TRUTH: the catalog's enumValues equals the DB's stored stages.
-      // truth: select select_options from field_definitions where ... key='dealstage'
+      // truth: select select_options from field_definitions where ... key='StageName'
       const rows = await truth(
-        "select select_options::text as opts from field_definitions where organization_id='e7e24eb2-49ba-45cb-88b1-43696d1e9ed8' and entity_type='opportunity' and key='dealstage' and is_visible=true",
+        "select select_options::text as opts from field_definitions where organization_id='a30c290d-6798-4da7-b3af-7b48c50212b8' and entity_type='opportunity' and key='StageName' and is_visible=true",
       );
-      const opts = JSON.parse(rows[0]?.opts as string) as string[];
-      expect([...enumValues].sort()).toEqual([...opts].sort());
+      const opts = JSON.parse(rows[0]?.opts as string) as Array<{ label: string; value: string }>;
+      expect([...enumValues].sort((a, b) => a.value.localeCompare(b.value))).toEqual(
+        [...opts].sort((a, b) => a.value.localeCompare(b.value)),
+      );
     });
 
-    it('no EAV field is preview (no is_key_field=true in the org defs)', async () => {
+    it('the is_key_field EAV defs surface as preview=true (6 in the org defs)', async () => {
       const cat = await h.service.describe('opportunities');
-      expect(cat.fields.filter((f) => f.eav).every((f) => f.preview === false)).toBe(true);
-
-      // GROUND TRUTH: zero visible opportunity defs are flagged is_key_field.
-      // truth: count(*) ... is_visible=true and is_key_field=true  => 0
-      const cnt = await truth(
-        "select count(*)::int as n from field_definitions where organization_id='e7e24eb2-49ba-45cb-88b1-43696d1e9ed8' and entity_type='opportunity' and is_visible=true and is_key_field=true",
+      const previewEav = cat.fields
+        .filter((f) => f.eav && f.preview)
+        .map((f) => f.key)
+        .sort();
+      // Exactly the 6 is_key_field defs are preview; every other EAV field is not.
+      expect(previewEav).toEqual(
+        ['StageName', 'Amount', 'CloseDate', 'outcome', 'lead_pain', 'NextStep'].sort(),
       );
-      expect(cnt[0]?.n).toBe(0);
+
+      // GROUND TRUTH: the visible opportunity defs flagged is_key_field, derived
+      // straight from the DB — the preview set MUST equal this key set.
+      // truth: select key ... is_visible=true and is_key_field=true
+      const rows = await truth(
+        "select key from field_definitions where organization_id='a30c290d-6798-4da7-b3af-7b48c50212b8' and entity_type='opportunity' and is_visible=true and is_key_field=true order by key",
+      );
+      const keyFieldKeys = rows.map((r) => r.key as string).sort();
+      expect(keyFieldKeys.length).toBe(6);
+      expect(previewEav).toEqual(keyFieldKeys);
     });
 
     it('relationships: belongs_to account (to-one) + has_many observations', async () => {
@@ -437,7 +505,7 @@ suite('describe-catalog — characterization', () => {
       const keys = pub.fields.map((f) => f.key);
       expect(keys).toContain('state_of_deal_status'); // native passes
       expect(keys).toContain('enableRLS'); // phantom native ALSO passes
-      expect(keys).toContain('amount'); // EAV passes
+      expect(keys).toContain('Amount'); // EAV passes
     });
 
     it('allowlist gates native columns; id always passes; EAV always passes', async () => {
@@ -450,7 +518,7 @@ suite('describe-catalog — characterization', () => {
       expect(keys).not.toContain('account_id'); // native NOT listed → dropped
       expect(keys).not.toContain('enableRLS'); // phantom native dropped by allowlist
       // every EAV field still passes (curated by is_visible upstream).
-      for (const k of ['amount', 'dealname', 'deal_currency_code']) {
+      for (const k of ['Amount', 'Name', 'StageName']) {
         expect(keys).toContain(k);
       }
     });
@@ -471,26 +539,31 @@ suite('describe-catalog — characterization', () => {
       expect(keys).toEqual(['id', ...eav].sort());
     });
 
-    it('SUSPECTED-DIVERGENCE: an enum field with empty options loses its enumValues key in projection', async () => {
-      // toPublicField only emits enumValues when length>0. deal_currency_code is
-      // type 'enum' but its options are [] → the public field is an enum with NO
-      // enumValues key, indistinguishable from a plain string at the public
-      // layer. Pinned as-is. — revisit
+    it('the enumValues length>0 guard: absent on non-enum, present on a populated enum', async () => {
+      // toPublicField only emits enumValues when length>0. In Bean Maxx the
+      // non-select fields carry no enumValues (selectOptions NULL → undefined), so
+      // the guard drops the key entirely; a select field with a populated options
+      // array keeps it. (The old fixture's empty-[] enum — an enum indistinguishable
+      // from a plain string — does not occur in Bean Maxx: every select def has a
+      // non-empty options array.)
       const cat = await h.service.describe('opportunities');
       const pub = projectCatalog(cat);
-      const cc = pub.fields.find((f) => f.key === 'deal_currency_code');
-      expect(cc?.type).toBe('enum');
-      expect(cc).not.toHaveProperty('enumValues'); // empty array dropped
-      // a number EAV field's empty enumValues is also dropped (same guard).
-      const amount = pub.fields.find((f) => f.key === 'amount');
+      // a number EAV field has no enumValues → guard drops the key.
+      const amount = pub.fields.find((f) => f.key === 'Amount');
+      expect(amount?.type).toBe('number');
       expect(amount).not.toHaveProperty('enumValues');
+      // a populated enum field KEEPS its enumValues through projection.
+      const stage = pub.fields.find((f) => f.key === 'StageName');
+      expect(stage?.type).toBe('enum');
+      expect(stage).toHaveProperty('enumValues');
+      expect((stage?.enumValues ?? []).length).toBe(8);
     });
 
     it('label/note survive projection; note comes from field_definitions.description', async () => {
       const cat = await h.service.describe('opportunities');
       const pub = projectCatalog(cat);
-      const amount = pub.fields.find((f) => f.key === 'amount');
-      expect(amount?.label).toBe('Amount');
+      const amount = pub.fields.find((f) => f.key === 'Amount');
+      expect(amount?.label).toBe('ARR'); // Amount's field_definitions.label is 'ARR'
       expect(typeof amount?.note).toBe('string'); // description carried as note
       expect((amount?.note ?? '').length).toBeGreaterThan(0);
     });
@@ -506,8 +579,8 @@ suite('describe-catalog — characterization', () => {
 
       // id + every EAV field.
       expect(ks.has('id')).toBe(true);
-      expect(ks.has('amount')).toBe(true);
-      expect(ks.has('dealname')).toBe(true);
+      expect(ks.has('Amount')).toBe(true);
+      expect(ks.has('Name')).toBe(true);
       // native NOT in the empty allowlist → absent.
       expect(ks.has('state_of_deal_status')).toBe(false);
       // relationship NAMES survive (so an expand survives projection).

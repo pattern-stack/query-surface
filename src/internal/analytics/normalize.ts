@@ -62,9 +62,7 @@ export function normalizeAggregate(catalog: MeasureCatalog, input: AggregateInpu
     // aggregate() collapses to groups; running totals annotate rows on query().
     if (def.kind === 'cumulative') {
       throw new Error(
-        `${ENGINE_ERROR.AGGREGATE} measure "${item.ref}" is cumulative (a running total) — ` +
-          'it is a window function that preserves rows, not a collapse. Use query({ window: ' +
-          `[{ on, agg, partition_by }] }) instead of aggregate() (CUMULATIVE_IS_WINDOW).`,
+        `${ENGINE_ERROR.AGGREGATE} measure "${item.ref}" is cumulative (a running total) — it is a window function that preserves rows, not a collapse. Use query({ window: [{ on, agg, partition_by }] }) instead of aggregate() (CUMULATIVE_IS_WINDOW).`,
       );
     }
     claim(as);

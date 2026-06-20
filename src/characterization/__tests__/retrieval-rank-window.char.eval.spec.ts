@@ -73,7 +73,7 @@ suite('retrieval rank_by + window — characterization', () => {
 
     // _rank is monotonically non-increasing (ORDER BY ts_rank DESC).
     // SUSPECTED-DIVERGENCE: the engine ORDER BY is `ts_rank desc` with NO
-    // secondary tiebreak — ties (rampant: 234 rows share 0.2, 2562 share 0.1)
+    // secondary tiebreak — ties (rampant: 147 rows share 0.2, 2776 share 0.1)
     // order non-deterministically, so WHICH rows land in the top-K is unstable
     // across runs. We only pin the score ordering, not row identity. — revisit
     const ranks = rows.map((r) => Number(r._rank));
@@ -104,44 +104,45 @@ suite('retrieval rank_by + window — characterization', () => {
   it('lexical rank_by min_score: ts_rank cutoff filters candidates + emits the uncalibrated warning', async () => {
     const PHRASE = 'minimum commitment';
 
-    // Ground truth: rows whose ts_rank >= 0.2 (the cutoff). The engine applies
+    // Ground truth: rows whose ts_rank >= 0.4 (the cutoff). The engine applies
     // `<RANK> >= min_score` as an extra WHERE — limit only caps the survivors.
-    // truth: select count(*) ... where <RANK> >= 0.2  → 6
-    const [{ c: c02 }] = await truth(
-      `select count(*) as c from observations where normalized_text is not null and ${RANK(PHRASE)} >= 0.2`,
+    // truth: select count(*) ... where <RANK> >= 0.4  → 4
+    const [{ c: c04 }] = await truth(
+      `select count(*) as c from observations where normalized_text is not null and ${RANK(PHRASE)} >= 0.4`,
     );
-    expect(Number(c02)).toBe(6);
+    expect(Number(c04)).toBe(4);
 
     const res = await h.service.query('observations', {
       rank_by: {
         method: 'lexical',
         on: 'normalized_text',
         query: PHRASE,
-        min_score: 0.2,
+        min_score: 0.4,
         limit: 100,
       },
       preview: true,
     });
-    expect(res.ids.length).toBe(6); // matches the 0.2-cutoff ground truth
-    for (const r of res.preview ?? []) expect(Number(r._rank)).toBeGreaterThanOrEqual(0.2);
+    expect(res.ids.length).toBe(4); // matches the 0.4-cutoff ground truth
+    for (const r of res.preview ?? []) expect(Number(r._rank)).toBeGreaterThanOrEqual(0.4);
 
     // The uncalibrated-min_score warning rides on the result for lexical.
     expect(res.warnings).toEqual([
       'min_score is uncalibrated for lexical ranking (ts_rank scores are not normalized); prefer limit',
     ]);
 
-    // And the cutoff is a strict >= : at 0.3 there are ZERO survivors.
-    // truth: select count(*) ... where <RANK> >= 0.3  → 0
-    const [{ c: c03 }] = await truth(
-      `select count(*) as c from observations where normalized_text is not null and ${RANK(PHRASE)} >= 0.3`,
+    // And the cutoff is a strict >= : at 0.5 there are ZERO survivors (the max
+    // ts_rank for this phrase across the corpus is 0.4).
+    // truth: select count(*) ... where <RANK> >= 0.5  → 0
+    const [{ c: c05 }] = await truth(
+      `select count(*) as c from observations where normalized_text is not null and ${RANK(PHRASE)} >= 0.5`,
     );
-    expect(Number(c03)).toBe(0);
+    expect(Number(c05)).toBe(0);
     const res2 = await h.service.query('observations', {
       rank_by: {
         method: 'lexical',
         on: 'normalized_text',
         query: PHRASE,
-        min_score: 0.3,
+        min_score: 0.5,
         limit: 100,
       },
       preview: true,
@@ -178,12 +179,12 @@ suite('retrieval rank_by + window — characterization', () => {
 
     // total reports the number of GROUPS (count(distinct partition key)), NOT a
     // candidate row count.
-    // truth: select count(distinct account_id) from observations where account_id is not null → 46
+    // truth: select count(distinct account_id) from observations where account_id is not null → 100
     const [{ g }] = await truth(
-      `select count(distinct account_id) as g from observations where account_id is not null`,
+      'select count(distinct account_id) as g from observations where account_id is not null',
     );
     expect(res.total).toBe(Number(g));
-    expect(res.total).toBe(46);
+    expect(res.total).toBe(100);
 
     // Row count = sum over non-null-account groups of min(K, group_size). Because
     // rank_by does NOT filter the candidate set (no min_score), EVERY non-null
@@ -193,13 +194,13 @@ suite('retrieval rank_by + window — characterization', () => {
     // returns the top-K *observations per account* regardless of relevance; rows
     // with _rank=0 (no lexical match at all) are returned. — revisit
     // truth: select sum(least(2,c)) from (select account_id,count(*) c from
-    //   observations where account_id is not null group by account_id) t → 92
+    //   observations where account_id is not null group by account_id) t → 200
     const [{ n }] = await truth(
       `select sum(least(${K}, c)) as n from (select account_id, count(*) c from observations where account_id is not null group by account_id) t`,
     );
     const rows = res.preview ?? [];
     expect(rows.length).toBe(Number(n));
-    expect(rows.length).toBe(92);
+    expect(rows.length).toBe(200);
 
     // Null-partition rows are dropped: every returned row carries a non-null
     // partition key, and the partition field is PROJECTED onto each row (so the
@@ -231,7 +232,7 @@ suite('retrieval rank_by + window — characterization', () => {
     // The harness embed stub returns the REAL stored embedding for an obs whose
     // normalized_text ILIKE %phrase%, so that obs is at cosine distance 0 →
     // similarity 1 → ranks #1.
-    const PHRASE = 'OroCommerce offers a five-year minimum commitment';
+    const PHRASE = 'a minimum billing commitment';
 
     // Ground truth: the obs the stub will resolve the vector from (order by id,
     // first ILIKE match) — that exact row must come back ranked #1.
@@ -270,7 +271,7 @@ suite('retrieval rank_by + window — characterization', () => {
     const res = await h.service.query('observations', {
       rank_by: {
         method: 'semantic',
-        query: 'OroCommerce offers a five-year minimum commitment',
+        query: 'a minimum billing commitment',
         min_score: 0.5,
         limit: 5,
       },
@@ -304,9 +305,9 @@ suite('retrieval rank_by + window — characterization', () => {
     expect(rows.length).toBe(3);
 
     // Ground truth: count of 'discovery' observations.
-    // truth: select count(*) from observations where type = 'discovery' → 792
+    // truth: select count(*) from observations where type = 'discovery' → 2697
     const [{ c }] = await truth(`select count(*) as c from observations where type = 'discovery'`);
-    expect(Number(c)).toBe(792);
+    expect(Number(c)).toBe(2697);
 
     for (const r of rows) {
       expect(r.type).toBe('discovery');
@@ -316,7 +317,7 @@ suite('retrieval rank_by + window — characterization', () => {
       // measures are coerced; window measures are not.) — revisit
       // Pin the TYPE (string), not just the value, so the divergence is frozen.
       expect(typeof r.type_total).toBe('string');
-      expect(r.type_total).toBe('792');
+      expect(r.type_total).toBe('2697');
     }
   });
 
@@ -329,15 +330,15 @@ suite('retrieval rank_by + window — characterization', () => {
       columns: ['type'],
       page: { limit: 2 },
     });
-    // truth: select count(*) from observations where type = 'timeline' → 450
+    // truth: select count(*) from observations where type = 'timeline' → 942
     const [{ c }] = await truth(`select count(*) as c from observations where type = 'timeline'`);
-    expect(Number(c)).toBe(450);
+    expect(Number(c)).toBe(942);
     for (const r of res.preview ?? []) {
       // SUSPECTED-DIVERGENCE (same as type_total above): bigint window count
       // comes back as a STRING, not coerced to number. Pin the type, not just
       // the value. — revisit
       expect(typeof r.grand_total).toBe('string');
-      expect(r.grand_total).toBe('450');
+      expect(r.grand_total).toBe('942');
     }
   });
 

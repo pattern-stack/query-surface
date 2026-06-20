@@ -83,7 +83,7 @@ export const observationsExtRelations = relations(observationsExt, ({ one }) => 
 // The live dealbrain organization that owns the opportunity field_definitions.
 // Asserted at boot (makeQuerySurface) so a reseed that changes it fails loudly
 // instead of silently resolving zero EAV fields.
-export const DEALBRAIN_ORG = 'e7e24eb2-49ba-45cb-88b1-43696d1e9ed8';
+export const DEALBRAIN_ORG = 'a30c290d-6798-4da7-b3af-7b48c50212b8';
 
 export interface QuerySurfaceHarness {
   service: QueryApplicationService;

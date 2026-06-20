@@ -97,10 +97,10 @@ suite('compare() — REST presentation chain (live dealbrain)', () => {
     expect(res.variants).toEqual(['commitment', 'risk']);
     expect(res.rows).toHaveLength(1); // no group_by → one global row
     const row = res.rows[0]!;
-    // dealbrain has 610 commitment + 367 risk observations (see compare.eval C3)
-    expect(Number(row.obs__commitment)).toBe(610);
-    expect(Number(row.obs__risk)).toBe(367);
-    expect(row.obs__risk__delta).toBe(367 - 610);
+    // Bean Maxx has 2084 commitment + 2160 risk observations (see compare.eval C3)
+    expect(Number(row.obs__commitment)).toBe(2084);
+    expect(Number(row.obs__risk)).toBe(2160);
+    expect(row.obs__risk__delta).toBe(2160 - 2084);
   });
 
   it('R2 separate delivery: the two labeled result sets, unstitched', async () => {
