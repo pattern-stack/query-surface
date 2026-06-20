@@ -1,23 +1,33 @@
-// Wave-2 demo server — "a metric over a relevance-defined cohort, with the cohort shown
-// BEFORE the number" (ADR-0024 §A/Amendment 2, the alignment-integrity pitch).
+// Wave-2 demo server — the relevance-as-selection explorer.
 //
-// Boots the query-surface service ONCE against the live Bean Maxx fixture (via the same
-// makeQuerySurface harness the evals use — embed stub + semanticColumns + the dealbrain model),
-// serves a single static page, and exposes ONE endpoint that runs a real aggregate() with a
-// cross-grain `relevant` leaf and returns the measure + the mandatory citation.
+// Boots the query-surface service ONCE against the live Bean Maxx fixture (the same
+// makeQuerySurface harness the evals use), serves a single multi-tab page, and exposes the
+// primitives so you can see the WHOLE story: the metric, the cohort that defined it, the SQL that
+// computed it, the evidence rows behind it, and the host-supplied catalog it all derives from.
 //
 //   DBURL=postgres://postgres:password@localhost:54321/dealbrain \
 //     bun run scripts/wave2-demo/server.ts            # → http://localhost:7878
 //
-// EMBED CAVEAT: the harness embed() is the deterministic ILIKE stub — the `query` must be a
-// phrase that appears verbatim in some observation's normalized_text (it resolves to that row's
-// real stored vector). So this demos the ENGINE (relevance-as-filter + citation) end-to-end; the
-// free-text-concept version is the real-embed-provider follow-on. The preset chips are verified
-// to resolve to meaningful cohorts.
+// EMBED CAVEAT: the harness embed() is the deterministic ILIKE stub — the `query` must be a phrase
+// that appears verbatim in some observation's normalized_text (it resolves to that row's real
+// stored vector). So this demos the ENGINE (relevance-as-filter + citation + grain-safety) fully;
+// the free-text-concept version is the real-embed-provider follow-on. Preset chips are verified.
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { format as formatSql } from 'sql-formatter';
 import { makeQuerySurface } from '../../src/characterization/harness.ts';
+
+// Pretty-print the compiled SQL for the demo (the sql-formatter package, Postgres dialect).
+// Best-effort: a formatting hiccup falls back to the raw single line, never breaks the response.
+const pretty = (sql?: string): string | undefined => {
+  if (!sql) return sql;
+  try {
+    return formatSql(sql, { language: 'postgresql', keywordCase: 'lower', tabWidth: 2, expressionWidth: 64 });
+  } catch {
+    return sql;
+  }
+};
 
 const DBURL = process.env.DBURL;
 if (!DBURL) {
@@ -27,50 +37,79 @@ if (!DBURL) {
 
 const PORT = Number(process.env.PORT ?? 7878);
 const HTML = readFileSync(join(import.meta.dir, 'index.html'), 'utf8');
-
 const h = makeQuerySurface(DBURL);
 
-// The named measures the Bean Maxx catalog exposes (both EAV on opportunities).
-const MEASURES: Record<string, { on: string; agg: 'sum' | 'avg'; as: string; label: string; fmt: 'usd' | 'pct' }> = {
+// The named measures the Bean Maxx catalog exposes (both EAV on opportunities) + a plain count.
+type MDef = { source?: string; on: string; agg: 'sum' | 'avg' | 'count'; as: string; label: string; fmt: 'usd' | 'pct' | 'int' };
+const MEASURES: Record<string, MDef> = {
   pipeline: { on: 'weighted_amount', agg: 'sum', as: 'pipeline', label: 'Weighted pipeline (Σ ExpectedRevenue)', fmt: 'usd' },
   win_rate: { on: 'deal_probability', agg: 'avg', as: 'win_rate', label: 'Avg win probability', fmt: 'pct' },
+  deals: { on: '*', agg: 'count', as: 'deals', label: 'Opportunity count', fmt: 'int' },
 };
 
-async function runRelevant(body: {
-  query: string;
-  measure?: string;
-  mode?: 'threshold' | 'top_k';
-  threshold?: number;
-  top_k?: number;
-  boundary?: boolean;
-}) {
-  const m = MEASURES[body.measure ?? 'pipeline'] ?? MEASURES.pipeline;
-  const crisp =
-    body.mode === 'top_k'
-      ? { top_k: Math.max(1, Math.floor(body.top_k ?? 25)) }
-      : { threshold: Math.min(1, Math.max(0, body.threshold ?? 0.55)) };
+function crispFrom(body: { mode?: string; threshold?: number; top_k?: number }) {
+  return body.mode === 'top_k'
+    ? { top_k: Math.max(1, Math.floor(body.top_k ?? 25)) }
+    : { threshold: Math.min(1, Math.max(0, body.threshold ?? 0.55)) };
+}
 
-  const res = await h.service.aggregate('opportunities', {
-    measures: [
-      { on: m.on, agg: m.agg, as: m.as },
-      // a cross-grain count of the matching child observations, for context
-      { source: 'observations', on: '*', agg: 'count', as: 'matched_obs' },
-    ],
-    filter: {
-      on: 'observations.normalized_text',
-      op: 'relevant',
-      query: body.query,
-      ...crisp,
+// ── the cohort metric: aggregate() with a cross-grain relevant leaf + the mandatory citation ──
+async function apiRelevant(body: any) {
+  const m = MEASURES[body.measure as string] ?? MEASURES.pipeline;
+  const t0 = performance.now();
+  const res = await h.service.aggregate(
+    'opportunities',
+    {
+      measures: [
+        { on: m.on, agg: m.agg, as: m.as },
+        // The cohort SIZE at the MEASURED grain: how many distinct opportunities own ≥1 matching
+        // observation (EXISTS, counted once). Distinct from the citation's match_count, which is
+        // the number of matching OBSERVATIONS (the evidence) — usually more, since a deal can have
+        // several. M observations → N deals → Σ metric over those N.
+        ...(m.agg === 'count' && m.on === '*' ? [] : [{ on: '*', agg: 'count' as const, as: 'cohort_deals' }]),
+      ],
+      filter: { on: 'observations.normalized_text', op: 'relevant', query: body.query, ...crispFrom(body) },
     },
-    citation: { boundary: body.boundary !== false },
-  });
-
+    { include_sql: true, citation: { boundary: true } },
+  );
   return {
     measure: { key: body.measure ?? 'pipeline', label: m.label, fmt: m.fmt, as: m.as },
     rows: res.rows,
     citation: res.citation,
+    sql: pretty(res.sql),
+    ms: Math.round(performance.now() - t0),
   };
 }
+
+// ── explore the cohort's EVIDENCE: query() the matching observations, ranked + scored ──
+async function apiExplore(body: any) {
+  const t0 = performance.now();
+  const res = await h.service.query('observations', {
+    filter: { on: 'normalized_text', op: 'relevant', query: body.query, ...crispFrom(body) },
+    rank_by: { on: 'normalized_text', method: 'semantic', query: body.query, limit: Math.min(200, body.limit ?? 25) },
+    columns: ['type', 'normalized_text', 'account_id', 'opportunity_id'],
+    preview: true,
+    include_sql: true,
+  });
+  return {
+    total: res.total,
+    rows: res.preview ?? [],
+    sql: pretty(res.sql),
+    ms: Math.round(performance.now() - t0),
+  };
+}
+
+// ── the host-supplied catalog: describe(entity) — native ⊕ EAV fields + the relation graph ──
+async function apiDescribe(entity: string) {
+  const t0 = performance.now();
+  const d: any = await h.service.describe(entity);
+  return { ...d, ms: Math.round(performance.now() - t0) };
+}
+
+const ROUTES: Record<string, (body: any) => Promise<unknown>> = {
+  '/api/relevant': apiRelevant,
+  '/api/explore': apiExplore,
+};
 
 const server = Bun.serve({
   port: PORT,
@@ -79,11 +118,17 @@ const server = Bun.serve({
     if (url.pathname === '/' || url.pathname === '/index.html') {
       return new Response(HTML, { headers: { 'content-type': 'text/html; charset=utf-8' } });
     }
-    if (url.pathname === '/api/relevant' && req.method === 'POST') {
+    if (url.pathname === '/api/describe') {
       try {
-        const body = await req.json();
-        const out = await runRelevant(body);
-        return Response.json(out);
+        return Response.json(await apiDescribe(url.searchParams.get('entity') ?? 'opportunities'));
+      } catch (e) {
+        return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
+      }
+    }
+    const route = ROUTES[url.pathname];
+    if (route && req.method === 'POST') {
+      try {
+        return Response.json(await route(await req.json()));
       } catch (e) {
         // The engine's fail-loud refusals (XOR violation, scope gap, non-conforming) land here —
         // surface them verbatim; they're the trust story, not noise.
@@ -94,5 +139,4 @@ const server = Bun.serve({
   },
 });
 
-console.log(`\n  Wave-2 relevance-as-filter demo  →  http://localhost:${server.port}\n`);
-console.log('  (cross-grain: weighted pipeline over opportunities whose OBSERVATIONS match a concept)\n');
+console.log(`\n  query-surface · relevance explorer  →  http://localhost:${server.port}\n`);
