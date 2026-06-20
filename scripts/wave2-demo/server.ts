@@ -83,15 +83,54 @@ function makeRealEmbed(): ((text: string) => Promise<number[]>) | undefined {
 }
 const realEmbed = makeRealEmbed();
 const EMBED_MODE = realEmbed ? `live · ${EMBED_MODEL}` : 'stub · ILIKE phrase-match';
-const h = makeQuerySurface(DBURL, realEmbed ? { embed: realEmbed } : undefined);
 
-// The named measures the Bean Maxx catalog exposes (both EAV on opportunities) + a plain count.
+// ── SEMANTIC LAYER (step 4): the aggregate model's measures are DRIVEN BY the field-management
+// app's resolved model — closed-by-default (baseline tier only). Fetched at boot; if the app isn't
+// running, fall back to the built-in defaults so the demo still works. ────────────────────────────
+const CRM_API = process.env.CRM_API ?? 'http://localhost:3210';
 type MDef = { source?: string; on: string; agg: 'sum' | 'avg' | 'count'; as: string; label: string; fmt: 'usd' | 'pct' | 'int' };
+type ResolvedMeasure = { key: string; name: string; agg: string; additivity: string; label: string; format: string | null };
+type ResolvedModel = { measures: ResolvedMeasure[]; dimensions: { name: string; label: string }[]; gated: { total: number; exposed: number; dormant: number } };
+
 const MEASURES: Record<string, MDef> = {
-  pipeline: { on: 'weighted_amount', agg: 'sum', as: 'pipeline', label: 'Weighted pipeline (Σ ExpectedRevenue)', fmt: 'usd' },
-  win_rate: { on: 'deal_probability', agg: 'avg', as: 'win_rate', label: 'Avg win probability', fmt: 'pct' },
-  deals: { on: '*', agg: 'count', as: 'deals', label: 'Opportunity count', fmt: 'int' },
+  deals: { on: '*', agg: 'count', as: 'deals', label: 'Opportunity count', fmt: 'int' }, // built-in (not EAV)
 };
+let measureSpecs: NonNullable<Parameters<typeof makeQuerySurface>[1]>['measureSpecs'];
+let SEMANTIC_SOURCE: string;
+let SEMANTIC_GATED = { total: 0, exposed: 0, dormant: 0 };
+
+let resolved: ResolvedModel | null = null;
+try {
+  const r = await fetch(`${CRM_API}/resolved-model/opportunity`); // baseline (closed-by-default)
+  if (r.ok) resolved = (await r.json()) as ResolvedModel;
+} catch {
+  /* app not running — fall through to defaults */
+}
+
+if (resolved && resolved.measures.length) {
+  measureSpecs = resolved.measures.map((m) => ({
+    name: m.name,
+    key: m.key,
+    agg: m.agg as MDef['agg'],
+    additivity: (m.additivity === 'additive' ? 'additive' : 'non') as 'additive' | 'non',
+  }));
+  for (const m of resolved.measures) {
+    MEASURES[m.name] = { on: m.name, agg: m.agg as MDef['agg'], as: m.name, label: m.label, fmt: (m.format ?? 'usd') as MDef['fmt'] };
+  }
+  SEMANTIC_GATED = resolved.gated;
+  SEMANTIC_SOURCE = `field-management app · baseline-gated (${resolved.measures.length} measures, ${resolved.gated.dormant} of ${resolved.gated.total} fields dormant)`;
+} else {
+  // Fallback: the built-in default measures (the field-management app isn't reachable).
+  MEASURES.weighted_amount = { on: 'weighted_amount', agg: 'sum', as: 'weighted_amount', label: 'Weighted pipeline (default)', fmt: 'usd' };
+  MEASURES.deal_probability = { on: 'deal_probability', agg: 'avg', as: 'deal_probability', label: 'Avg win probability (default)', fmt: 'pct' };
+  SEMANTIC_SOURCE = 'built-in default (field-management app not reachable)';
+}
+
+const h = makeQuerySurface(DBURL, {
+  ...(realEmbed ? { embed: realEmbed } : {}),
+  ...(measureSpecs ? { measureSpecs } : {}),
+});
+const DEFAULT_MEASURE = Object.keys(MEASURES).find((k) => k !== 'deals') ?? 'deals';
 
 function crispFrom(body: { mode?: string; threshold?: number; top_k?: number }) {
   return body.mode === 'top_k'
@@ -101,7 +140,7 @@ function crispFrom(body: { mode?: string; threshold?: number; top_k?: number }) 
 
 // ── the cohort metric: aggregate() with a cross-grain relevant leaf + the mandatory citation ──
 async function apiRelevant(body: any) {
-  const m = MEASURES[body.measure as string] ?? MEASURES.pipeline;
+  const m = MEASURES[body.measure as string] ?? MEASURES[DEFAULT_MEASURE];
   const t0 = performance.now();
   const res = await h.service.aggregate(
     'opportunities',
@@ -119,7 +158,7 @@ async function apiRelevant(body: any) {
     { include_sql: true, citation: { boundary: true } },
   );
   return {
-    measure: { key: body.measure ?? 'pipeline', label: m.label, fmt: m.fmt, as: m.as },
+    measure: { key: body.measure ?? DEFAULT_MEASURE, label: m.label, fmt: m.fmt, as: m.as },
     rows: res.rows,
     citation: res.citation,
     sql: pretty(res.sql),
@@ -197,7 +236,16 @@ const server = Bun.serve({
       return new Response(HTML, { headers: { 'content-type': 'text/html; charset=utf-8' } });
     }
     if (url.pathname === '/api/info') {
-      return Response.json({ embedMode: EMBED_MODE, real: !!realEmbed, model: EMBED_MODEL });
+      return Response.json({
+        embedMode: EMBED_MODE,
+        real: !!realEmbed,
+        model: EMBED_MODEL,
+        semanticSource: SEMANTIC_SOURCE,
+        gated: SEMANTIC_GATED,
+        // the measure list the UI builds its dropdown from (config-driven, gated)
+        measures: Object.entries(MEASURES).map(([key, m]) => ({ key, label: m.label })),
+        defaultMeasure: DEFAULT_MEASURE,
+      });
     }
     if (url.pathname === '/api/describe') {
       try {
