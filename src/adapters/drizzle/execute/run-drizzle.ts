@@ -92,13 +92,15 @@ export async function runAggregateDrizzle(
       warnings.push(`${comp.as}: ${nulls} group(s) have a null ratio (zero or absent denominator)`);
     }
   }
-  // Builder-native: .toSQL() gives the parameterized text (placeholders, not bound
-  // values) for include_sql — debug surface, never load-bearing.
+  // Builder-native: .toSQL() gives the parameterized text + the bound params (placeholders
+  // mapped to values) for include_sql — debug surface, never load-bearing.
+  const compiled = query.toSQL();
   return {
     rows,
     row_count: rows.length,
     group_count,
-    sql: query.toSQL().sql,
+    sql: compiled.sql,
+    params: compiled.params,
     plan,
     ...(warnings.length ? { warnings } : {}),
   };
@@ -121,7 +123,7 @@ export async function aggregate(
     row_count: r.row_count,
     group_count: r.group_count,
     warnings: r.warnings,
-    ...(opts.include_sql ? { sql: r.sql } : {}),
+    ...(opts.include_sql ? { sql: r.sql, params: r.params } : {}),
   };
 }
 
