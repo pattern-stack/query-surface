@@ -59,10 +59,7 @@ export async function runAggregateDrizzle(
         }
         // local-absent / unreachable on THIS compiled measure source → reject the whole filter.
         throw new Error(
-          `${ENGINE_ERROR.AGGREGATE} filter references column(s) [${on}] not queryable on ${s} — ` +
-            'not a registered field there nor conformed (to-one reachable). A global filter must ' +
-            'resolve on every measure source; use a measure-level `where` for source-local intent ' +
-            `(see GET /query/describe/${q.entity}).`,
+          `${ENGINE_ERROR.AGGREGATE} filter references column(s) [${on}] not queryable on ${s} — not a registered field there nor conformed (to-one reachable). A global filter must resolve on every measure source; use a measure-level \`where\` for source-local intent (see GET /query/describe/${q.entity}).`,
         );
       }
     }

@@ -49,14 +49,14 @@ suite('retrieval (belongs_to JOIN + has_many EXISTS) — characterization', () =
 
   it('opportunities filtered by account.name (1-hop belongs_to LEFT JOIN)', async () => {
     // truth: select count(*) as n from opportunities o
-    //        join accounts a on o.account_id=a.id where a.name='Aaxisdigital'
+    //        join accounts a on o.account_id=a.id where a.name='Abnormal Security'
     const want = await n(
-      "select count(*) as n from opportunities o join accounts a on o.account_id=a.id where a.name='Aaxisdigital'",
+      "select count(*) as n from opportunities o join accounts a on o.account_id=a.id where a.name='Abnormal Security'",
     );
-    expect(want).toBe(3); // pin the live value (3 opportunities under Aaxisdigital)
+    expect(want).toBe(1); // pin the live value (1 opportunity under Abnormal Security — Bean Maxx is 1 opp/account)
 
     const res = await h.service.query('opportunities', {
-      filter: { on: 'account.name', op: 'eq', value: 'Aaxisdigital' },
+      filter: { on: 'account.name', op: 'eq', value: 'Abnormal Security' },
       page: { limit: 100 },
     });
     // total == EXISTS-free belongs_to count: the fk→pk join is single-row
@@ -91,33 +91,36 @@ suite('retrieval (belongs_to JOIN + has_many EXISTS) — characterization', () =
   // ==========================================================================
 
   it('observations filtered by opportunity.amount (EAV resolved through a belongs_to hop)', async () => {
-    // The final segment 'amount' has no native opp column → resolves through the
+    // The final segment 'Amount' has no native opp column → resolves through the
     // EAV field map for the CURRENT entity at that point (opportunities). So a
     // belongs_to hop lands on an EAV value column behind the field_values join.
-    // truth (org-owned 'amount' field_definition; value in field_values.value_number):
+    // Bean Maxx field key is 'Amount' (Salesforce-shaped, capitalized) — the EAV
+    // field map is keyed by the exact field_definitions.key, case-sensitive.
+    // truth (org-owned 'Amount' field_definition; value in field_values.value_number):
     const want = await n(
-      "select count(*) as n from observations ob join opportunities o on ob.opportunity_id=o.id join field_values fv on fv.entity_id=o.id and fv.entity_type='opportunity' and fv.field_definition_id=(select id from field_definitions where key='amount' and entity_type='opportunity' and organization_id='e7e24eb2-49ba-45cb-88b1-43696d1e9ed8') where fv.value_number > 50000",
+      "select count(*) as n from observations ob join opportunities o on ob.opportunity_id=o.id join field_values fv on fv.entity_id=o.id and fv.entity_type='opportunity' and fv.field_definition_id=(select id from field_definitions where key='Amount' and entity_type='opportunity' and organization_id='a30c290d-6798-4da7-b3af-7b48c50212b8') where fv.value_number > 50000",
     );
-    expect(want).toBe(4110); // pin the live value
+    expect(want).toBe(21953); // pin the live value
 
     const res = await h.service.query('observations', {
-      filter: { on: 'opportunity.amount', op: 'gt', value: 50000 },
-      page: { limit: 5000 },
+      filter: { on: 'opportunity.Amount', op: 'gt', value: 50000 },
+      page: { limit: 30000 },
     });
     expect(res.total).toBe(want);
   });
 
   it('observations filtered by opportunity.account.name (2-hop belongs_to chain — the diamond, via-opportunity leg)', async () => {
     // observations → opportunity (belongs_to) → account (belongs_to) → name.
-    // truth: every observation's opportunity_id is populated (7548/7548), so the
-    // via-opportunity leg reaches ALL observations for an account's opps.
+    // truth: every non-orphan observation's opportunity_id is populated
+    // (29039/29092; 53 orphans carry NULL on BOTH fks), so the via-opportunity
+    // leg reaches ALL observations for an account's opps.
     const want = await n(
-      "select count(*) as n from observations ob join opportunities o on ob.opportunity_id=o.id join accounts a on o.account_id=a.id where a.name='Holman'",
+      "select count(*) as n from observations ob join opportunities o on ob.opportunity_id=o.id join accounts a on o.account_id=a.id where a.name='Abnormal Security'",
     );
-    expect(want).toBe(419); // pin the live value
+    expect(want).toBe(295); // pin the live value
 
     const res = await h.service.query('observations', {
-      filter: { on: 'opportunity.account.name', op: 'eq', value: 'Holman' },
+      filter: { on: 'opportunity.account.name', op: 'eq', value: 'Abnormal Security' },
       page: { limit: 1000 },
     });
     expect(res.total).toBe(want);
@@ -130,55 +133,56 @@ suite('retrieval (belongs_to JOIN + has_many EXISTS) — characterization', () =
   // DISAGREE.
   // ==========================================================================
 
-  it('observations.account.name takes the DIRECT belongs_to (obs.account_id), NOT the via-opportunity path', async () => {
+  it('observations.account.name takes the DIRECT belongs_to (obs.account_id), and in Bean Maxx the symmetric diamond makes it COINCIDE with via-opportunity', async () => {
     // resolveFrom reads registry['observations'].relationships['account'] — the
     // DIRECT belongs_to (fk account_id) — so the dotted 'account.name' compiles
     // to a join on obs.account_id, never through opportunity.
     //
-    // DIAMOND DISAGREEMENT: obs.account_id is populated for only 2905/7548 rows
-    // (4643 null), while obs.opportunity_id is populated for ALL 7548. For an
-    // account whose observations carry a NULL direct account_id but reach it via
-    // opportunity, the two legs give wildly different counts.
+    // DIVERGENCE FROM OLD DEALBRAIN — the diamond no longer DISAGREES. In Bean
+    // Maxx, every non-orphan observation carries BOTH a direct account_id AND an
+    // opportunity_id pointing to the SAME account (29039/29092 populated on both,
+    // 53 orphans NULL on both, 0 cross-linked). So the direct leg and the
+    // via-opportunity leg return the IDENTICAL count for EVERY account — the
+    // disagreement this test was built to characterize is absent from the fixture.
+    // We still pin that the engine resolves the DIRECT edge (its count), but the
+    // not.toBe(viaOpp) discrimination is data-impossible here and is replaced by
+    // toBe(viaOpp), the genuine Bean Maxx relationship. — FLAGGED divergence.
     const direct = await n(
-      "select count(*) as n from observations ob join accounts a on ob.account_id=a.id where a.name='Holman'",
+      "select count(*) as n from observations ob join accounts a on ob.account_id=a.id where a.name='Abnormal Security'",
     );
     const viaOpp = await n(
-      "select count(*) as n from observations ob join opportunities o on ob.opportunity_id=o.id join accounts a on o.account_id=a.id where a.name='Holman'",
+      "select count(*) as n from observations ob join opportunities o on ob.opportunity_id=o.id join accounts a on o.account_id=a.id where a.name='Abnormal Security'",
     );
-    expect(direct).toBe(0); // Holman's observations have NULL direct account_id
-    expect(viaOpp).toBe(419); // …but all reach Holman via their opportunity
+    expect(direct).toBe(295); // Abnormal Security's observations carry the direct account_id
+    expect(viaOpp).toBe(295); // …and reach the same account via their opportunity — they COINCIDE
 
     const res = await h.service.query('observations', {
-      filter: { on: 'account.name', op: 'eq', value: 'Holman' },
+      filter: { on: 'account.name', op: 'eq', value: 'Abnormal Security' },
       page: { limit: 1000 },
     });
-    // The engine matches the DIRECT leg (0), not the via-opportunity leg (419).
+    // The engine matches the DIRECT leg (obs.account_id); in Bean Maxx that
+    // equals the via-opportunity leg because the diamond is symmetric.
     expect(res.total).toBe(direct);
-    expect(res.total).not.toBe(viaOpp);
-    // SUSPECTED-DIVERGENCE: 'observations.account.name' silently means the DIRECT
-    // obs.account_id edge, which is null for 4643/7548 observations — an agent
-    // asking "observations for account Holman" gets 0, while the same account's
-    // opportunities clearly carry 419. Two legitimate paths to the same entity
-    // resolve to whichever relationship name happens to match first; the
-    // via-opportunity reachability is invisible. Frozen as-is. — revisit
+    expect(res.total).toBe(viaOpp);
   });
 
-  it('observations.account.name AGREES with via-opportunity when the direct account_id IS populated (Hajoca)', async () => {
-    // The diamond only disagrees where obs.account_id is null. For Hajoca, every
-    // observation carries BOTH a direct account_id and an opportunity under the
-    // same account, so both legs return the same count.
-    // truth: direct == via_opp == 230 for Hajoca.
+  it('observations.account.name AGREES with via-opportunity when the direct account_id IS populated (Abridge)', async () => {
+    // The diamond agrees wherever obs.account_id is populated. In Bean Maxx every
+    // non-orphan observation carries BOTH a direct account_id and an opportunity
+    // under the same account, so both legs return the same count. (Use a SECOND
+    // account distinct from the test above to keep independent coverage.)
+    // truth: direct == via_opp == 379 for Abridge.
     const direct = await n(
-      "select count(*) as n from observations ob join accounts a on ob.account_id=a.id where a.name='Hajoca'",
+      "select count(*) as n from observations ob join accounts a on ob.account_id=a.id where a.name='Abridge'",
     );
     const viaOpp = await n(
-      "select count(*) as n from observations ob join opportunities o on ob.opportunity_id=o.id join accounts a on o.account_id=a.id where a.name='Hajoca'",
+      "select count(*) as n from observations ob join opportunities o on ob.opportunity_id=o.id join accounts a on o.account_id=a.id where a.name='Abridge'",
     );
-    expect(direct).toBe(230);
-    expect(viaOpp).toBe(230);
+    expect(direct).toBe(379);
+    expect(viaOpp).toBe(379);
 
     const res = await h.service.query('observations', {
-      filter: { on: 'account.name', op: 'eq', value: 'Hajoca' },
+      filter: { on: 'account.name', op: 'eq', value: 'Abridge' },
       page: { limit: 1000 },
     });
     expect(res.total).toBe(direct);
@@ -193,15 +197,15 @@ suite('retrieval (belongs_to JOIN + has_many EXISTS) — characterization', () =
     // observations where observations.account_id = accounts.id and type='risk').
     // A naive JOIN would inflate (one parent row per child); EXISTS is a semijoin
     // so the parent count is DISTINCT parents.
-    // truth: EXISTS = 46 distinct accounts; naive join = 139 child rows.
+    // truth: EXISTS = 100 distinct accounts; naive join = 2160 child rows.
     const exists = await n(
       "select count(*) as n from accounts a where exists (select 1 from observations ob where ob.account_id=a.id and ob.type='risk')",
     );
     const naiveJoinRows = await n(
       "select count(*) as n from accounts a join observations ob on ob.account_id=a.id where ob.type='risk'",
     );
-    expect(exists).toBe(46); // the prompt's ground truth: 46 accounts have a 'risk' observation
-    expect(naiveJoinRows).toBe(139); // a JOIN would over-count by 3x
+    expect(exists).toBe(100); // Bean Maxx: every account has a 'risk' observation (all 100)
+    expect(naiveJoinRows).toBe(2160); // a JOIN would over-count by ~21.6x (2160 risk obs across 100 accounts)
 
     const res = await h.service.query('accounts', {
       filter: { on: 'observations.type', op: 'eq', value: 'risk' },
@@ -221,17 +225,18 @@ suite('retrieval (belongs_to JOIN + has_many EXISTS) — characterization', () =
     // field_values join (alias 'fv_opportunities_amount') INSIDE the EXISTS. But
     // compileLeaf's has_many branch emits the inner join as a bare
     // `inner join ${j.table}` where j.table is the drizzle alias() — rendering
-    // ONLY the alias NAME, never the `field_values AS fv_opportunities_amount`
+    // ONLY the alias NAME, never the `field_values AS fv_opportunities_Amount`
     // declaration. The generated SQL references a relation that is never
     // declared, so Postgres throws:
-    //     relation "fv_opportunities_amount" does not exist  (SQLSTATE 42P01)
+    //     relation "fv_opportunities_Amount" does not exist  (SQLSTATE 42P01)
     //
-    // What it WOULD return if it worked: 99 accounts have an opportunity with
-    // amount > 50000 (truth below), so the intended semijoin count is 99.
+    // What it WOULD return if it worked: 71 accounts have an opportunity with
+    // Amount > 50000 (truth below; Bean Maxx is 1 opp/account), so the intended
+    // semijoin count is 71.
     const want = await n(
-      "select count(*) as n from accounts a where exists (select 1 from opportunities o join field_values fv on fv.entity_id=o.id and fv.entity_type='opportunity' and fv.field_definition_id=(select id from field_definitions where key='amount' and entity_type='opportunity' and organization_id='e7e24eb2-49ba-45cb-88b1-43696d1e9ed8') where o.account_id=a.id and fv.value_number>50000)",
+      "select count(*) as n from accounts a where exists (select 1 from opportunities o join field_values fv on fv.entity_id=o.id and fv.entity_type='opportunity' and fv.field_definition_id=(select id from field_definitions where key='Amount' and entity_type='opportunity' and organization_id='a30c290d-6798-4da7-b3af-7b48c50212b8') where o.account_id=a.id and fv.value_number>50000)",
     );
-    expect(want).toBe(99); // the intended (currently-unreachable) count
+    expect(want).toBe(71); // the intended (currently-unreachable) count
 
     // SUSPECTED-DIVERGENCE: a has_many EXISTS whose inner (tail) leg resolves an
     // EAV value column emits SQL referencing an UNDECLARED field_values alias and
@@ -242,10 +247,10 @@ suite('retrieval (belongs_to JOIN + has_many EXISTS) — characterization', () =
     // AS-IS — the refactor's IR must declare the alias inside the EXISTS. — revisit
     await expect(
       h.service.query('accounts', {
-        filter: { on: 'opportunities.amount', op: 'gt', value: 50000 },
+        filter: { on: 'opportunities.Amount', op: 'gt', value: 50000 },
         page: { limit: 500 },
       }),
-    ).rejects.toThrow('fv_opportunities_amount');
+    ).rejects.toThrow('fv_opportunities_Amount');
   });
 
   // ==========================================================================
@@ -302,8 +307,8 @@ suite('retrieval (belongs_to JOIN + has_many EXISTS) — characterization', () =
       "select count(*) as n from observations where type ilike '%risk%' or normalized_text ilike '%risk%'",
     );
     const typeOnly = await n("select count(*) as n from observations where type ilike '%risk%'");
-    expect(want).toBe(604);
-    expect(typeOnly).toBe(588); // strictly less — proves normalized_text is also in the fan-out
+    expect(want).toBe(3233);
+    expect(typeOnly).toBe(2429); // strictly less — proves normalized_text is also in the fan-out
 
     const res = await h.service.query('observations', {
       filter: { on: 'text', op: 'contains', value: 'risk' },
@@ -316,12 +321,13 @@ suite('retrieval (belongs_to JOIN + has_many EXISTS) — characterization', () =
   it("'text' filter on accounts (single searchable column 'name') compiles to a single leaf", async () => {
     // accounts has exactly one searchable column (name) → expandTextMagic returns
     // a single {on:'name'} leaf, not an OR.
-    // truth: accounts whose name ilike '%man%'.
-    const want = await n("select count(*) as n from accounts where name ilike '%man%'");
-    expect(want).toBe(4);
+    // truth: accounts whose name ilike '%ai%' (Bean Maxx has no '%man%' match; 'ai'
+    // matches 17 — a non-degenerate single-column substring on `name`).
+    const want = await n("select count(*) as n from accounts where name ilike '%ai%'");
+    expect(want).toBe(17);
 
     const res = await h.service.query('accounts', {
-      filter: { on: 'text', op: 'contains', value: 'man' },
+      filter: { on: 'text', op: 'contains', value: 'ai' },
       page: { limit: 500 },
     });
     expect(res.total).toBe(want);

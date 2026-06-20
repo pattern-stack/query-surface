@@ -2,7 +2,7 @@
   "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
   "organizeImports": { "enabled": true },
   "files": {
-    "ignore": ["dist", "node_modules", "*.json"]
+    "ignore": ["dist", "node_modules", ".claude", "*.json"]
   },
   "formatter": {
     "enabled": true,
@@ -12,9 +12,13 @@
   },
   "linter": {
     "enabled": true,
-    "rules": { "recommended": true }
+    "rules": {
+      "recommended": true,
+      "style": { "noNonNullAssertion": "off" }
+    }
   },
   "javascript": {
-    "formatter": { "quoteStyle": "single", "trailingCommas": "all" }
+    "formatter": { "quoteStyle": "single", "trailingCommas": "all" },
+    "parser": { "unsafeParameterDecoratorsEnabled": true }
   }
 }

@@ -76,7 +76,7 @@ suite('scope-failclosed — characterization', () => {
     );
     const res = await svc.query('observations', { page: { limit: 5000 }, include_sql: true });
     const ref = await truth(COMMITMENT);
-    // scope alone collapses the population to type=commitment (610), NOT the 7548 total.
+    // scope alone collapses the population to type=commitment (2084), NOT the 29092 total.
     expect(res.total).toBe(num(ref[0]!.n));
     expect((res.sql ?? '').toLowerCase()).toContain('where');
   });
@@ -239,7 +239,7 @@ suite('scope-failclosed — characterization', () => {
          select account_id from observations group by account_id
        ) u`,
     );
-    expect(res.rows.length).toBe(num(ref[0]!.n)); // 170 (169 real account_ids + the NULL group)
+    expect(res.rows.length).toBe(num(ref[0]!.n)); // 101 (100 real account_ids + the NULL group)
   });
 
   // ==========================================================================
@@ -274,22 +274,22 @@ suite('scope-failclosed — characterization', () => {
       measures: [{ ref: 'wpd' }],
     });
 
-    // The engine groups opportunities by account_id (169 groups). Ground-truth the
+    // The engine groups opportunities by account_id (100 groups). Ground-truth the
     // count of groups with NO usable denominator (avg deal_probability null/zero),
-    // keyed by the SAME field_definitions KEYs the model resolves (hs_projected_amount
-    // / hs_deal_stage_probability), not by label.
+    // keyed by the SAME field_definitions KEYs the model resolves (ExpectedRevenue
+    // / Probability), not by label.
     const ref = await truth(
       `select count(distinct o.account_id)::int n from opportunities o
        where o.account_id not in (
          select o2.account_id from opportunities o2
          join field_values fv on fv.entity_id = o2.id and fv.entity_type='opportunity'
            and fv.field_definition_id =
-             (select id from field_definitions where entity_type='opportunity' and key='hs_deal_stage_probability')
+             (select id from field_definitions where entity_type='opportunity' and key='Probability')
          where fv.value_number is not null
          group by o2.account_id having avg(fv.value_number) is not null and avg(fv.value_number) <> 0
        )`,
     );
-    const nullDenomGroups = num(ref[0]!.n); // 46
+    const nullDenomGroups = num(ref[0]!.n); // 33
 
     // (1) the NULL-ratio rows in the engine output match the SQL truth …
     const nullRows = res.rows.filter((r) => r.wpd == null).length;

@@ -63,8 +63,7 @@ export async function expandRows(
   if (rows.length === 0 || Object.keys(tree).length === 0) return;
   if (depth >= MAX_DEPTH) {
     throw new Error(
-      `Expand depth exceeded ${MAX_DEPTH} hops at entity '${entityName}'. ` +
-        `Tighten the expand paths or break into separate /fetch calls.`,
+      `Expand depth exceeded ${MAX_DEPTH} hops at entity '${entityName}'. Tighten the expand paths or break into separate /fetch calls.`,
     );
   }
 

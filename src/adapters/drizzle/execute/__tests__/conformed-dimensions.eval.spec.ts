@@ -49,10 +49,11 @@ suite('conformed dimensions — live dealbrain (ADR-0024 wave 1)', () => {
     );
     const byName = (n: string) => res.rows.find((r) => r['accounts.name'] === n);
     // GROUND TRUTH (psql): select a.name, count(o.id) from opportunities o join accounts a
-    //   on a.id=o.account_id group by a.name → Aaxisdigital=3, Holman=3, Acidgreen=2, ...
-    expect(num(byName('Aaxisdigital')?.cnt)).toBe(3);
-    expect(num(byName('Holman')?.cnt)).toBe(3);
-    expect(num(byName('Acidgreen')?.cnt)).toBe(2);
+    //   on a.id=o.account_id group by a.name → Bean Maxx is 1:1 (100 accounts, 100 opps, each
+    //   account owns exactly one opp) → every group is 1: Anthropic=1, Brex=1, Captions=1, ...
+    expect(num(byName('Anthropic')?.cnt)).toBe(1);
+    expect(num(byName('Brex')?.cnt)).toBe(1);
+    expect(num(byName('Captions')?.cnt)).toBe(1);
     // NO FAN-OUT: count(*) over the LEFT JOIN counts every opp row exactly once → sum == total.
     const total = num((await truth('select count(*) as n from opportunities'))[0]?.n);
     const summed = res.rows.reduce((s, r) => s + num(r.cnt), 0);
@@ -71,7 +72,7 @@ suite('conformed dimensions — live dealbrain (ADR-0024 wave 1)', () => {
       limit: 1,
     });
     expect(res.rows).toHaveLength(1);
-    expect(num(res.rows[0]?.cnt)).toBe(3); // the top account has 3 opps
+    expect(num(res.rows[0]?.cnt)).toBe(1); // Bean Maxx is 1:1 → the top account has 1 opp
     // group_count = distinct accounts the opps roll up to (a NULL-account group may exist).
     const distinct = num(
       (
@@ -84,27 +85,31 @@ suite('conformed dimensions — live dealbrain (ADR-0024 wave 1)', () => {
   });
 
   // --- to-one filter ---
-  it('C3 filter an opportunity measure by accounts.name (to-one join in WHERE) — Holman has 3 opps', async () => {
+  it('C3 filter an opportunity measure by accounts.name (to-one join in WHERE) — Anthropic has 1 opp', async () => {
     const res = await runAggregateDrizzle(db, model, {
       entity: 'opportunities',
       measures: [{ on: '*', agg: 'count', as: 'cnt' }],
-      filter: { on: 'accounts.name', op: 'eq', value: 'Holman' },
+      filter: { on: 'accounts.name', op: 'eq', value: 'Anthropic' },
     });
-    expect(num(res.rows[0]?.cnt)).toBe(3);
+    // GROUND TRUTH: select count(o.id) from opportunities o join accounts a on a.id=o.account_id
+    //   where a.name='Anthropic' → 1 (Bean Maxx is 1:1).
+    expect(num(res.rows[0]?.cnt)).toBe(1);
   });
 
   // --- cross-grain boolean filter → SEMIJOIN (EXISTS), never a fan-out join ---
-  it('C4 filter accounts by a child predicate (observations.type) compiles to a SEMIJOIN — 46 of 169', async () => {
+  it('C4 filter accounts by a child predicate (observations.type) compiles to a SEMIJOIN — 100 of 100', async () => {
     const total = num((await truth('select count(*) as n from accounts'))[0]?.n);
-    expect(total).toBe(169);
+    expect(total).toBe(100);
     const res = await runAggregateDrizzle(db, model, {
       entity: 'accounts',
       measures: [{ on: '*', agg: 'count', as: 'cnt' }],
       filter: { on: 'observations.type', op: 'eq', value: 'risk' },
     });
-    // GROUND TRUTH: 46 accounts have ≥1 'risk' observation (EXISTS, no inflation — a fan-out
-    // join would over-count by the number of matching observations per account).
-    expect(num(res.rows[0]?.cnt)).toBe(46);
+    // GROUND TRUTH: 100 accounts have ≥1 'risk' observation via EXISTS (the corpus is dense — every
+    // account carries risk obs). DISCRIMINATION PRESERVED: a fan-out join would over-count to 2160
+    // (= total 'risk' observations: `select count(*) from observations where type='risk'`); the
+    // semijoin counts each matching account exactly once (100 ≠ 2160).
+    expect(num(res.rows[0]?.cnt)).toBe(100);
     expect(res.sql.toLowerCase()).toContain('exists');
     expect(res.sql.toLowerCase()).toContain('observations');
   });
@@ -153,8 +158,8 @@ suite('conformed dimensions — live dealbrain (ADR-0024 wave 1)', () => {
   });
 
   it('C8 a scoped joined entity folds the predicate INTO the join ON (out-of-scope parent → excluded)', async () => {
-    // Scope accounts to "name <> 'Holman'": the join ON gains the predicate, so Holman's opps
-    // join to NULL and 'Holman' never appears as a group. Proves scope reaches the JOIN, not
+    // Scope accounts to "name <> 'Anthropic'": the join ON gains the predicate, so Anthropic's opps
+    // join to NULL and 'Anthropic' never appears as a group. Proves scope reaches the JOIN, not
     // just the source CTE.
     const res = await runAggregateDrizzle(
       db,
@@ -164,11 +169,11 @@ suite('conformed dimensions — live dealbrain (ADR-0024 wave 1)', () => {
         group_by: ['accounts.name'],
         measures: [{ on: '*', agg: 'count', as: 'cnt' }],
       },
-      (src) => (src === 'accounts' ? { on: 'name', op: 'neq', value: 'Holman' } : TENANT_GLOBAL),
+      (src) => (src === 'accounts' ? { on: 'name', op: 'neq', value: 'Anthropic' } : TENANT_GLOBAL),
     );
-    expect(res.rows.find((r) => r['accounts.name'] === 'Holman')).toBeUndefined();
+    expect(res.rows.find((r) => r['accounts.name'] === 'Anthropic')).toBeUndefined();
     // a different account is unaffected
-    expect(res.rows.some((r) => r['accounts.name'] === 'Aaxisdigital')).toBe(true);
+    expect(res.rows.some((r) => r['accounts.name'] === 'Brex')).toBe(true);
     // The scope is in the JOIN ON (a LEFT JOIN), NOT the source-CTE WHERE: so out-of-scope
     // parents become NULL-group rows rather than DROPPING the (in-scope) opp rows — the total
     // opp count is still conserved. (A WHERE-applied scope would drop Holman's 3 opps entirely.)
