@@ -443,6 +443,15 @@ suite('relevance-as-filter — aggregate() live dealbrain (ADR-0024 §A / Amendm
     expect(num(res.rows[0]!.opp)).toBe(oppRef);
     // The opp leg conforms via a has_many EXISTS semijoin, NOT a fan-out join (invariant #2).
     expect((res.sql ?? '').toLowerCase()).toContain('exists');
+    // include_sql echoes the bound params too (parity with query()/fetch()): the query vector is
+    // a param (never inlined — invariant #1), so a 1536-d entry is present alongside the scalars.
+    expect(Array.isArray(res.params)).toBe(true);
+    expect(
+      (res.params ?? []).some((p) => {
+        const a = Array.isArray(p) ? p : typeof p === 'string' && p.startsWith('[') ? JSON.parse(p) : null;
+        return Array.isArray(a) && a.length === 1536;
+      }),
+    ).toBe(true);
   });
 
   // ── 4. FAN-SAFETY (cohort membership ≠ a fanning JOIN) ─────────────────────────────────────

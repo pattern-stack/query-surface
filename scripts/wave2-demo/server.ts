@@ -29,6 +29,24 @@ const pretty = (sql?: string): string | undefined => {
   }
 };
 
+// Compact the bound params for display: a relevance vector param is the full 1536-d embedding —
+// show it as a labeled, truncated preview (NOT 16KB of floats), keep scalars (uuid/threshold/k) as-is.
+function displayParams(params: unknown[] | undefined, query: string): { i: number; kind: 'vector' | 'scalar'; value: string }[] {
+  if (!params) return [];
+  return params.map((p, idx) => {
+    // pgvector params arrive as a stringified array ("[0.01,..]") or a real number[].
+    const arr =
+      Array.isArray(p) ? (p as number[])
+        : typeof p === 'string' && p.startsWith('[') && p.length > 100 ? (JSON.parse(p) as number[])
+          : null;
+    if (arr && arr.length > 32) {
+      const head = arr.slice(0, 4).map((n) => n.toFixed(4)).join(', ');
+      return { i: idx + 1, kind: 'vector' as const, value: `⟨embedding of “${query}” · ${arr.length}-d⟩  [${head}, …]` };
+    }
+    return { i: idx + 1, kind: 'scalar' as const, value: String(p) };
+  });
+}
+
 const DBURL = process.env.DBURL;
 if (!DBURL) {
   console.error('Set DBURL, e.g. DBURL=postgres://postgres:password@localhost:54321/dealbrain');
@@ -77,6 +95,7 @@ async function apiRelevant(body: any) {
     rows: res.rows,
     citation: res.citation,
     sql: pretty(res.sql),
+    params: displayParams(res.params, body.query),
     ms: Math.round(performance.now() - t0),
   };
 }
@@ -95,6 +114,7 @@ async function apiExplore(body: any) {
     total: res.total,
     rows: res.preview ?? [],
     sql: pretty(res.sql),
+    params: displayParams(res.params, body.query),
     ms: Math.round(performance.now() - t0),
   };
 }

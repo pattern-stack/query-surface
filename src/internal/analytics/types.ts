@@ -131,6 +131,7 @@ export interface AggregateResult {
   row_count: number;
   group_count: number | null;
   sql: string;
+  params: unknown[];
   plan: AggregatePlan;
   warnings?: string[];
 }
@@ -190,6 +191,9 @@ export interface AggregateResponse {
   group_count: number | null;
   warnings?: string[];
   sql?: string;
+  /** The bound parameter values for `sql` (placeholder $n → value), echoed with `include_sql` —
+   *  parity with query()/fetch(). Debug surface; a vector param is the full embedding array. */
+  params?: unknown[];
   /** ON whenever a `relevant` leaf was present in the filter — the auditable cohort
    *  definition, computed by a row-grain companion query (additive, flows to the wire). */
   citation?: RelevanceCitation;
