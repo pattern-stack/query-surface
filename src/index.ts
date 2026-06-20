@@ -88,6 +88,7 @@ export type {
   QueryOptions,
   QueryServiceOptions,
   ScopeResolver,
+  ViewingScope,
 } from './query.application-service.ts';
 export { QueryApplicationService } from './query.application-service.ts';
 export type {

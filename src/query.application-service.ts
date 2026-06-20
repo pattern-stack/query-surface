@@ -51,6 +51,23 @@ import type {
  */
 export type ScopeResolver = (entity: EntityName) => FilterExpression | undefined;
 
+/**
+ * Read-time ATTRIBUTION grain for interaction-sourced queries (the behavioral
+ * attribution fork — ADR-0027). NOT a tenancy filter (that is `ScopeResolver`);
+ * this selects *whose activity an observation counts toward*:
+ *
+ *  - `personal`  — attribute to the interaction's own owner (`user_id`); the
+ *                  interaction grain; today's behavior, unchanged. The FLOOR.
+ *  - `org_wide`  — attribute to each real participant via the materialized
+ *                  `interaction_party` edge grain (owner = `person_id`).
+ *
+ * The package receives a RESOLVED scope; mapping `actor → connection → scope`
+ * is the host's job (it owns the connection directory). Fail-closed: an
+ * unknown/absent scope resolves to `personal` — over-attribution must be an
+ * explicit `org_wide` opt-in, never a silent default.
+ */
+export type ViewingScope = 'personal' | 'org_wide';
+
 export interface QueryServiceOptions {
   /** EAV field-map actor — whose `field_definitions` define the virtual columns.
    *  REQUIRED at query time: a missing actor throws rather than silently
@@ -64,6 +81,11 @@ export interface QueryServiceOptions {
    *  SOURCE into each CTE of aggregate() (a cross-entity measure is scoped to its
    *  OWN entity, not the query root). */
   scope?: ScopeResolver;
+  /** Read-time attribution grain for interaction-sourced queries (ADR-0027 W1).
+   *  Host-resolved from the viewing connection. Omit ⇒ `personal` (fail-closed).
+   *  W1 only THREADS this — the grain-switch dispatch that consumes it is W3, so
+   *  setting it is presently a no-op (availability, no behavior change). */
+  viewingScope?: ViewingScope;
   /** Host-supplied builder for the analytics model the aggregate engine runs
    *  against (cardinality/EAV registry + DERIVED manifest + Drizzle table/column
    *  refs). Lazy-cached on first aggregate() call (the builder may hit the DB for
@@ -160,6 +182,16 @@ export class QueryApplicationService {
     const s = this.options.scope?.(entity);
     if (s && filter) return { and: [s, filter] };
     return s ?? filter;
+  }
+
+  /**
+   * The resolved viewing attribution grain (ADR-0027). FAIL-CLOSED: an unset or
+   * unknown scope is `personal` — org_wide attribution is opt-in only. Exposed
+   * (read-only) so the W3 grain-switch dispatch and tests can read it; W1 only
+   * makes it AVAILABLE — no caller branches on it yet.
+   */
+  get viewingScope(): ViewingScope {
+    return this.options.viewingScope === 'org_wide' ? 'org_wide' : 'personal';
   }
 
   /**
