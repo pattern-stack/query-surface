@@ -100,7 +100,10 @@ export interface QuerySurfaceHarness {
  * query/fetch; observations is the EXTENDED table (adds embedding/normalized_text
  * for ranking).
  */
-export function makeQuerySurface(dburl: string): QuerySurfaceHarness {
+export function makeQuerySurface(
+  dburl: string,
+  opts?: { embed?: (text: string) => Promise<number[]> },
+): QuerySurfaceHarness {
   const { db, close } = makeDb(dburl);
 
   configureQueryRegistry([
@@ -146,7 +149,9 @@ export function makeQuerySurface(dburl: string): QuerySurfaceHarness {
     actorOrganizationId: DEALBRAIN_ORG,
     aggregateModel: () => loadDealbrainModel(db),
     semanticColumns: { observations: { normalized_text: 'embedding' } },
-    embed,
+    // Default: the deterministic ILIKE stub (specs are hermetic). A caller (e.g. the demo) may
+    // inject a REAL embed provider to exercise true free-text concepts against the stored vectors.
+    embed: opts?.embed ?? embed,
   });
 
   return { service, db, close };

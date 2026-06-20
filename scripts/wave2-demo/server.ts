@@ -55,7 +55,35 @@ if (!DBURL) {
 
 const PORT = Number(process.env.PORT ?? 7878);
 const HTML = readFileSync(join(import.meta.dir, 'index.html'), 'utf8');
-const h = makeQuerySurface(DBURL);
+
+// REAL embed provider (optional) — turns the demo's `query` into a TRUE free-text concept instead
+// of the ILIKE stub's verbatim-phrase lookup. Must use the SAME model that produced the stored
+// Bean Maxx vectors (dealbrain: OpenAI text-embedding-3-small, 1536-d) or cosine is meaningless.
+// Enabled when OPENAI_API_KEY is set; otherwise the harness stub is used. A small cache keeps
+// repeat concepts free.
+const EMBED_MODEL = process.env.EMBED_MODEL ?? 'text-embedding-3-small';
+function makeRealEmbed(): ((text: string) => Promise<number[]>) | undefined {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) return undefined;
+  const cache = new Map<string, number[]>();
+  return async (text: string): Promise<number[]> => {
+    const hit = cache.get(text);
+    if (hit) return hit;
+    const r = await fetch('https://api.openai.com/v1/embeddings', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+      body: JSON.stringify({ model: EMBED_MODEL, input: text, dimensions: 1536 }),
+    });
+    if (!r.ok) throw new Error(`embed provider ${EMBED_MODEL} failed: ${r.status} ${await r.text()}`);
+    const j = (await r.json()) as { data: { embedding: number[] }[] };
+    const vec = j.data[0]!.embedding;
+    cache.set(text, vec);
+    return vec;
+  };
+}
+const realEmbed = makeRealEmbed();
+const EMBED_MODE = realEmbed ? `live · ${EMBED_MODEL}` : 'stub · ILIKE phrase-match';
+const h = makeQuerySurface(DBURL, realEmbed ? { embed: realEmbed } : undefined);
 
 // The named measures the Bean Maxx catalog exposes (both EAV on opportunities) + a plain count.
 type MDef = { source?: string; on: string; agg: 'sum' | 'avg' | 'count'; as: string; label: string; fmt: 'usd' | 'pct' | 'int' };
@@ -168,6 +196,9 @@ const server = Bun.serve({
     if (url.pathname === '/' || url.pathname === '/index.html') {
       return new Response(HTML, { headers: { 'content-type': 'text/html; charset=utf-8' } });
     }
+    if (url.pathname === '/api/info') {
+      return Response.json({ embedMode: EMBED_MODE, real: !!realEmbed, model: EMBED_MODEL });
+    }
     if (url.pathname === '/api/describe') {
       try {
         return Response.json(await apiDescribe(url.searchParams.get('entity') ?? 'opportunities'));
@@ -189,4 +220,5 @@ const server = Bun.serve({
   },
 });
 
-console.log(`\n  query-surface · relevance explorer  →  http://localhost:${server.port}\n`);
+console.log(`\n  query-surface · relevance explorer  →  http://localhost:${server.port}`);
+console.log(`  embed: ${EMBED_MODE}${realEmbed ? '' : '  (set OPENAI_API_KEY for true free-text concepts)'}\n`);
