@@ -62,3 +62,36 @@ The forcing function: dogfooding `compare()` as an analyst surfaced the silent-d
 3. **Citation is MANDATORY in the response for a relevance cohort** (§C). Any `aggregate`/`compare`/`query` whose selection includes a `relevant` leaf MUST return, with the number(s): (a) the **cohort definition** (the relevance predicate + the exact cutoff applied), (b) **matched exemplars** (reuse `internal/retrieval/snippets`), (c) the **match count at that cutoff**. The cohort is auditable, never asserted — alignment-integrity for semantic cohorts, non-negotiable.
 
 **Deferred (NOT Wave-2):** the verb rename (§A2); **score-as-measure** (§D — relevance score as `avg`/`max` per group); the **gradient lever** (§B); **drill-down** (§E) is a consuming-surface concern, not the engine. Item-F (§F) = the `FIELD_PATH` vs `AGGREGATE` error-contract unification, an IR-phase job (see the char-net backlog).
+
+---
+
+## Amendment 2 — Wave-2 design pass: leaf shape, defuzzify mechanics, top_k dual-mode, calibration-grade citation, fixture (2026-06-19, Dug)
+
+§Direction A/B/C is RATIFIED (Amendment 1). This amendment closes the **mechanics** surfaced in the design pass — build-shaping decisions, not direction. Items marked **[settle in build]** are open micro-knobs with a recommendation; everything else is decided.
+
+**1. The `relevant` leaf — final shape.** A new op in the one expression language (`internal/language/types.ts` — note the `Op` union has NO vector op today):
+`{ on, op: 'relevant', query, threshold?, top_k?, per? }`
+- `on` — a registered **semantic text column** (resolves to its embedding column via the existing `semanticColumns` registry, same one the rank path uses).
+- `query` — the free-text concept (e.g. `"pricing objection"`).
+- Exactly ONE of `threshold` | `top_k` (XOR), **mandatory** — engine REJECTS neither (ratified §B; no silent default). `per` qualifies `top_k` only (§4).
+- Flows into `query`/`aggregate`/`compare` filters identically (hard rule #9).
+
+**2. Defuzzify — the crispify step** (`internal/analytics/normalize.ts`, pre-compile). The **service** resolves `vector = embed(query)` BEFORE compile — mirroring `resolveSemanticRank` (`query.application-service.ts:262`), but now **walked over every `relevant` filter leaf** for `aggregate()`/`compare()` (which call `embed` nowhere today). Then crispify:
+- **similarity** = `1 - (embedding <=> vector)` ∈ [0,1] — REUSE the rank compiler's formula (`compiler.ts:740`); higher = closer.
+- **threshold** → predicate `sim >= threshold`. **top_k** → a ranked cutoff (§4).
+
+**3. The vector-distance predicate primitive is NET-NEW (Amendment 1's "ordinary predicate the resolver already lowers" was optimistic).** There is no vector op in `Op` and no WHERE-clause distance leaf — `simExpr` exists ONLY as an `ORDER BY` in the rank compiler. So crispify yields a leaf that BOTH predicate compilers must learn to lower to `(1 - (col <=> vec::vector)) >= t`: `compiler.ts` (query/fetch) **and** `compile-drizzle.ts` (aggregate). The wave-1 conform/semijoin **wrapping** is reused; the **leaf comparison is new SQL in two places.** Plan the build for new, not reuse.
+
+**4. `top_k` is dual-mode — global vs per-group — one ranked-CTE machinery** (resolves the "thorny" open #4). Both intents are first-class, differing ONLY in the ranked CTE's partition scope:
+- **Global** — *"top 10 overall, split by account"*: `ORDER BY sim DESC LIMIT k` over the whole matched population; cohort = that global top-k; group for display (per-group counts vary, many 0).
+- **Per-group** — *"grouped by account, top 10 each (6 if only 6 match)"*: `row_number() OVER (PARTITION BY <key> ORDER BY sim DESC) <= k`; each group contributes ≤ k, naturally fewer when fewer match.
+Both compile to a **ranked CTE the cohort joins/semijoins against** (NOT a plain `EXISTS` — that's threshold's shape). Reuses the existing `partition_by` window infra (types.ts already models "top K most similar per account"). **[settle in build]** explicit `per` (partition key) vs inferred from `group_by` → **recommend explicit `per?`**, defaulting to the group key when grouping / global when absent. So: threshold → plain semijoin; top_k → ranked-CTE join. Two lowerings, one leaf.
+
+**5. Citation is CALIBRATION-GRADE, not just exemplars** (strengthens §C). Any selection with a `relevant` leaf MUST return a programmatic classification-criteria block so a semantic cohort is *legible*, not asserted:
+- **cohort definition** — the predicate + the EXACT operative cutoff (resolved `threshold`, or the effective similarity at the `top_k` boundary);
+- **matched exemplars WITH similarity scores** (reuse `internal/retrieval/snippets.ts`) — the gradient is visible;
+- the **decision boundary** — lowest-included and (where cheap) highest-excluded example — what *just* made / missed the cut;
+- **match count at cutoff**.
+This makes the cohort **calibratable**: near-term the agent need not pre-set a perfect threshold — cheap first call → inspect the boundary → adjust next call (an agent-driven calibration loop). This is the chosen answer to "the agent shouldn't always have to set the threshold": expose it explicitly **and** make the output teach the cutoff, rather than have the engine guess (consistent with "consistency now beats gradient now"; the gradient lever stays deferred). **[settle in build]** exact payload shape + whether highest-excluded is always computed or only on request.
+
+**6. Fixture — adopt dealbrain's "Bean Maxx" Agentic-Search dataset** (replaces the live-mutating dev DB + the ILIKE embed stub). The live dealbrain dev DB is non-hermetic — eval ground-truth counts drifted 46→51 mid-session (red baseline ≠ regression), and the ILIKE stub can't grade free-text. **Bean Maxx** (Tempo-Systems/dealbrain, Nick Handel) is purpose-built for "Agentic Search": ~3,592 observations w/ real embeddings, 100 deals, 727 transcripts, **2,400 retrieval question/goldens + 23,843 observation-extraction goldens**, audited (`just db-audit-bm`) + frozen (versioned snapshot). Seed via `just db-seed-bm -- --fixture-dir=<dev-data-generation>` or restore `dev-snapshot/versions/*.dump`. **The goldens are the prize:** Wave-2 relevance-as-filter falsifies against known-good retrieval answers instead of hand-asserted counts. **Effort caveat (not a trivial pull):** the fixture-dir is a local artifact (Nick's iCloud), the dump is large/likely-LFS, and query-surface's `adapters/reference/{schema,model}.dealbrain` must be reconciled against Bean Maxx's (current migrated) schema. **[settle]** confirm a local copy (Dug) vs fetch; then re-baseline the eval ground-truths against Bean Maxx in the same PR.

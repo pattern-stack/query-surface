@@ -18,8 +18,8 @@ import { aggregate, runAggregateDrizzle } from '../run-drizzle';
 
 const DBURL = process.env.DBURL;
 const suite = DBURL ? describe : describe.skip;
-const WA = `(select id from field_definitions where entity_type='opportunity' and label='Weighted amount')`;
-const DP = `(select id from field_definitions where entity_type='opportunity' and label='Deal probability')`;
+const WA = `(select id from field_definitions where entity_type='opportunity' and key='ExpectedRevenue')`;
+const DP = `(select id from field_definitions where entity_type='opportunity' and key='Probability')`;
 
 suite('aggregate engine — Drizzle-native, live dealbrain eval superset', () => {
   let db: DrizzleDb;
@@ -50,13 +50,13 @@ suite('aggregate engine — Drizzle-native, live dealbrain eval superset', () =>
       limit: 5,
     });
     const ref = await truth(
-      `select type, count(*)::int as n from observations group by type order by n desc, type asc limit 5`,
+      'select type, count(*)::int as n from observations group by type order by n desc, type asc limit 5',
     );
     expect(res.rows.map((r) => ({ type: r.type, n: num(r.n) }))).toEqual(
       ref.map((r) => ({ type: r.type, n: num(r.n) })),
     );
     expect(res.group_count).toBe(
-      num((await truth(`select count(distinct type)::int c from observations`))[0]!.c),
+      num((await truth('select count(distinct type)::int c from observations'))[0]!.c),
     );
   });
 
@@ -136,7 +136,7 @@ suite('aggregate engine — Drizzle-native, live dealbrain eval superset', () =>
     });
     expect(res.rows.every((r) => num(r.n) > 50)).toBe(true);
     const ref = await truth(
-      `select account_id, count(*)::int n from observations group by account_id having count(*) > 50 order by n desc`,
+      'select account_id, count(*)::int n from observations group by account_id having count(*) > 50 order by n desc',
     );
     expect(res.rows.map((r) => num(r.n))).toEqual(ref.map((r) => num(r.n)));
     // group_count counts POST-having groups (consistent single + multi source).
@@ -156,7 +156,7 @@ suite('aggregate engine — Drizzle-native, live dealbrain eval superset', () =>
     const refW = await truth(
       `select sum(value_number) s from field_values where field_definition_id=${WA}`,
     );
-    const refO = await truth(`select count(*)::int c from observations`);
+    const refO = await truth('select count(*)::int c from observations');
     expect(num(res.rows[0]!.weighted)).toBeCloseTo(num(refW[0]!.s), 2);
     expect(num(res.rows[0]!.obs)).toBe(num(refO[0]!.c));
     const naive = (await compileNaiveDrizzle(db, model, q)) as Record<string, unknown>[];
@@ -199,7 +199,7 @@ suite('aggregate engine — Drizzle-native, live dealbrain eval superset', () =>
     expect(res.rows.every((r) => num(r.obs) > 50)).toBe(true);
     // the account set matches the per-source HAVING truth (full-outer-join + having on the obs alias)
     const ref = await truth(
-      `select account_id from observations group by account_id having count(*) > 50 order by account_id`,
+      'select account_id from observations group by account_id having count(*) > 50 order by account_id',
     );
     expect(res.rows.map((r) => String(r.account_id)).sort()).toEqual(
       ref.map((r) => String(r.account_id)).sort(),
@@ -256,7 +256,7 @@ suite('aggregate engine — Drizzle-native, live dealbrain eval superset', () =>
       measures: [{ on: '*', agg: 'count', as: 'n' }],
       filter: { on: 'type', op: 'nin', value: [] },
     });
-    const all = await truth(`select count(*)::int n from observations`);
+    const all = await truth('select count(*)::int n from observations');
     expect(num(ninEmpty.rows[0]!.n)).toBe(num(all[0]!.n)); // empty NOT IN matches everything
   });
 
@@ -323,10 +323,13 @@ suite('aggregate engine — Drizzle-native, live dealbrain eval superset', () =>
         denominator: 'obs_count',
       } as RatioMeasureDef,
       // int/int legs (count_distinct / count_distinct) — exercises the ::numeric cast.
-      obs_per_opp: {
+      // Bean Maxx has exactly 1 opp per account, so opp_count/obs_count = 1/N is the
+      // direction that yields a fractional value (obs_count/opp_count would be a whole
+      // number every group → couldn't witness the no-truncation property).
+      opp_per_obs: {
         kind: 'ratio',
-        numerator: 'obs_count',
-        denominator: 'opp_count',
+        numerator: 'opp_count',
+        denominator: 'obs_count',
       } as RatioMeasureDef,
       // non-additive (avg) NUMERATOR over a different source — exercises the agg-aware
       // numerator null-policy (absent group → NULL, not a fabricated 0).
@@ -368,7 +371,7 @@ suite('aggregate engine — Drizzle-native, live dealbrain eval superset', () =>
         await truth(`select sum(value_number) s from field_values where field_definition_id=${WA}`)
       )[0]!.s,
     );
-    const obsN = num((await truth(`select count(distinct id)::int c from observations`))[0]!.c);
+    const obsN = num((await truth('select count(distinct id)::int c from observations'))[0]!.c);
     expect(num(res.rows[0]!.pipeline_per_obs)).toBeCloseTo(sumW / obsN, 6);
   });
 
@@ -413,25 +416,29 @@ suite('aggregate engine — Drizzle-native, live dealbrain eval superset', () =>
   });
 
   it('E22 int/int ratio uses true division (::numeric), never integer-truncation (live)', async () => {
-    // obs_count / opp_count per account — both count_distinct (bigint). Without the cast
+    // opp_count / obs_count per account — both count_distinct (bigint). Without the cast
     // Postgres would integer-divide (e.g. 7/2 → 3). Assert it matches fractional truth.
     const res = await runAggregateDrizzle(db, modelWithRatios(), {
       entity: 'opportunities',
       group_by: ['account_id'],
-      measures: [{ ref: 'obs_per_opp' }],
+      measures: [{ ref: 'opp_per_obs' }],
     });
+    // FULL OUTER JOIN of the two per-source count CTEs — mirrors the multi-source ratio's
+    // group set. Bean Maxx has 53 observations with a NULL account_id (the diamond's
+    // opportunity-only edge), which form an extra group with opp_count=0 → 0/53 = 0.
     const refRows = await truth(
-      `select o.account_id,
-              (select count(distinct obs.id) from observations obs where obs.account_id = o.account_id)::numeric
-              / nullif(count(distinct o.id), 0) as r
-       from opportunities o group by o.account_id`,
+      `with opp as (select account_id, count(distinct id) oc from opportunities group by account_id),
+            obs as (select account_id, count(distinct id) bc from observations group by account_id)
+       select coalesce(opp.account_id, obs.account_id) as account_id,
+              coalesce(opp.oc, 0)::numeric / nullif(coalesce(obs.bc, 0), 0) as r
+       from opp full outer join obs on opp.account_id = obs.account_id`,
     );
     const refByAcct = new Map(
       refRows.map((r) => [String(r.account_id), r.r == null ? null : num(r.r)]),
     );
     let sawFractional = false;
     for (const row of res.rows) {
-      const got = row.obs_per_opp == null ? null : num(row.obs_per_opp);
+      const got = row.opp_per_obs == null ? null : num(row.opp_per_obs);
       const want = refByAcct.get(String(row.account_id)) ?? null;
       if (want == null) expect(got).toBeNull();
       else {

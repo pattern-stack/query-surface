@@ -138,8 +138,7 @@ export function stitchCompare(variants: VariantRows[], opts: StitchOptions): Sti
   const claimCol = (col: string, owner: string) => {
     if (groupBy.includes(col) || colOwner.has(col)) {
       throw new Error(
-        `${ENGINE_ERROR.AGGREGATE} compare column collision on "${col}" — variant labels and ` +
-          'measure aliases must not contain "__" (the reserved column separator)',
+        `${ENGINE_ERROR.AGGREGATE} compare column collision on "${col}" — variant labels and measure aliases must not contain "__" (the reserved column separator)`,
       );
     }
     colOwner.set(col, owner);

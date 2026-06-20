@@ -137,9 +137,7 @@ export function resolveJoinPlan(
     return {
       kind: 'reject',
       code: 'ambiguous',
-      reason:
-        `dimension "${dotted}" is reachable from ${sourceEntity} by ${toOne.length} distinct ` +
-        'to-one paths (a join diamond) — ambiguous; this slice rejects rather than silently picking an edge',
+      reason: `dimension "${dotted}" is reachable from ${sourceEntity} by ${toOne.length} distinct to-one paths (a join diamond) — ambiguous; this slice rejects rather than silently picking an edge`,
     };
   }
 
@@ -159,9 +157,7 @@ export function resolveJoinPlan(
       return {
         kind: 'reject',
         code: 'unsupported',
-        reason:
-          `filter "${dotted}" crosses ${sourceEntity}→${target} via a multi-hop collection path — ` +
-          'not supported (wave 1: a direct has_many child only)',
+        reason: `filter "${dotted}" crosses ${sourceEntity}→${target} via a multi-hop collection path — not supported (wave 1: a direct has_many child only)`,
       };
     }
     return {
@@ -176,10 +172,7 @@ export function resolveJoinPlan(
     return {
       kind: 'reject',
       code: 'to-many',
-      reason:
-        `dimension "${dotted}" is not conformed to ${sourceEntity} grain ` +
-        `(${sourceEntity}→${target} is to-many; grouping by it would fan out the measure). ` +
-        'Only to-one (belongs_to) dimensions are groupable.',
+      reason: `dimension "${dotted}" is not conformed to ${sourceEntity} grain (${sourceEntity}→${target} is to-many; grouping by it would fan out the measure). Only to-one (belongs_to) dimensions are groupable.`,
     };
   }
   return {

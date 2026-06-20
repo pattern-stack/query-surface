@@ -192,21 +192,24 @@ suite('fetch + expand + projection — characterization', () => {
       const opp = res.rows[0].opportunity as Record<string, unknown>;
       expect(String(opp.id)).toBe(String(t[0].opportunity_id));
       // EAV keys merge inline (the is_visible=true curated set on query/fetch).
-      // `amount` is the canonical curated EAV key (15-key gated set). Ground-truth
-      // its value from field_values.
+      // `Amount` is the canonical curated money EAV key in Bean Maxx (the seed uses
+      // capitalized CRM field keys: Amount / Name / ExpectedRevenue / StageName …,
+      // not the old lowercase amount/dealname). Ground-truth its value from
+      // field_values (money → value_number).
       const av = await truth(
         `select fv.value_number as amount
            from field_values fv
            join field_definitions fd on fd.id = fv.field_definition_id
           where fv.entity_id = '${String(t[0].opportunity_id)}'
             and fv.entity_type = 'opportunity'
-            and fd.key = 'amount' limit 1`,
+            and fd.key = 'Amount' limit 1`,
       );
       if (av.length > 0 && av[0].amount != null) {
-        expect(Number(opp.amount)).toBe(Number(av[0].amount));
+        expect(Number(opp.Amount)).toBe(Number(av[0].amount));
       }
-      // dealname is an is_visible curated EAV key → present.
-      expect(opp).toHaveProperty('dealname');
+      // `Name` is the curated deal-name EAV key in Bean Maxx (was `dealname` in the
+      // old dealbrain seed) → present inline.
+      expect(opp).toHaveProperty('Name');
     });
 
     it('has_many → an array of child rows, count ground-truthed', async () => {
@@ -247,7 +250,7 @@ suite('fetch + expand + projection — characterization', () => {
     });
 
     it('an invalid expand path throws (relationship not on the entity)', async () => {
-      const t = await truth(`select id from observations order by id limit 1`);
+      const t = await truth('select id from observations order by id limit 1');
       await expect(
         h.service.fetch('observations', [String(t[0].id)], { expand: ['not_a_relation'] }),
       ).rejects.toThrow(/Expand path 'not_a_relation' invalid/);

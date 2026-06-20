@@ -15,7 +15,10 @@ import { aggregate, runAggregateDrizzle } from '../run-drizzle';
 
 const DBURL = process.env.DBURL;
 const suite = DBURL ? describe : describe.skip;
-const WA = `(select id from field_definitions where entity_type='opportunity' and label='Weighted amount')`;
+// Bean Maxx: the `weighted_amount` measure resolves via eavByKey('ExpectedRevenue')
+// (see model.dealbrain.ts) — key the truth-SQL the SAME way the engine does, not on a
+// (now-absent) display label.
+const WA = `(select id from field_definitions where entity_type='opportunity' and key='ExpectedRevenue')`;
 
 // Tenancy stand-in for the dealbrain test tables (no real user/org column): an
 // ordinary observations column used AS the scope predicate, so the MECHANIC
@@ -46,7 +49,7 @@ suite('aggregate scope — pre-aggregation, per-source, non-bypassable (live dea
     const scoped = await runAggregateDrizzle(db, model, q, obsScope);
     const unscoped = await runAggregateDrizzle(db, model, q);
     const ref = await truth(`select count(*)::int n from observations where type='commitment'`);
-    const all = await truth(`select count(*)::int n from observations`);
+    const all = await truth('select count(*)::int n from observations');
     expect(num(scoped.rows[0]!.n)).toBe(num(ref[0]!.n)); // pre-agg WHERE applied
     expect(num(unscoped.rows[0]!.n)).toBe(num(all[0]!.n));
     expect(num(ref[0]!.n)).toBeLessThan(num(all[0]!.n)); // the predicate genuinely narrows
