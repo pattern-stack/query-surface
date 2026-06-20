@@ -90,12 +90,17 @@ const EMBED_MODE = realEmbed ? `live · ${EMBED_MODEL}` : 'stub · ILIKE phrase-
 const CRM_API = process.env.CRM_API ?? 'http://localhost:3210';
 type MDef = { source?: string; on: string; agg: 'sum' | 'avg' | 'count'; as: string; label: string; fmt: 'usd' | 'pct' | 'int' };
 type ResolvedMeasure = { key: string; name: string; agg: string; additivity: string; label: string; format: string | null };
-type ResolvedModel = { measures: ResolvedMeasure[]; dimensions: { name: string; label: string }[]; gated: { total: number; exposed: number; dormant: number } };
+type ResolvedDimension = { key: string; name: string; label: string };
+type ResolvedModel = { measures: ResolvedMeasure[]; dimensions: ResolvedDimension[]; gated: { total: number; exposed: number; dormant: number } };
 
 const MEASURES: Record<string, MDef> = {
   deals: { on: '*', agg: 'count', as: 'deals', label: 'Opportunity count', fmt: 'int' }, // built-in (not EAV)
 };
+// Group-by dimensions offered on the ③ Group screen: the resolved EAV dims (config-driven) + a
+// fixed pair that demonstrates the conformed rule — accounts.name (to-one ✓) and the REFUSAL.
+const GROUP_DIMS: { dim: string; label: string }[] = [];
 let measureSpecs: NonNullable<Parameters<typeof makeQuerySurface>[1]>['measureSpecs'];
+let dimensionSpecs: NonNullable<Parameters<typeof makeQuerySurface>[1]>['dimensionSpecs'];
 let SEMANTIC_SOURCE: string;
 let SEMANTIC_GATED = { total: 0, exposed: 0, dormant: 0 };
 
@@ -117,8 +122,11 @@ if (resolved && resolved.measures.length) {
   for (const m of resolved.measures) {
     MEASURES[m.name] = { on: m.name, agg: m.agg as MDef['agg'], as: m.name, label: m.label, fmt: (m.format ?? 'usd') as MDef['fmt'] };
   }
+  // EAV dimensions (groupable select/text fields) — config-driven from the resolved model.
+  dimensionSpecs = resolved.dimensions.map((d) => ({ name: d.name, key: d.key }));
+  for (const d of resolved.dimensions) GROUP_DIMS.push({ dim: d.name, label: `${d.label} — EAV ✓` });
   SEMANTIC_GATED = resolved.gated;
-  SEMANTIC_SOURCE = `field-management app · baseline-gated (${resolved.measures.length} measures, ${resolved.gated.dormant} of ${resolved.gated.total} fields dormant)`;
+  SEMANTIC_SOURCE = `field-management app · baseline-gated (${resolved.measures.length} measures, ${resolved.dimensions.length} dims, ${resolved.gated.dormant} of ${resolved.gated.total} fields dormant)`;
 } else {
   // Fallback: the built-in default measures (the field-management app isn't reachable).
   MEASURES.weighted_amount = { on: 'weighted_amount', agg: 'sum', as: 'weighted_amount', label: 'Weighted pipeline (default)', fmt: 'usd' };
@@ -126,9 +134,14 @@ if (resolved && resolved.measures.length) {
   SEMANTIC_SOURCE = 'built-in default (field-management app not reachable)';
 }
 
+// Always offer the two fixed dims that teach the conformed rule, after the resolved EAV dims:
+GROUP_DIMS.push({ dim: 'accounts.name', label: 'accounts.name — to-one ✓' });
+GROUP_DIMS.push({ dim: 'observations.type', label: 'observations.type — to-many ✗ (refused)' });
+
 const h = makeQuerySurface(DBURL, {
   ...(realEmbed ? { embed: realEmbed } : {}),
   ...(measureSpecs ? { measureSpecs } : {}),
+  ...(dimensionSpecs ? { dimensionSpecs } : {}),
 });
 const DEFAULT_MEASURE = Object.keys(MEASURES).find((k) => k !== 'deals') ?? 'deals';
 
@@ -245,6 +258,8 @@ const server = Bun.serve({
         // the measure list the UI builds its dropdown from (config-driven, gated)
         measures: Object.entries(MEASURES).map(([key, m]) => ({ key, label: m.label })),
         defaultMeasure: DEFAULT_MEASURE,
+        // the group-by dimension list (resolved EAV dims + the conformed-rule demo pair)
+        dimensions: GROUP_DIMS,
       });
     }
     if (url.pathname === '/api/describe') {

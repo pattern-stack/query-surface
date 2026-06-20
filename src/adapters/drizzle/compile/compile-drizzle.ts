@@ -592,13 +592,45 @@ function lowerGroupDim(
   dim: string,
   scopeFor?: ScopeFor,
 ): { alias: string; col: PgColumn | null; expr: SQL; joins: Array<{ table: PgTable; on: SQL }> } {
+  // EAV DIMENSION (the resolved semantic layer): a select/text field exposed as a group dim on
+  // THIS source. A 1:1 field_values LEFT JOIN (on entity_id + field_definition_id) — grain-safe
+  // (groupable like a to-one dim, never fan-out). Mirrors the EAV-measure join (measureValue);
+  // group by + project the value column under the dim's safe canonical name. Checked BEFORE
+  // resolveJoinPlan (which only knows native columns + relation hops, and would reject the dim).
+  const eavField = model.analytics[source]?.fields[dim];
+  if (eavField?.eav && eavField.role === 'dimension') {
+    const valueTable = model.registry[source]?.eav?.valueTable;
+    if (!valueTable) {
+      throw new Error(`${ENGINE_ERROR.AGGREGATE} no EAV value table registered for ${source}`);
+    }
+    const fv = alias(valueTable, `fvg_${assertIdent(dim)}`);
+    const cols = Object.values(getTableColumns(fv)) as PgColumn[];
+    const byName = (n: string): PgColumn => {
+      const c = cols.find((col) => col.name === n);
+      if (!c) throw new Error(`${ENGINE_ERROR.AGGREGATE} EAV column "${n}" missing on ${source}`);
+      return c;
+    };
+    const pk = model.colByDbName[source]![model.analytics[source]!.pk]!;
+    const valueCol = byName(eavField.eav.valueColumn);
+    return {
+      alias: dim,
+      col: valueCol,
+      expr: sql`${valueCol}`,
+      joins: [
+        {
+          table: fv,
+          on: and(eq(byName('entity_id'), pk), eq(byName('field_definition_id'), eavField.eav.defId))!,
+        },
+      ],
+    };
+  }
   const plan = resolveJoinPlan(model.analytics, source, dim, 'group');
   if (plan.kind === 'reject') throw new Error(`${ENGINE_ERROR.AGGREGATE} ${plan.reason}`);
-  const alias = dim;
+  const outAlias = dim;
   if (plan.kind === 'local') {
     const col = plan.column.includes('.') ? null : colObj(model, source, plan.column);
     const { expr } = nativeColSql(model, source, plan.column);
-    return { alias, col, expr, joins: [] };
+    return { alias: outAlias, col, expr, joins: [] };
   }
   if (plan.kind !== 'to-one') {
     // group role never yields a semijoin (a to-many group dim rejects above) — defensive.
@@ -607,7 +639,7 @@ function lowerGroupDim(
     );
   }
   const lowered = lowerToOne(model, plan.hops, plan.target, plan.column, scopeFor);
-  return { alias, col: lowered.col, expr: lowered.expr, joins: lowered.joins };
+  return { alias: outAlias, col: lowered.col, expr: lowered.expr, joins: lowered.joins };
 }
 
 // One source's pre-aggregated SELECT, built with the query builder. Group dims resolve
