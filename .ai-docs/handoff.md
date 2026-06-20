@@ -1,5 +1,11 @@
 # Handoff — query-surface canonical repo · Phase 2 = Wave-2 (semantic selection)
 
+> **STATUS (2026-06-20) — READ FIRST.** `main` = `908de55` (3 merged PRs: #1 computed-metrics, #2 Bean
+> Maxx fixture, #3 predicate-ingress). **Eval fixture is now Bean Maxx**, not the old dev DB. **Wave-2
+> build mechanics are SETTLED** (ADR-0024 Amendment 2) and the **`relevant`-leaf build is UNDERWAY by a
+> SEPARATE agent** on `feat/computed-metrics` (uncommitted WIP in `internal/language/{filter-normalize,
+> types}.ts`) — coordinate, do NOT double-build. **ADR-0025** = remap ergonomics + context-layer (deferred).
+
 **This repo** = `pattern-stack/query-surface` (`/Users/dug/Projects/query-surface`) — the NEW
 **canonical home**, ending the 3-copy fork (was vendored in `swe-brain/packages/query-surface`,
 `query-surface-poc`, and dealbrain copies). The **hexagonal reorg is DONE here.** Future
@@ -8,18 +14,23 @@ query-surface work happens in THIS repo, not the swe-brain copy.
 ## Run / verify (the falsification path — works today)
 ```bash
 # from repo root
-DBURL=postgres://postgres:password@localhost:54321/dealbrain bun test   # 268 pass / 0 fail
+DBURL=postgres://postgres:password@localhost:54321/dealbrain bun test   # green on Bean Maxx (re-run for current count)
 bun test                                                                # skip-clean (202 skip) — DB-gated
 bunx tsc --noEmit                                                       # clean
-bunx @biomejs/biome check src                                          # clean
+bunx @biomejs/biome check .                                          # clean
 ```
-**Prereq:** the dealbrain dev DB must be running on `:54321` (it's dealbrain's, not this repo's —
-bring it up there if down). Without `DBURL` the DB-backed evals skip cleanly, so the suite is still
-green — but you can't *falsify* Wave-2 without it.
+**Prereq:** the `:54321` DB now holds the **Bean Maxx** Agentic-Search dataset (still dealbrain's DB).
+Reproducible reset from a frozen 472MB dump: `pg_restore --clean --if-exists -d dealbrain
+/Users/dug/Projects/query-surface-fixtures/beanmaxx-20260620T155802Z-backfilled.dump`. Without `DBURL`
+the DB-backed evals skip cleanly (still green) — but you can't *falsify* Wave-2 without it.
 
-Live dealbrain (:54321): Opp→Account is to-one, Account→Opp to-many; `observations` carry real
-1536-dim embeddings; 46 of 169 accounts have a `'risk'` observation. The char-net harness used a
-**stub embed** (ILIKE-by-phrase) — a real/seeded embed provider is the fixture gap for deep semantic.
+Bean Maxx (:54321): Opp→Account to-one, Account→Opp to-many; ~100 accounts, 100 opps, **29,092
+observations with REAL 1536-dim embeddings**. EAV is Salesforce-shaped (`weighted_amount`→`ExpectedRevenue`,
+`deal_probability`→`Probability` now **0..100**); owning org `a30c290d…`. **Embedding gotcha:** the seed
+leaves `observations.embedding` a placeholder and puts real per-row vectors in the sibling
+`observation_embeddings` (role='primary', 1:1); the fixture is **backfilled** so `observations.embedding`
+= primary (matches prod). The char-net harness embed is still an ILIKE-by-phrase **stub** — OK for rank
+plumbing, but real semantic relevance needs a real/seeded embed.
 
 ## Layout (where Wave-2 lands)
 - `internal/` — **dialect-free interior** (no Drizzle): `language/` (Predicate AST + normalizers +
@@ -47,8 +58,12 @@ cohort, with the cohort shown BEFORE the number** — e.g. *"total pipeline for 
 buyer showed hesitancy"* → surfaces what counted as hesitancy + matched exemplars + how many matched
 at what cutoff. Relevance becomes a *filter*, not just `query.rank_by`.
 
-**Decisions — RATIFIED (Dug, 2026-06-19; recorded in ADR-0024 *Amendment 1*). These are LOCKED —
-build on them, no further direction debate; only the field names are open (settle in the build):**
+**Decisions — RATIFIED (Dug, 2026-06-19; ADR-0024 *Amendment 1*); build mechanics SETTLED in *Amendment
+2* (2026-06-20: final leaf shape `{on,op:'relevant',query,threshold?,top_k?,per?}`; `top_k` is **dual-mode**
+— global cutoff vs per-group ranked CTE via `per`; the vector-distance leaf is **NET-NEW SQL in BOTH
+compilers** (`compiler.ts` + `compile-drizzle.ts`), NOT reuse; citation is **calibration-grade** — exact
+cutoff + scored exemplars + decision boundary). LOCKED. ⚠️ **A SEPARATE agent is already BUILDING the leaf
+on `feat/computed-metrics`** — coordinate, do not redo it:**
 1. **Relevance is a Predicate LEAF** (§A, ratified) — a leaf op (proposed `{ on, op:'relevant', query,
    threshold?|top_k? }`) so a semantic match flows into `query`/`aggregate`/`compare` filters
    identically (hard rule #9). Lands in `internal/language/types.ts` + `filter-normalize.ts`. NOT a
@@ -64,11 +79,13 @@ build on them, no further direction debate; only the field names are open (settl
   gradient slider, drill-down (§E — a consuming-surface concern). The broader unified-selection vision
   (§D/§E/§F) lives in the copied **ADR-0024 §Direction (A–F)**; Wave-2 is the A/B/C slice.
 
-**Build approach (mirror wave-1) — direction is ratified, so go straight to build:** brief design pass
-to finalize leaf field names → build IR-shaped (leaf + defuzzify in `internal/`, thin lowering in
-`adapters/drizzle/`) → falsify vs live dealbrain (the embed port: the rank path already embeds;
-relevance-as-filter needs embed at the aggregate path; the char-net harness embed is a stub) →
-adversarial review pass.
+**Build approach (mirror wave-1):** build IR-shaped (leaf + defuzzify in `internal/`, thin lowering in
+`adapters/drizzle/`) → falsify vs Bean Maxx → adversarial review. **Embed port:** the rank path already
+embeds; relevance-as-filter needs embed at the **aggregate** path — `aggregate()`/`compare()` call `embed`
+NOWHERE today, so add a pre-compile pass over `relevant` filter leaves, mirroring `resolveSemanticRank`
+(`query.application-service.ts`). Bean Maxx's real vectors are in `observations.embedding` (primary,
+backfilled); the 24-role `observation_embeddings` facet vectors are a future faceted-relevance lever
+(ADR-0025, only 'primary' populated in Bean Maxx).
 
 ## Also remaining (NOT phase 2)
 - **IR extraction** (the other hexagonal step): pull a dialect-neutral `QueryPlan` + a `QueryBackend`
@@ -108,6 +125,10 @@ Wave-1 shipped to swe-brain as **sdlc-patterns#327** (char net **#322**). Seeded
 swe-brain `main@a8500bf`, then reorged (`3a3e06e` hexagonal layout, `8a6c8ab` `__tests__/`). ADR-0024
 copied from swe-brain's ADR log (`.ai-docs/decisions/`) for self-containment.
 
-**Process gotcha:** when a repo is co-driven (parallel threads run git ops in the same working copy),
-**check `git branch --show-current` before commit/push** — a wave-1 commit once landed on the wrong
-branch in the swe-brain copy.
+**Process gotcha (co-driven repo — BIT HARD on 2026-06-20):** parallel threads run git ops in the SAME
+working copy. Mid-session the branch silently switched (main→`feat/computed-metrics`) and a concurrent
+thread committed my working tree out from under me; a stash/checkout then tangled both threads' work.
+Nothing was lost (recovered via reflog) but it cost real time. **Before ANY git op: `git branch
+--show-current`; use an isolated `git worktree` for commits; never assume the checked-out branch is
+yours.** Direct `main` pushes are blocked by an SDLC gate-guard hook — land via feature branch + PR
+(this handoff refresh did). New fixture dumps live OUTSIDE the repo (`../query-surface-fixtures/`).
