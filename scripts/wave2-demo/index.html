@@ -143,13 +143,9 @@
             <label>Measure <span id="measureSrc" class="timing"></span></label>
             <select id="measure"><!-- populated from /api/info (the field-management semantic layer) --></select>
           </div>
-          <div class="field" style="max-width: 250px; display:none" id="groupWrap">
+          <div class="field" style="max-width: 280px; display:none" id="groupWrap">
             <label>Group the cohort by</label>
-            <select id="groupDim">
-              <option value="accounts.name">accounts.name — to-one ✓</option>
-              <option value="state_of_deal_status">state_of_deal_status — own dim ✓</option>
-              <option value="observations.type">observations.type — to-many ✗</option>
-            </select>
+            <select id="groupDim"><!-- populated from /api/info.dimensions (resolved EAV dims + the rule demo) --></select>
           </div>
         </div>
         <div class="row" style="margin-top: 14px">
@@ -206,6 +202,9 @@
         if (info.defaultMeasure) sel.value = info.defaultMeasure;
         const src = $('measureSrc');
         if (src && info.semanticSource) src.textContent = '· ' + (info.gated && info.gated.total ? (info.gated.exposed+'/'+info.gated.total+' fields, '+info.gated.dormant+' gated out') : info.semanticSource);
+        // populate the group-by dimension dropdown (resolved EAV dims + the conformed-rule demo pair)
+        const gsel = $('groupDim');
+        if (gsel && (info.dimensions||[]).length) { gsel.innerHTML=''; for (const dm of info.dimensions) { const o=document.createElement('option'); o.value=dm.dim; o.textContent=dm.label; gsel.appendChild(o); } }
       }).catch(()=>{}).finally(()=>runMetric());
 
       document.querySelectorAll('.tab').forEach((t) => t.onclick = () => {

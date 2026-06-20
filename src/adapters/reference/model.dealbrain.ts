@@ -59,9 +59,19 @@ const DEFAULT_MEASURE_SPECS: DealbrainMeasureSpec[] = [
   { name: 'deal_probability', key: 'Probability', agg: 'avg', additivity: 'non' },
 ];
 
+/** An EAV field exposed as a groupable DIMENSION (the host's resolved semantic layer). Referenced
+ *  in group_by by its SAFE canonical `name` (e.g. 'stage'); the dealbrain `key` (e.g. 'StageName')
+ *  is used only to resolve the EAV value binding. A select/text field is a 1:1 field_values join →
+ *  grain-safe (groupable like a to-one dim, never a fan-out). */
+export interface DealbrainDimensionSpec {
+  name: string; // safe canonical name used in group_by (e.g. 'stage')
+  key: string; // the dealbrain field_definitions.key (e.g. 'StageName')
+}
+
 export async function loadDealbrainModel(
   db: DrizzleDb,
   measureSpecs: DealbrainMeasureSpec[] = DEFAULT_MEASURE_SPECS,
+  dimensionSpecs: DealbrainDimensionSpec[] = [],
 ): Promise<DealbrainModel> {
   const registry = buildRegistry([
     { name: 'accounts', table: accounts, relations: accountsRelations, fieldMeta: accountsMeta },
@@ -118,18 +128,28 @@ export async function loadDealbrainModel(
   // built-in default). additivity stays EXPLICIT (money & percentage both resolve to value_number,
   // uninferable). Each spec's key resolves to its EAV binding via eavByKey (fail-loud if absent).
   const eavOverlay: Record<string, Record<string, AggFieldMeta>> = {
-    opportunities: Object.fromEntries(
-      measureSpecs.map((s) => [
-        s.name,
-        {
-          type: 'number',
-          role: 'measure',
-          agg: s.agg,
-          additivity: s.additivity,
-          eav: eavByKey(s.key),
-        } satisfies AggFieldMeta,
-      ]),
-    ),
+    opportunities: {
+      ...Object.fromEntries(
+        measureSpecs.map((s) => [
+          s.name,
+          {
+            type: 'number',
+            role: 'measure',
+            agg: s.agg,
+            additivity: s.additivity,
+            eav: eavByKey(s.key),
+          } satisfies AggFieldMeta,
+        ]),
+      ),
+      // EAV DIMENSIONS — a select/text field exposed as a groupable dim (1:1 field_values join,
+      // grain-safe). Keyed by the safe canonical name; the EAV binding resolves the dealbrain key.
+      ...Object.fromEntries(
+        dimensionSpecs.map((s) => [
+          s.name,
+          { type: 'string', role: 'dimension', eav: eavByKey(s.key) } satisfies AggFieldMeta,
+        ]),
+      ),
+    },
   };
 
   const analytics = analyticsFromRegistry(registry, eavOverlay);
