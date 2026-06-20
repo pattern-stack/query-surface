@@ -44,7 +44,25 @@ const observationsMeta: FieldMetaMap = {
   structuredData: { role: 'dimension' },
 };
 
-export async function loadDealbrainModel(db: DrizzleDb): Promise<DealbrainModel> {
+/** A measure the host (the field-management app) resolved from its field configs — the EAV field
+ *  key + how to aggregate it. Lets the analytics model be DRIVEN BY DATA (a curated semantic layer)
+ *  instead of hand-coded here. Omitted → the built-in default set (eval specs are unaffected). */
+export interface DealbrainMeasureSpec {
+  name: string; // the measure name exposed in the surface (e.g. 'weighted_amount')
+  key: string; // the dealbrain EAV field_definitions.key (e.g. 'ExpectedRevenue')
+  agg: 'sum' | 'avg' | 'count' | 'count_distinct' | 'min' | 'max';
+  additivity: 'additive' | 'non';
+}
+
+const DEFAULT_MEASURE_SPECS: DealbrainMeasureSpec[] = [
+  { name: 'weighted_amount', key: 'ExpectedRevenue', agg: 'sum', additivity: 'additive' },
+  { name: 'deal_probability', key: 'Probability', agg: 'avg', additivity: 'non' },
+];
+
+export async function loadDealbrainModel(
+  db: DrizzleDb,
+  measureSpecs: DealbrainMeasureSpec[] = DEFAULT_MEASURE_SPECS,
+): Promise<DealbrainModel> {
   const registry = buildRegistry([
     { name: 'accounts', table: accounts, relations: accountsRelations, fieldMeta: accountsMeta },
     {
@@ -96,26 +114,22 @@ export async function loadDealbrainModel(db: DrizzleDb): Promise<DealbrainModel>
     return { valueColumn: PROP_TO_COL[valueColumnForDataType(fd.dataType)]!, defId: fd.defId };
   };
 
-  // EAV measure tags (additivity EXPLICIT — money & percentage both resolve to
-  // value_number, additivity uninferable). Bean Maxx (Salesforce-shaped) field keys:
-  // weighted/projected amount = `ExpectedRevenue` (money); win % = `Probability` (percentage).
+  // EAV measure tags, DERIVED from measureSpecs (the host's resolved semantic layer — or the
+  // built-in default). additivity stays EXPLICIT (money & percentage both resolve to value_number,
+  // uninferable). Each spec's key resolves to its EAV binding via eavByKey (fail-loud if absent).
   const eavOverlay: Record<string, Record<string, AggFieldMeta>> = {
-    opportunities: {
-      weighted_amount: {
-        type: 'number',
-        role: 'measure',
-        agg: 'sum',
-        additivity: 'additive',
-        eav: eavByKey('ExpectedRevenue'),
-      },
-      deal_probability: {
-        type: 'number',
-        role: 'measure',
-        agg: 'avg',
-        additivity: 'non',
-        eav: eavByKey('Probability'),
-      },
-    },
+    opportunities: Object.fromEntries(
+      measureSpecs.map((s) => [
+        s.name,
+        {
+          type: 'number',
+          role: 'measure',
+          agg: s.agg,
+          additivity: s.additivity,
+          eav: eavByKey(s.key),
+        } satisfies AggFieldMeta,
+      ]),
+    ),
   };
 
   const analytics = analyticsFromRegistry(registry, eavOverlay);
