@@ -44,5 +44,8 @@
     "rxjs": "^7.0.0",
     "typescript": "^5.6.0",
     "zod": "^3.23.0"
+  },
+  "dependencies": {
+    "sql-formatter": "^15.8.1"
   }
 }

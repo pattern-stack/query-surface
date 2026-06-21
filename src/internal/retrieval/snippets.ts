@@ -67,3 +67,22 @@ export function buildSnippets(
 
   return out;
 }
+
+const DEFAULT_HEAD_CHARS = 200;
+
+/**
+ * HEAD-TRUNCATION sibling for SEMANTIC matches (Wave-2 citation, step 7). buildSnippets is
+ * ILIKE-positional — it locates a literal substring — so it CANNOT place a semantic (vector)
+ * match, which has no literal locus. Citation exemplars instead show the head of the matched
+ * row's text: the first `headChars` characters (trailing `…` when truncated), plus the full
+ * length so a caller knows there's more. No offsets (there is no positional match to mark).
+ */
+export function buildTruncatedSnippet(
+  text: unknown,
+  headChars: number = DEFAULT_HEAD_CHARS,
+): { snippet: string; full_length: number } {
+  const val = typeof text === 'string' ? text : text == null ? '' : String(text);
+  const truncated = val.length > headChars;
+  const snippet = truncated ? val.slice(0, headChars) + ELLIPSIS : val;
+  return { snippet, full_length: val.length };
+}

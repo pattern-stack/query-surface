@@ -32,11 +32,63 @@ export interface LeafFilter {
   value?: unknown;
 }
 
+/**
+ * Relevance leaf (Wave-2 — ADR-0024 §Direction A + Amendment 2): a semantic match
+ * expressed as a Predicate leaf, so it flows into query / aggregate / compare filters
+ * identically (hard rule #9 — one expression language). The crisp set is EXPLICIT and
+ * MANDATORY: exactly one of `threshold` | `top_k` (the engine REJECTS neither — no
+ * silent default). The service resolves `vector` + `embeddingColumn` from the injected
+ * embed() port BEFORE compile (engine-internal, NOT part of the wire contract) — the
+ * same pattern as SingleSearchQuery.rankSemantic.
+ */
+export interface RelevantLeaf {
+  on: string; // semantic text column (or dotted path); resolves to its embedding column via semanticColumns
+  op: 'relevant';
+  query: string; // the concept to match (e.g. 'pricing objection')
+  threshold?: number; // similarity cutoff in [0,1] = 1 - cosine_distance(embedding, vector); XOR with top_k
+  top_k?: number; // ranked cutoff (the k most relevant); XOR with threshold
+  per?: string; // top_k partition key; omitted → group_by key when grouping, else global
+  // Engine-internal — stamped by the service (which owns the async embed() call) before
+  // compile. Not authored by a caller, not part of the wire contract.
+  vector?: number[];
+  embeddingColumn?: string;
+}
+
+/**
+ * Crispified relevance leaves — PRIVATE engine shapes the defuzzify step (normalize)
+ * emits and BOTH predicate compilers lower. Never authored by a caller. `on` is the
+ * resolved EMBEDDING column (crispify rewrites it from the semantic text column so the
+ * wave-1 conform/semijoin resolver lowers it over a real column).
+ */
+export interface SimGteLeaf {
+  on: string;
+  op: 'sim_gte';
+  vector: number[];
+  embeddingColumn: string;
+  threshold: number;
+}
+export interface SimTopkLeaf {
+  on: string;
+  op: 'sim_topk';
+  vector: number[];
+  embeddingColumn: string;
+  top_k: number;
+  per?: string;
+}
+
+/** A filter leaf: a value op (LeafFilter), the relevance op, or its crispified forms. */
+export type Leaf = LeafFilter | RelevantLeaf | SimGteLeaf | SimTopkLeaf;
+
 export type FilterExpression =
-  | LeafFilter
+  | Leaf
   | { and: FilterExpression[] }
   | { or: FilterExpression[] }
   | { not: FilterExpression };
+
+/** Narrow a filter node to a leaf (vs a boolean and/or/not node). */
+export function isLeaf(e: FilterExpression): e is Leaf {
+  return !('and' in e) && !('or' in e) && !('not' in e);
+}
 
 export interface Sort {
   field: string;
@@ -201,6 +253,11 @@ export interface SearchEntityResult {
   warnings?: string[]; // non-fatal advisories (e.g. sort ignored because rank_by owns ordering)
   sql?: string; // debug
   params?: unknown[];
+  /** ON whenever a `relevant` leaf was present in the query filter — the auditable cohort
+   *  definition (cutoff, match_count, exemplars, boundary), computed by a row-grain companion
+   *  query. Additive (flows to the Nest wire verbatim). Defined in analytics/types.ts (the
+   *  dialect-free home, parallel to SnippetEntry); imported type-only to avoid a runtime cycle. */
+  citation?: import('../analytics/types.ts').RelevanceCitation;
 }
 
 // Response shape mirrors the request:

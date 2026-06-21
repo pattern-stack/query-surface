@@ -131,8 +131,55 @@ export interface AggregateResult {
   row_count: number;
   group_count: number | null;
   sql: string;
+  params: unknown[];
   plan: AggregatePlan;
   warnings?: string[];
+}
+
+/**
+ * Calibration-grade citation for a relevance cohort (Wave-2 — ADR-0024 §A, step 7).
+ * MANDATORY whenever a `relevant` leaf is present: the collapsing aggregate/compare SQL
+ * yields grouped rows with no row id/text, so this is computed by a COMPANION query at
+ * ROW grain over the semantic entity (re-running the crispified cohort predicate, reusing
+ * the already-resolved vector — NO second embed). It makes the fuzzy cohort AUDITABLE: the
+ * cutoff, how many matched, a handful of exemplars, and the membership boundary.
+ *
+ *   - `on`             : the relevant leaf's semantic text column (or dotted path) as authored.
+ *   - `query`          : the concept that was embedded.
+ *   - `mode`           : 'threshold' (similarity cutoff) | 'top_k' (ranked cutoff).
+ *   - `per`            : the top_k partition key, when one was resolved (else absent).
+ *   - `cutoff`         : the resolved threshold (threshold mode) OR the k-th / lowest-included
+ *                        similarity (top_k mode) — the line membership is decided on.
+ *   - `match_count`    : rows in the cohort (>= cutoff, or exactly k capped at available).
+ *   - `exemplars`      : the top matches (default 4) — id + similarity + a head-truncated
+ *                        snippet of the semantic text + full_length.
+ *   - `boundary`       : lowest_included = the weakest member (the cutoff row);
+ *                        highest_excluded = the strongest NON-member (one row past the cutoff),
+ *                        present ONLY when requested (citation:{boundary:true}).
+ */
+export interface CitationExemplar {
+  id: string;
+  similarity: number;
+  snippet: string;
+  full_length: number;
+}
+export interface CitationBoundaryRow {
+  id: string;
+  similarity: number;
+  snippet: string;
+}
+export interface RelevanceCitation {
+  on: string;
+  query: string;
+  mode: 'threshold' | 'top_k';
+  per?: string;
+  cutoff: number;
+  match_count: number;
+  exemplars: CitationExemplar[];
+  boundary: {
+    lowest_included: CitationBoundaryRow;
+    highest_excluded?: CitationBoundaryRow;
+  };
 }
 
 /** Public surface response — parallel to FetchResponse, NOT a SearchEntityResult
@@ -144,4 +191,10 @@ export interface AggregateResponse {
   group_count: number | null;
   warnings?: string[];
   sql?: string;
+  /** The bound parameter values for `sql` (placeholder $n → value), echoed with `include_sql` —
+   *  parity with query()/fetch(). Debug surface; a vector param is the full embedding array. */
+  params?: unknown[];
+  /** ON whenever a `relevant` leaf was present in the filter — the auditable cohort
+   *  definition, computed by a row-grain companion query (additive, flows to the wire). */
+  citation?: RelevanceCitation;
 }

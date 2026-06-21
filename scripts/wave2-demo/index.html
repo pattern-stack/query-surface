@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>query-surface · relevance explorer</title>
+    <style>
+      :root {
+        --bg: #0b0e14; --panel: #141925; --panel2: #1b2230; --line: #273043;
+        --ink: #e6edf6; --dim: #8b97ab; --accent: #5db0ff; --accent2: #7ee0c0;
+        --warn: #ffb454; --bad: #ff6b81; --code: #0a0f18;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--ink);
+        font: 15px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; }
+      .wrap { max-width: 1020px; margin: 0 auto; padding: 28px 24px 90px; }
+      h1 { font-size: 19px; margin: 0 0 2px; letter-spacing: -0.01em; }
+      .sub { color: var(--dim); font-size: 13px; margin: 0 0 18px; }
+      .sub code, code.c { color: var(--accent2); background: #0e1420; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+      .badge { font-size: 11px; font-weight: 500; padding: 2px 9px; border-radius: 20px; vertical-align: middle; margin-left: 8px; }
+      .badge.stub { background: #2a2416; color: var(--warn); border: 1px solid #4a3f1f; }
+      .badge.live { background: #14302a; color: var(--accent2); border: 1px solid #1f4a3f; }
+
+      .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 18px; }
+      .tab { padding: 9px 16px; color: var(--dim); cursor: pointer; font-size: 14px; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+      .tab:hover { color: var(--ink); }
+      .tab.on { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+      .screen { display: none; } .screen.on { display: block; }
+
+      .controls { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+      label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--dim); margin: 0 0 6px; }
+      .row { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; }
+      .field { flex: 1; min-width: 170px; }
+      input[type=text], select { width: 100%; background: #0e1420; border: 1px solid var(--line); color: var(--ink);
+        border-radius: 8px; padding: 9px 11px; font-size: 14px; outline: none; }
+      input[type=text]:focus, select:focus { border-color: var(--accent); }
+      .chips { display: flex; gap: 7px; flex-wrap: wrap; margin: 9px 0 0; }
+      .chip { background: var(--panel2); border: 1px solid var(--line); color: var(--dim); border-radius: 20px; padding: 4px 12px; font-size: 12px; cursor: pointer; user-select: none; }
+      .chip:hover { color: var(--ink); border-color: var(--accent); }
+      .mode { display: flex; gap: 6px; }
+      .mode button { background: var(--panel2); border: 1px solid var(--line); color: var(--dim); padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+      .mode button.on { background: var(--accent); color: #06203a; border-color: var(--accent); font-weight: 600; }
+      .go { background: var(--accent); color: #06203a; border: 0; border-radius: 8px; padding: 10px 20px; font-size: 14px; font-weight: 700; cursor: pointer; }
+      .go:disabled { opacity: 0.5; cursor: default; }
+      .note { color: var(--dim); font-size: 12px; margin-top: 11px; }
+
+      .result { margin-top: 22px; }
+      .loading { color: var(--dim); font-size: 13px; }
+      .err { background: #2a1620; border: 1px solid var(--bad); color: #ffd7de; border-radius: 10px; padding: 14px 16px; font-size: 13px; white-space: pre-wrap; }
+
+      /* cohort FIRST, number SECOND */
+      .cohort { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--accent2); border-radius: 12px; padding: 17px 19px; margin-bottom: 13px; }
+      .cohort .k { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent2); margin: 0 0 8px; }
+      .cohort .def { font-size: 15px; } .cohort .def b { color: #fff; }
+      .meta { display: flex; gap: 26px; flex-wrap: wrap; margin: 13px 0 2px; }
+      .meta div { font-size: 13px; color: var(--dim); } .meta div b { display: block; color: var(--ink); font-size: 21px; font-weight: 700; }
+      .ex { margin-top: 13px; border-top: 1px solid var(--line); padding-top: 11px; }
+      .ex .h { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); margin-bottom: 7px; display:flex; justify-content:space-between; }
+      .exrow { display: grid; grid-template-columns: 70px 1fr; gap: 12px; align-items: center; margin: 5px 0; }
+      .sim { font-variant-numeric: tabular-nums; font-size: 12px; color: var(--accent2); }
+      .simbar { height: 5px; background: #0e1420; border-radius: 3px; overflow: hidden; margin-top: 3px; }
+      .simbar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+      .snip { font-size: 13px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      /* decision boundary — the actual rows straddling the cut, with their text */
+      .bpanel { margin-top: 13px; border-top: 1px solid var(--line); padding-top: 12px; }
+      .bphead { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); margin-bottom: 9px; }
+      .brow { border-left: 3px solid; border-radius: 0 8px 8px 0; padding: 8px 12px; margin: 7px 0; background: #0e1420; }
+      .brow.binc { border-color: var(--accent2); } .brow.bexc { border-color: var(--bad); }
+      .bhead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+      .blbl { font-size: 11px; letter-spacing: 0.04em; } .binc .blbl { color: var(--accent2); } .bexc .blbl { color: var(--bad); }
+      .bsim { font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 700; } .binc .bsim { color: var(--accent2); } .bexc .bsim { color: var(--bad); }
+      .bsnip { font-size: 13px; color: var(--ink); line-height: 1.5; }
+
+      /* group breakdown table */
+      .gbar { height: 6px; background: #0e1420; border-radius: 3px; overflow: hidden; margin-top: 4px; }
+      .gbar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+
+      .metric { background: linear-gradient(135deg, var(--panel2), var(--panel)); border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px; display: flex; align-items: baseline; gap: 16px; }
+      .metric .v { font-size: 38px; font-weight: 800; letter-spacing: -0.02em; color: #fff; font-variant-numeric: tabular-nums; }
+      .metric .l { font-size: 14px; color: var(--dim); }
+
+      /* SQL panel */
+      .sqlbox { margin-top: 13px; }
+      details { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+      summary { cursor: pointer; padding: 11px 15px; font-size: 13px; color: var(--dim); list-style: none; display: flex; justify-content: space-between; align-items: center; }
+      summary::-webkit-details-marker { display: none; }
+      summary:hover { color: var(--ink); }
+      .copy { background: var(--panel2); border: 1px solid var(--line); color: var(--dim); border-radius: 6px; padding: 3px 9px; font-size: 11px; cursor: pointer; }
+      .copy:hover { color: var(--ink); }
+      pre.sql { margin: 0; padding: 14px 15px; background: var(--code); border-top: 1px solid var(--line); border-radius: 0 0 10px 10px; overflow-x: auto; font: 12.5px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; color: #cfe3f7; white-space: pre-wrap; word-break: break-word; }
+      pre.sql .kw { color: #ff9d7a; } pre.sql .fn { color: var(--accent2); } pre.sql .pm { color: var(--warn); } pre.sql .st { color: #9ee37d; }
+      .timing { color: var(--dim); font-size: 11px; }
+      .actions { display: flex; gap: 8px; margin-top: 11px; }
+      .actions .copy { padding: 6px 12px; font-size: 12px; }
+      /* bound-parameter legend */
+      .params { border-top: 1px solid var(--line); padding: 12px 15px; background: #0c121d; border-radius: 0 0 10px 10px; }
+      .params .ph { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); margin-bottom: 7px; }
+      .prow { font: 12.5px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; display: flex; gap: 10px; }
+      .prow .pm { color: var(--warn); min-width: 26px; }
+      .prow .ps { color: #9ee37d; } .prow .pv { color: var(--accent2); }
+
+      /* rows table (Explore) */
+      table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13px; }
+      th { text-align: left; color: var(--dim); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+      td { padding: 9px 10px; border-bottom: 1px solid #1c2330; vertical-align: top; }
+      td.t { color: var(--accent2); white-space: nowrap; }
+      td.txt { color: var(--ink); } td.s { font-variant-numeric: tabular-nums; color: var(--accent2); white-space: nowrap; width: 110px; }
+      .pill { background: var(--panel2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 7px; font-size: 11px; color: var(--dim); }
+
+      /* catalog */
+      .cat { display: grid; grid-template-columns: 1fr; gap: 16px; }
+      .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+      @media (max-width: 720px){ .grid2 { grid-template-columns: 1fr; } }
+      .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 15px 17px; }
+      .card h3 { margin: 0 0 10px; font-size: 13px; color: var(--accent); font-weight: 600; }
+      .relrow { display:flex; gap:8px; align-items:center; font-size:13px; margin:5px 0; }
+      .kind { font-size: 11px; padding: 1px 7px; border-radius: 5px; }
+      .belongs_to { background: #15263a; color: var(--accent); } .has_many { background: #14302a; color: var(--accent2); }
+      .eavtag { color: var(--warn); font-size: 11px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>query-surface · relevance as a selection <span id="embedBadge" class="badge"></span> <button id="syncBtn" class="badge" style="cursor:pointer;border:1px solid var(--line);background:var(--panel2);color:var(--dim)">↻ sync from field-management</button></h1>
+      <p class="sub">A metric over a <b>relevance-defined cohort</b>, the cohort shown <b>before</b> the number — with the SQL, the evidence, and the host-supplied catalog it all derives from.</p>
+
+      <div class="tabs">
+        <div class="tab on" data-screen="metric">① Cohort metric</div>
+        <div class="tab" data-screen="explore">② Explore evidence</div>
+        <div class="tab" data-screen="group">③ Group (conformed)</div>
+        <div class="tab" data-screen="catalog">④ Catalog</div>
+      </div>
+
+      <!-- shared controls -->
+      <div class="controls" id="controls">
+        <div class="row">
+          <div class="field">
+            <label>Concept — the relevance query</label>
+            <input id="q" type="text" value="security review" autocomplete="off" />
+            <div class="chips" id="chips"></div>
+          </div>
+          <div class="field" style="max-width: 210px" id="measureWrap">
+            <label>Measure <span id="measureSrc" class="timing"></span></label>
+            <select id="measure"><!-- populated from /api/info (the field-management semantic layer) --></select>
+          </div>
+          <div class="field" style="max-width: 280px; display:none" id="groupWrap">
+            <label>Group the cohort by</label>
+            <select id="groupDim"><!-- populated from /api/info.dimensions (resolved EAV dims + the rule demo) --></select>
+          </div>
+        </div>
+        <div class="row" style="margin-top: 14px">
+          <div>
+            <label>Defuzzify</label>
+            <div class="mode">
+              <button data-mode="threshold" class="on">threshold</button>
+              <button data-mode="top_k">top&nbsp;k</button>
+            </div>
+          </div>
+          <div class="field" style="max-width: 260px">
+            <label id="cutoffLabel">Similarity cutoff: <span id="cutoffVal">0.55</span></label>
+            <input id="cutoff" type="range" min="0.40" max="0.90" step="0.01" value="0.55" style="width:100%" />
+          </div>
+          <div style="margin-left:auto"><button class="go" id="go">Run →</button></div>
+        </div>
+        <p class="note">Demo embed is the deterministic stub — the concept must appear in observation text (chips verified). A real embedder makes it a true free-text concept.</p>
+      </div>
+
+      <div class="screen on" id="screen-metric"><div class="result" id="r-metric"></div></div>
+      <div class="screen" id="screen-explore"><div class="result" id="r-explore"></div></div>
+      <div class="screen" id="screen-group"><div class="result" id="r-group"></div></div>
+      <div class="screen" id="screen-catalog">
+        <div class="controls" style="margin-bottom:16px"><div class="row">
+          <div class="field" style="max-width:240px"><label>Entity</label>
+            <select id="catEntity"><option>opportunities</option><option>observations</option><option>accounts</option></select></div>
+        </div></div>
+        <div class="result" id="r-catalog"></div>
+      </div>
+    </div>
+
+    <script>
+      // ---------- shared state ----------
+      const PRESETS = ['security review', 'discount', 'competitor', 'pricing', 'legal', 'timeline'];
+      let mode = 'threshold';
+      let screen = 'metric';
+      const $ = (id) => document.getElementById(id);
+      const cutoff = $('cutoff'), kVal = () => Math.round(Number(cutoff.value));
+
+      const chips = $('chips');
+      for (const p of PRESETS) { const c = document.createElement('span'); c.className='chip'; c.textContent=p;
+        c.onclick = () => { $('q').value = p; runActive(); }; chips.appendChild(c); }
+
+      // /api/info — drives (a) the embed badge, (b) the MEASURE dropdown (config-driven from the
+      // field-management semantic layer, closed-by-default), (c) the semantic-source line.
+      fetch('/api/info').then(r=>r.json()).then((info)=>{
+        const b = $('embedBadge'); b.className = 'badge ' + (info.real ? 'live' : 'stub');
+        b.textContent = 'embed: ' + info.embedMode;
+        const note = document.querySelector('.note');
+        if (info.real && note) note.innerHTML = 'Live embedder (<code>'+info.model+'</code>) — the concept is a TRUE free-text query against the stored vectors. Try anything, not just the chips.';
+        // populate the measure dropdown from the resolved semantic layer
+        const sel = $('measure'); sel.innerHTML = '';
+        for (const m of (info.measures||[])) { const o=document.createElement('option'); o.value=m.key; o.textContent=m.label; sel.appendChild(o); }
+        if (info.defaultMeasure) sel.value = info.defaultMeasure;
+        const src = $('measureSrc');
+        if (src && info.semanticSource) src.textContent = '· ' + (info.gated && info.gated.total ? (info.gated.exposed+'/'+info.gated.total+' fields, '+info.gated.dormant+' gated out') : info.semanticSource);
+        // populate the group-by dimension dropdown (resolved EAV dims + the conformed-rule demo pair)
+        const gsel = $('groupDim');
+        if (gsel && (info.dimensions||[]).length) { gsel.innerHTML=''; for (const dm of info.dimensions) { const o=document.createElement('option'); o.value=dm.dim; o.textContent=dm.label; gsel.appendChild(o); } }
+      }).catch(()=>{}).finally(()=>runMetric());
+
+      document.querySelectorAll('.tab').forEach((t) => t.onclick = () => {
+        screen = t.dataset.screen;
+        document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('on', x === t));
+        document.querySelectorAll('.screen').forEach((s) => s.classList.toggle('on', s.id === 'screen-' + screen));
+        $('measureWrap').style.display = screen === 'metric' ? '' : 'none';
+        $('groupWrap').style.display = screen === 'group' ? '' : 'none';
+        $('controls').style.display = screen === 'catalog' ? 'none' : '';
+        runActive();
+      });
+
+      document.querySelectorAll('.mode button').forEach((b) => b.onclick = () => {
+        mode = b.dataset.mode;
+        document.querySelectorAll('.mode button').forEach((x) => x.classList.toggle('on', x === b));
+        const thr = mode === 'threshold';
+        cutoff.min = thr ? '0.40':'5'; cutoff.max = thr ? '0.90':'200'; cutoff.step = thr ? '0.01':'5'; cutoff.value = thr ? '0.55':'25';
+        $('cutoffLabel').innerHTML = (thr ? 'Similarity cutoff: ' : 'Top K: ') + '<span id="cutoffVal"></span>';
+        syncCutoff();
+      });
+      const syncCutoff = () => { const e=$('cutoffVal'); if(e) e.textContent = mode==='threshold' ? Number(cutoff.value).toFixed(2) : kVal(); };
+      cutoff.oninput = () => { syncCutoff(); };
+
+      // ---------- formatting ----------
+      const usd = (n) => '$' + Math.round(Number(n)).toLocaleString();
+      const pct = (n) => Number(n).toFixed(1) + '%';
+      const intf = (n) => Math.round(Number(n)).toLocaleString();
+      const fmtV = (fmt, v) => v==null?'—':fmt==='usd'?usd(v):fmt==='pct'?pct(v):intf(v);
+      const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+      // SQL arrives PRE-FORMATTED from the server (the sql-formatter package, Postgres dialect);
+      // here we only add lightweight syntax highlighting on the already-pretty multi-line string.
+      const KW = /\b(select|from|where|left join|inner join|join|on|and|or|group by|order by|limit|offset|exists|in|as|asc|desc|nulls last|not|distinct|sum|count|avg|min|max|with)\b/gi;
+      const hlSql = (s) => esc(s||'')
+        .replace(/\$\d+/g, (m)=>'<span class="pm">'+m+'</span>')
+        .replace(/'[^']*'/g, (m)=>'<span class="st">'+m+'</span>')
+        .replace(KW, (m)=>'<span class="kw">'+m+'</span>');
+      const paramLegend = (params) => (params && params.length) ? (
+        '<div class="params"><div class="ph">bound parameters</div>'+
+        params.map((p)=>'<div class="prow"><span class="pm">$'+p.i+'</span> <span class="'+(p.kind==='vector'?'pv':'ps')+'">'+esc(p.value)+'</span></div>').join('')+
+        '</div>') : '';
+      const sqlPanel = (sql, ms, paramNote, params) => sql ? (
+        '<div class="sqlbox"><details><summary><span>compiled SQL + parameters <span class="timing">· '+ms+' ms'+(paramNote?' · '+paramNote:'')+'</span></span>'+
+        '<button class="copy" onclick="navigator.clipboard.writeText(this.closest(\'details\').dataset.raw);this.textContent=\'copied\'">copy</button></summary>'+
+        '<pre class="sql">'+hlSql(sql)+'</pre>'+paramLegend(params)+'</details></div>') : '';
+      const withRaw = (html, sql) => { const d=document.createElement('div'); d.innerHTML=html; const det=d.querySelector('details'); if(det) det.dataset.raw=sql||''; return d.innerHTML; };
+
+      // QoL: reproduce any call as a cURL, and (metric) copy the raw auditable citation JSON.
+      const b64 = (s) => btoa(unescape(encodeURIComponent(s)));
+      const curlFor = (path, payload) => "curl -s http://localhost:7878"+path+" \\\n  -H 'content-type: application/json' \\\n  -d '"+JSON.stringify(payload).replace(/'/g,"'\\''")+"' | jq";
+      const copyBtn = (label, text) => '<button class="copy" data-c="'+b64(text)+'" onclick="navigator.clipboard.writeText(decodeURIComponent(escape(atob(this.dataset.c))));const t=this.textContent;this.textContent=\'copied ✓\';setTimeout(()=>this.textContent=t,1200)">'+label+'</button>';
+      const actionsBar = (path, payload, citation) =>
+        '<div class="actions">'+copyBtn('copy as cURL', curlFor(path, payload))+
+        (citation?copyBtn('copy citation JSON', JSON.stringify(citation, null, 2)):'')+'</div>';
+
+      // ---------- screen 1: cohort metric ----------
+      async function runMetric() {
+        const out = $('r-metric'); out.innerHTML = '<p class="loading">embedding · ranking observations · folding the cohort …</p>';
+        const payload = { query: $('q').value.trim(), measure: $('measure').value, mode, boundary: true };
+        if (mode==='threshold') payload.threshold = Number(cutoff.value); else payload.top_k = kVal();
+        let d; try { const r = await fetch('/api/relevant', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)}); d = await r.json(); if(!r.ok) throw new Error(d.error); }
+        catch(e){ out.innerHTML = '<div class="err"><b>The engine refused (fail-closed):</b>\n'+esc(e.message||e)+'</div>'; return; }
+        const c = d.citation||{}, row = (d.rows&&d.rows[0])||{}, mv = row[d.measure.as];
+        const deals = row.cohort_deals != null ? row.cohort_deals : (d.measure.as==='deals' ? mv : null);
+        const exHtml = (c.exemplars||[]).map((e)=>{ const w=Math.max(2,Math.min(100,Math.round(e.similarity*100)));
+          return '<div class="exrow"><div class="sim">'+e.similarity.toFixed(4)+'<div class="simbar"><i style="width:'+w+'%"></i></div></div><div class="snip" title="'+esc(e.snippet)+'">'+esc(e.snippet)+'</div></div>'; }).join('');
+        const lo=c.boundary&&c.boundary.lowest_included, hi=c.boundary&&c.boundary.highest_excluded;
+        // The decision boundary — the actual TEXT at the cut. What barely made it vs barely missed:
+        // this is where the threshold's meaning becomes concrete.
+        const bRow = (cls, lbl, r) => r ? ('<div class="brow '+cls+'"><div class="bhead"><span class="blbl">'+lbl+'</span><span class="bsim">'+r.similarity.toFixed(4)+'</span></div><div class="bsnip">'+esc(r.snippet)+'</div></div>') : '';
+        const boundaryPanel = (lo||hi) ? ('<div class="bpanel"><div class="bphead">the decision boundary — the rows straddling the cut</div>'+
+          bRow('binc','▸ lowest INCLUDED', lo)+bRow('bexc','▸ highest EXCLUDED', hi)+'</div>') : '';
+        const cutoffTxt = c.mode==='top_k' ? ('top '+c.match_count+' most relevant <span class="timing">(weakest sim <code class="c">'+(c.cutoff!=null?c.cutoff.toFixed(4):'—')+'</code>)</span>') : ('similarity ≥ <code class="c">'+c.cutoff+'</code>');
+        out.innerHTML = withRaw(
+          '<div class="cohort"><p class="k">the cohort — what counted</p>'+
+            '<div class="def">opportunities with an observation <b>relevant to “'+esc(c.query)+'”</b> · '+cutoffTxt+'</div>'+
+            '<div class="meta"><div><b>'+(c.match_count!=null?intf(c.match_count):'—')+'</b> matching observations <span class="timing">(evidence)</span></div>'+
+              '<div><b>'+(deals!=null?intf(deals):'—')+'</b> opportunities in the cohort <span class="timing">(measured)</span></div></div>'+
+            '<div class="ex"><div class="h"><span>matched exemplars (similarity)</span></div>'+exHtml+'</div>'+
+            boundaryPanel+
+          '</div>'+
+          '<div class="metric"><div class="v">'+fmtV(d.measure.fmt, mv)+'</div><div class="l">'+esc(d.measure.label)+'<br>over the cohort above</div></div>'+
+          sqlPanel(d.sql, d.ms, 'grain-safe EXISTS semijoin', d.params)+
+          actionsBar('/api/relevant', payload, d.citation), d.sql);
+      }
+
+      // ---------- screen 2: explore evidence ----------
+      async function runExplore() {
+        const out = $('r-explore'); out.innerHTML = '<p class="loading">ranking the matching observations …</p>';
+        const payload = { query: $('q').value.trim(), mode, limit: 40 };
+        if (mode==='threshold') payload.threshold = Number(cutoff.value); else payload.top_k = kVal();
+        let d; try { const r = await fetch('/api/explore', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)}); d = await r.json(); if(!r.ok) throw new Error(d.error); }
+        catch(e){ out.innerHTML = '<div class="err"><b>Refused:</b>\n'+esc(e.message||e)+'</div>'; return; }
+        const rows = (d.rows||[]).map((r)=>{ const s = r._rank!=null?Number(r._rank):null; const w = s!=null?Math.max(2,Math.min(100,Math.round(s*100))):0;
+          return '<tr><td class="t"><span class="pill">'+esc(r.type)+'</span></td><td class="txt">'+esc(r.normalized_text)+'</td>'+
+            '<td class="s">'+(s!=null?s.toFixed(4):'—')+'<div class="simbar"><i style="width:'+w+'%"></i></div></td></tr>'; }).join('');
+        out.innerHTML = withRaw(
+          '<div class="cohort" style="border-left-color:var(--accent)"><p class="k" style="color:var(--accent)">the evidence — observations in the cohort</p>'+
+          '<div class="def"><b>'+intf(d.total)+'</b> observations relevant to “'+esc($('q').value.trim())+'” · showing top '+(d.rows||[]).length+' by similarity</div></div>'+
+          '<table><thead><tr><th>type</th><th>observation text</th><th>similarity</th></tr></thead><tbody>'+rows+'</tbody></table>'+
+          sqlPanel(d.sql, d.ms, 'query() + semantic rank', d.params)+
+          actionsBar('/api/explore', payload), d.sql);
+      }
+
+      // ---------- screen 3: group (conformed dimensions) ----------
+      async function runGroup() {
+        const out = $('r-group'); out.innerHTML = '<p class="loading">resolving the dimension against the join graph …</p>';
+        const dim = $('groupDim').value;
+        const payload = { query: $('q').value.trim(), dim, mode };
+        if (mode==='threshold') payload.threshold = Number(cutoff.value); else payload.top_k = kVal();
+        let d; try { const r = await fetch('/api/group', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)}); d = await r.json(); if(!r.ok) throw new Error(d.error); }
+        catch(e){ out.innerHTML =
+          '<div class="cohort" style="border-left-color:var(--bad)"><p class="k" style="color:var(--bad)">REFUSED — the graph rejected this dimension (fail-closed)</p>'+
+          '<div class="def">group_by <code class="c">'+esc(dim)+'</code> is not grain-legal at <b>opportunities</b> grain:</div>'+
+          '<div class="err" style="margin-top:11px">'+esc(e.message||e)+'</div>'+
+          '<p class="note" style="margin-top:11px">A to-many dimension would <b>fan out</b> the measure (count it once per matching child). The engine derives this from the join graph and refuses, rather than silently returning an inflated number — the same no-silent-fabrication discipline as the cohort itself.</p></div>'; return; }
+        const max = Math.max(...d.rows.map((r)=>Number(r.pipeline)||0), 1);
+        const rows = d.rows.map((r)=>{ const p = Number(r.pipeline)||0; const w = Math.max(1, Math.round(p/max*100));
+          return '<tr><td class="txt">'+esc(r[dim])+'</td><td class="s">$'+Math.round(p).toLocaleString()+'<div class="gbar"><i style="width:'+w+'%"></i></div></td><td class="t">'+intf(r.deals)+'</td></tr>'; }).join('');
+        out.innerHTML = withRaw(
+          '<div class="cohort"><p class="k">conformed group — the cohort split by a grain-legal dimension</p>'+
+          '<div class="def">pipeline for opportunities relevant to “'+esc($('q').value.trim())+'”, grouped by <code class="c">'+esc(dim)+'</code> <span class="timing">('+d.rows.length+' groups, to-one ⇒ a grain-safe LEFT JOIN)</span></div></div>'+
+          '<table><thead><tr><th>'+esc(dim)+'</th><th>weighted pipeline</th><th>deals</th></tr></thead><tbody>'+rows+'</tbody></table>'+
+          sqlPanel(d.sql, d.ms, 'conformed group_by', d.params)+
+          actionsBar('/api/group', payload), d.sql);
+      }
+
+      // ---------- screen 4: catalog ----------
+      async function runCatalog() {
+        const out = $('r-catalog'); out.innerHTML = '<p class="loading">describing …</p>';
+        const ent = $('catEntity').value;
+        let d; try { const r = await fetch('/api/describe?entity='+ent); d = await r.json(); if(!r.ok) throw new Error(d.error); }
+        catch(e){ out.innerHTML = '<div class="err">'+esc(e.message||e)+'</div>'; return; }
+        const fields = (d.fields||[]);
+        const fieldRows = fields.map((f)=>'<tr><td class="t">'+esc(f.key)+'</td><td><span class="pill">'+esc(f.type)+'</span></td>'+
+          '<td>'+(f.eav?'<span class="eavtag">EAV</span>':'<span class="timing">native</span>')+(f.searchable?' <span class="timing">· searchable</span>':'')+'</td></tr>').join('');
+        const rels = (d.relationships||[]).map((r)=>'<div class="relrow"><span class="kind '+r.kind+'">'+r.kind+'</span> <code class="c">'+esc(r.name)+'</code> → <b>'+esc(r.target)+'</b> <span class="timing">on '+esc(r.fk)+'</span></div>').join('');
+        out.innerHTML =
+          '<div class="grid2"><div class="card"><h3>relationships — the join graph</h3>'+(rels||'<span class="timing">none</span>')+
+            '<p class="note" style="margin-top:12px">conformed dimensions + cross-grain semijoins are <b>derived</b> from these — the host supplies the graph, the engine decides what is legal to ask.</p></div>'+
+          '<div class="card"><h3>'+esc(d.entity)+' · '+fields.length+' fields (native ⊕ EAV)</h3>'+
+            '<div style="max-height:360px;overflow:auto"><table><tbody>'+fieldRows+'</tbody></table></div></div></div>'+
+          '<p class="timing" style="margin-top:10px">describe('+esc(d.entity)+') · '+d.ms+' ms</p>';
+      }
+
+      function runActive(){ syncCutoff(); if(screen==='metric') runMetric(); else if(screen==='explore') runExplore(); else if(screen==='group') runGroup(); else runCatalog(); }
+      $('go').onclick = runActive;
+      $('groupDim').onchange = runGroup;
+      $('catEntity').onchange = runCatalog;
+      $('q').addEventListener('keydown', (e)=>{ if(e.key==='Enter') runActive(); });
+      // ↻ sync: re-pull the resolved model (curate a field in the field-management UI → click this →
+      // the new measure/dim appears here, no restart), then rebuild the dropdowns + re-run.
+      $('syncBtn').onclick = async () => {
+        const b=$('syncBtn'); const t=b.textContent; b.textContent='↻ syncing…';
+        try { await fetch('/api/refresh',{method:'POST'}); const info=await (await fetch('/api/info')).json();
+          const sel=$('measure'); const cur=sel.value; sel.innerHTML=''; for(const m of (info.measures||[])){const o=document.createElement('option');o.value=m.key;o.textContent=m.label;sel.appendChild(o);} sel.value=[...sel.options].some(o=>o.value===cur)?cur:info.defaultMeasure;
+          const gsel=$('groupDim'); const gcur=gsel.value; gsel.innerHTML=''; for(const dm of (info.dimensions||[])){const o=document.createElement('option');o.value=dm.dim;o.textContent=dm.label;gsel.appendChild(o);} if([...gsel.options].some(o=>o.value===gcur)) gsel.value=gcur;
+          const src=$('measureSrc'); if(src&&info.gated) src.textContent='· '+info.gated.exposed+'/'+info.gated.total+' fields, '+info.gated.dormant+' gated out';
+          b.textContent='↻ synced ✓'; setTimeout(()=>b.textContent=t,1400); runActive();
+        } catch(e){ b.textContent='↻ sync failed'; setTimeout(()=>b.textContent=t,1400); }
+      };
+      // initial runMetric() is triggered by the /api/info fetch (after the measure dropdown is built)
+    </script>
+  </body>
+</html>
