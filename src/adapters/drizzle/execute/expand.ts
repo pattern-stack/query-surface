@@ -13,16 +13,48 @@
 //
 // Depth-limited at 3 hops to prevent runaway expansion.
 
-import { inArray } from 'drizzle-orm';
+import { type SQL, and, inArray } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import type { PgColumn } from 'drizzle-orm/pg-core';
-import type { EntityName } from '../../../internal/language/types.ts';
+import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
+import type { EntityName, FilterExpression } from '../../../internal/language/types.ts';
+import { compile } from '../compile/compiler.ts';
 import type { EavContext } from '../eav/field-map.ts';
 import { hydrateEavRows } from '../eav/read.ts';
 import { registry } from '../registry/registry.ts';
 import { nativeSelectShape } from './preview.ts';
 
 const MAX_DEPTH = 3;
+
+/**
+ * Per-entity tenancy-scope resolver the SERVICE supplies so expand folds scope
+ * through EVERY traversed relation (invariant #3 — scope is per-source, fail-closed,
+ * folded through every traversed entity). Returns the scope predicate to AND into a
+ * relation's batch read; `undefined` when the entity is unscoped-by-design (no
+ * resolver configured) or declared TENANT_GLOBAL; and THROWS on a coverage gap (a
+ * configured resolver that does not cover a traversed entity) — never read it
+ * unscoped. Without this, expand reads related entities with a bare FK/PK `IN` and
+ * no scope (a cross-scope read leak).
+ */
+export type ExpandScopeResolver = (entity: EntityName) => FilterExpression | undefined;
+
+/**
+ * AND the traversed relation's tenancy scope into its batch-read WHERE. The scope
+ * predicate is compiled through the SAME filter compiler the verbs use (one
+ * expression language, invariant #4), so a dotted/EAV scope leaf resolves
+ * identically; its joins (rare — scope is usually a local column) are returned for
+ * the caller to leftJoin. `scopeFor` may THROW (fail-closed coverage gap).
+ */
+function scopedRead(
+  target: EntityName,
+  baseCond: SQL,
+  scopeFor: ExpandScopeResolver | undefined,
+  eav: EavContext | undefined,
+): { where: SQL; joins: { table: PgTable; on: SQL }[] } {
+  const pred = scopeFor?.(target); // may THROW on a coverage gap (fail-closed)
+  if (!pred) return { where: baseCond, joins: [] };
+  const sc = compile({ entity: target, filter: pred }, eav);
+  return { where: sc.where ? (and(baseCond, sc.where) as SQL) : baseCond, joins: sc.joins };
+}
 
 // Tree structure built from the dotted paths.
 //   ['opportunity', 'opportunity.account', 'chunks']
@@ -58,6 +90,7 @@ export async function expandRows(
   rows: Array<Record<string, unknown>>,
   tree: ExpandTree,
   eav?: EavContext,
+  scopeFor?: ExpandScopeResolver,
   depth = 0,
 ): Promise<void> {
   if (rows.length === 0 || Object.keys(tree).length === 0) return;
@@ -82,7 +115,18 @@ export async function expandRows(
     const targetCols = targetDesc.columns as Record<string, PgColumn>;
 
     if (rel.kind === 'belongs_to') {
-      await expandBelongsTo(db, rows, rel, relName, targetDesc, targetCols, subTree, eav, depth);
+      await expandBelongsTo(
+        db,
+        rows,
+        rel,
+        relName,
+        targetDesc,
+        targetCols,
+        subTree,
+        eav,
+        scopeFor,
+        depth,
+      );
     } else if (rel.kind === 'has_many') {
       await expandHasMany(
         db,
@@ -94,6 +138,7 @@ export async function expandRows(
         targetCols,
         subTree,
         eav,
+        scopeFor,
         depth,
       );
     }
@@ -112,6 +157,7 @@ async function expandBelongsTo(
   targetCols: Record<string, PgColumn>,
   subTree: ExpandTree,
   eav: EavContext | undefined,
+  scopeFor: ExpandScopeResolver | undefined,
   depth: number,
 ): Promise<void> {
   // Rows are snake_case keyed (nativeSelectShape), so read the FK by rel.fk.
@@ -129,11 +175,16 @@ async function expandBelongsTo(
   }
 
   const pkCol = targetCols[(targetDesc as { primaryKey: string }).primaryKey];
-  const targetRows = (await db
+  // Fold the target's tenancy scope into the batch read (invariant #3): an
+  // out-of-scope parent then resolves to null below (byId miss), never leaks.
+  const { where, joins } = scopedRead(rel.target, inArray(pkCol, fkValues), scopeFor, eav);
+  // biome-ignore lint/suspicious/noExplicitAny: runtime schema-registry descriptor + dynamic leftJoin accumulator
+  let tq: any = db
     .select(nativeSelectShape(rel.target, eav?.fieldMaps[rel.target]))
     // biome-ignore lint/suspicious/noExplicitAny: runtime schema-registry descriptor; table shape is resolved dynamically at query time
-    .from((targetDesc as any).table)
-    .where(inArray(pkCol, fkValues))) as Array<Record<string, unknown>>;
+    .from((targetDesc as any).table);
+  for (const j of joins) tq = tq.leftJoin(j.table, j.on);
+  const targetRows = (await tq.where(where)) as Array<Record<string, unknown>>;
 
   // Build id → row map
   const byId = new Map<string, Record<string, unknown>>();
@@ -155,7 +206,7 @@ async function expandBelongsTo(
 
   // Recurse on the attached children if the subTree asks for deeper expansion
   if (Object.keys(subTree).length > 0) {
-    await expandRows(db, rel.target, targetRows, subTree, eav, depth + 1);
+    await expandRows(db, rel.target, targetRows, subTree, eav, scopeFor, depth + 1);
   }
 }
 
@@ -170,6 +221,7 @@ async function expandHasMany(
   targetCols: Record<string, PgColumn>,
   subTree: ExpandTree,
   eav: EavContext | undefined,
+  scopeFor: ExpandScopeResolver | undefined,
   depth: number,
 ): Promise<void> {
   const parentPkKey = parentDesc.primaryKey;
@@ -189,11 +241,16 @@ async function expandHasMany(
   // camel(rel.fk) indexes the Drizzle table object (keyed by JS prop) to get the
   // PgColumn for the WHERE; the child ROW is snake_case keyed, so read cr[rel.fk].
   const fkCol = targetCols[camel(rel.fk)];
-  const childRows = (await db
+  // Fold the child's tenancy scope into the batch read (invariant #3): out-of-scope
+  // children are excluded pre-grouping, so a parent only gets the children it may see.
+  const { where, joins } = scopedRead(rel.target, inArray(fkCol, parentIds), scopeFor, eav);
+  // biome-ignore lint/suspicious/noExplicitAny: runtime schema-registry descriptor + dynamic leftJoin accumulator
+  let cq: any = db
     .select(nativeSelectShape(rel.target, eav?.fieldMaps[rel.target]))
     // biome-ignore lint/suspicious/noExplicitAny: runtime schema-registry descriptor; table shape is resolved dynamically at query time
-    .from((targetDesc as any).table)
-    .where(inArray(fkCol, parentIds))) as Array<Record<string, unknown>>;
+    .from((targetDesc as any).table);
+  for (const j of joins) cq = cq.leftJoin(j.table, j.on);
+  const childRows = (await cq.where(where)) as Array<Record<string, unknown>>;
 
   // Group by FK value
   const groups = new Map<string, Array<Record<string, unknown>>>();
@@ -216,6 +273,6 @@ async function expandHasMany(
 
   // Recurse on attached children (flat list across all parents — same depth+1)
   if (Object.keys(subTree).length > 0) {
-    await expandRows(db, rel.target, childRows, subTree, eav, depth + 1);
+    await expandRows(db, rel.target, childRows, subTree, eav, scopeFor, depth + 1);
   }
 }
