@@ -15,6 +15,7 @@
 
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { type EavContext, loadFieldMaps } from './adapters/drizzle/eav/field-map.ts';
+import type { ExpandScopeResolver } from './adapters/drizzle/execute/expand.ts';
 import {
   buildRelevanceCitation,
   aggregate as runAggregate,
@@ -484,7 +485,34 @@ export class QueryApplicationService {
         include_sql: opts.include_sql,
       },
       eav,
+      // Fold tenancy scope through EVERY expanded relation, fail-closed (invariant #3):
+      // the root rows are scoped above, but `expand` traverses to related entities — without
+      // this they were read with a bare FK/PK `IN` and no scope (a cross-scope read leak).
+      this.expandScopeResolver(),
     );
+  }
+
+  /**
+   * The fail-closed tenancy-scope resolver `expand` folds through EVERY traversed
+   * relation (invariant #3 — scope is per-source and folded through every traversed
+   * entity). Mirrors the relevance-citation companion's discipline (`citationFor`): a
+   * configured `scope` that returns undefined for a traversed entity — and that entity
+   * isn't declared TENANT_GLOBAL — is a coverage gap → REFUSE (never read it unscoped).
+   * No `scope` configured at all → undefined: expand runs unscoped, the same
+   * trusted/standalone mode the verbs use when no resolver is supplied.
+   */
+  private expandScopeResolver(): ExpandScopeResolver | undefined {
+    const scope = this.options.scope;
+    if (!scope) return undefined;
+    const globals = new Set<string>(this.options.tenantGlobalEntities ?? []);
+    return (entity: EntityName) => {
+      const pred = scope(entity);
+      if (pred) return pred;
+      if (globals.has(entity)) return undefined; // declared tenant-global → read unscoped, by decision
+      throw new Error(
+        `${ENGINE_ERROR.EXPAND_SCOPE}: relation "${entity}" has no tenancy scope and was not declared TENANT_GLOBAL — refusing to read it unscoped (scope coverage gap)`,
+      );
+    };
   }
 
   // The host's analytics model, built once and memoized. REQUIRED for aggregate()
