@@ -10,7 +10,10 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
-import { type QuerySurfaceHarness, makeQuerySurface } from '../../../../characterization/harness.ts';
+import {
+  type QuerySurfaceHarness,
+  makeQuerySurface,
+} from '../../../../characterization/harness.ts';
 
 const DBURL = process.env.DBURL;
 const suite = DBURL ? describe : describe.skip;
@@ -19,7 +22,7 @@ suite('EAV fields as conformed group dimensions — aggregate() (ADR-0025 §3)',
   let h: QuerySurfaceHarness;
   beforeAll(() => {
     h = makeQuerySurface(DBURL!, {
-      measureSpecs: [{ name: 'weighted_amount', key: 'ExpectedRevenue', agg: 'sum', additivity: 'additive' }],
+      measureSpecs: [{ key: 'ExpectedRevenue', aggs: ['sum'], additivity: 'additive' }],
       dimensionSpecs: [
         { name: 'stage', key: 'StageName' },
         { name: 'deal_size_band', key: 'deal_size_band' },
@@ -53,7 +56,7 @@ suite('EAV fields as conformed group dimensions — aggregate() (ADR-0025 §3)',
       {
         group_by: ['deal_size_band'],
         measures: [
-          { on: 'weighted_amount', agg: 'sum', as: 'pipeline' },
+          { on: 'ExpectedRevenue', agg: 'sum', as: 'pipeline' },
           { on: '*', agg: 'count', as: 'deals' },
         ],
         order_by: [{ on: 'pipeline', dir: 'desc' }],
@@ -112,8 +115,13 @@ suite('EAV fields as conformed group dimensions — aggregate() (ADR-0025 §3)',
 
     const res = await h.service.aggregate('opportunities', {
       group_by: ['deal_size_band'],
-      measures: [{ on: 'weighted_amount', agg: 'sum', as: 'pipeline' }],
-      filter: { on: 'observations.normalized_text', op: 'relevant', query: ANCHOR, threshold: THRESHOLD },
+      measures: [{ on: 'ExpectedRevenue', agg: 'sum', as: 'pipeline' }],
+      filter: {
+        on: 'observations.normalized_text',
+        op: 'relevant',
+        query: ANCHOR,
+        threshold: THRESHOLD,
+      },
       order_by: [{ on: 'pipeline', dir: 'desc' }],
     });
 
@@ -127,7 +135,7 @@ suite('EAV fields as conformed group dimensions — aggregate() (ADR-0025 §3)',
     await expect(
       h.service.aggregate('opportunities', {
         group_by: ['champion_status'],
-        measures: [{ on: 'weighted_amount', agg: 'sum', as: 'p' }],
+        measures: [{ on: 'ExpectedRevenue', agg: 'sum', as: 'p' }],
       }),
     ).rejects.toThrow(/champion_status/);
   });

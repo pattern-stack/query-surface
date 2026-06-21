@@ -147,7 +147,7 @@ suite('aggregate engine — Drizzle-native, live dealbrain eval superset', () =>
     const q = {
       entity: 'opportunities',
       measures: [
-        { on: 'weighted_amount', agg: 'sum' as const, as: 'weighted' },
+        { on: 'ExpectedRevenue', agg: 'sum' as const, as: 'weighted' },
         { source: 'observations', on: '*', agg: 'count' as const, as: 'obs' },
       ],
     };
@@ -169,7 +169,7 @@ suite('aggregate engine — Drizzle-native, live dealbrain eval superset', () =>
       group_by: ['account_id'],
       measures: [
         { on: '*', agg: 'count' as const, as: 'obs' },
-        { source: 'opportunities', on: 'weighted_amount', agg: 'sum' as const, as: 'pipeline' },
+        { source: 'opportunities', on: 'ExpectedRevenue', agg: 'sum' as const, as: 'pipeline' },
       ],
       order_by: [{ on: 'pipeline', dir: 'desc' as const }],
       limit: 5,
@@ -189,7 +189,7 @@ suite('aggregate engine — Drizzle-native, live dealbrain eval superset', () =>
       entity: 'opportunities',
       group_by: ['account_id'],
       measures: [
-        { on: 'weighted_amount', agg: 'sum', as: 'weighted' },
+        { on: 'ExpectedRevenue', agg: 'sum', as: 'weighted' },
         { source: 'observations', on: '*', agg: 'count', as: 'obs' },
       ],
       having: { on: 'obs', op: 'gt', value: 50 },
@@ -218,7 +218,7 @@ suite('aggregate engine — Drizzle-native, live dealbrain eval superset', () =>
         entity: 'opportunities',
         group_by: ['state_of_deal_status', 'type'],
         measures: [
-          { on: 'weighted_amount', agg: 'sum', as: 'weighted' },
+          { on: 'ExpectedRevenue', agg: 'sum', as: 'weighted' },
           { source: 'observations', on: '*', agg: 'count', as: 'obs' },
         ],
       }),
@@ -260,15 +260,30 @@ suite('aggregate engine — Drizzle-native, live dealbrain eval superset', () =>
     expect(num(ninEmpty.rows[0]!.n)).toBe(num(all[0]!.n)); // empty NOT IN matches everything
   });
 
-  it('E16 model.catalog is DERIVED from the dealbrain tags (B2): weighted_amount + deal_probability', () => {
+  it('E16 model.catalog is DERIVED from the dealbrain tags (B2): one field.agg entry per allowed agg', () => {
     const cat = model.catalog ?? {};
-    expect(Object.keys(cat).sort()).toEqual(['deal_probability', 'weighted_amount']);
-    expect(cat.weighted_amount).toMatchObject({
+    expect(Object.keys(cat).sort()).toEqual([
+      'Amount.avg',
+      'Amount.max',
+      'Amount.min',
+      'Amount.sum',
+      'ExpectedRevenue.avg',
+      'ExpectedRevenue.max',
+      'ExpectedRevenue.min',
+      'ExpectedRevenue.sum',
+      'Probability.avg',
+      'Probability.max',
+      'Probability.min',
+    ]);
+    // sum inherits the field's additivity; a percentage isn't summable (no Probability.sum entry)
+    expect(cat['ExpectedRevenue.sum']).toMatchObject({
+      on: 'ExpectedRevenue',
       agg: 'sum',
       additivity: 'additive',
       source: 'opportunities',
     });
-    expect(cat.deal_probability).toMatchObject({
+    expect(cat['Probability.avg']).toMatchObject({
+      on: 'Probability',
       agg: 'avg',
       additivity: 'non',
       source: 'opportunities',
@@ -278,17 +293,17 @@ suite('aggregate engine — Drizzle-native, live dealbrain eval superset', () =>
   it('E17 {ref} expands to the catalog measure: ref == inline == truth (live)', async () => {
     const refRes = await runAggregateDrizzle(db, model, {
       entity: 'opportunities',
-      measures: [{ ref: 'weighted_amount' }],
+      measures: [{ ref: 'ExpectedRevenue.sum', as: 'weighted' }],
     });
     const inlineRes = await runAggregateDrizzle(db, model, {
       entity: 'opportunities',
-      measures: [{ on: 'weighted_amount', agg: 'sum', as: 'w' }],
+      measures: [{ on: 'ExpectedRevenue', agg: 'sum', as: 'w' }],
     });
     const truthW = await truth(
       `select sum(value_number) s from field_values where field_definition_id=${WA}`,
     );
-    expect(num(refRes.rows[0]!.weighted_amount)).toBeCloseTo(num(truthW[0]!.s), 2);
-    expect(num(refRes.rows[0]!.weighted_amount)).toBeCloseTo(num(inlineRes.rows[0]!.w), 2);
+    expect(num(refRes.rows[0]!.weighted)).toBeCloseTo(num(truthW[0]!.s), 2);
+    expect(num(refRes.rows[0]!.weighted)).toBeCloseTo(num(inlineRes.rows[0]!.w), 2);
   });
 
   // B4 — ratio composites. A test catalog adds ratios over the derived atomic measures.
@@ -314,12 +329,12 @@ suite('aggregate engine — Drizzle-native, live dealbrain eval superset', () =>
       opp_count: oppCount,
       wa_per_dp: {
         kind: 'ratio',
-        numerator: 'weighted_amount',
-        denominator: 'deal_probability',
+        numerator: 'ExpectedRevenue.sum',
+        denominator: 'Probability.avg',
       } as RatioMeasureDef,
       pipeline_per_obs: {
         kind: 'ratio',
-        numerator: 'weighted_amount',
+        numerator: 'ExpectedRevenue.sum',
         denominator: 'obs_count',
       } as RatioMeasureDef,
       // int/int legs (count_distinct / count_distinct) — exercises the ::numeric cast.
@@ -335,7 +350,7 @@ suite('aggregate engine — Drizzle-native, live dealbrain eval superset', () =>
       // numerator null-policy (absent group → NULL, not a fabricated 0).
       dp_per_obs: {
         kind: 'ratio',
-        numerator: 'deal_probability',
+        numerator: 'Probability.avg',
         denominator: 'obs_count',
       } as RatioMeasureDef,
     },
@@ -514,7 +529,7 @@ suite('aggregate engine — Drizzle-native, live dealbrain eval superset', () =>
         ...m.catalog,
         running_pipeline: {
           kind: 'cumulative',
-          measure: 'weighted_amount',
+          measure: 'ExpectedRevenue.sum',
           order_by: 'occurred_at',
         },
       },
@@ -531,12 +546,12 @@ suite('aggregate engine — Drizzle-native, live dealbrain eval superset', () =>
     expect(() =>
       assertAggregateSafe(model.analytics, {
         entity: 'opportunities',
-        measures: [{ on: 'deal_probability', agg: 'sum', as: 'x' }],
+        measures: [{ on: 'Probability', agg: 'sum', as: 'x' }],
       }),
     ).toThrow(/SUM_NON_ADDITIVE/);
     const res = await runAggregateDrizzle(db, model, {
       entity: 'opportunities',
-      measures: [{ on: 'deal_probability', agg: 'avg', as: 'avg_dp' }],
+      measures: [{ on: 'Probability', agg: 'avg', as: 'avg_dp' }],
     });
     const ref = await truth(
       `select avg(value_number) a from field_values where field_definition_id=${DP}`,

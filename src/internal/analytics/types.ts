@@ -22,6 +22,10 @@ export interface AggFieldMeta {
   role?: 'measure' | 'dimension';
   /** default aggregation for a measure */
   agg?: Agg;
+  /** Allowed aggregations for a measure field — the field IS the measure, aggregation is a
+   *  config on it. The catalog generates one `field.agg` entry per listed agg (e.g.
+   *  `Amount.sum`, `Amount.avg`). Omit → fall back to the single `agg` (legacy named measure). */
+  aggs?: Agg[];
   /** additive (sum/avg/min/max ok) | semi (not summable over time) | non (never sum) */
   additivity?: Additivity;
   /** marks the time axis (semi-additive measures may not be summed across it) */
