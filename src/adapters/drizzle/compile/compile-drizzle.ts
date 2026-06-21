@@ -21,6 +21,8 @@ import type {
   ScopeFor,
 } from '../../../internal/analytics/types';
 import { ENGINE_ERROR } from '../../../internal/language/error-messages';
+import { isLeaf } from '../../../internal/language/types';
+import type { Leaf, Op, SimTopkLeaf } from '../../../internal/language/types';
 import type { DealbrainModel } from '../../reference/model.dealbrain';
 
 // biome-ignore lint/suspicious/noExplicitAny: Drizzle's query-builder + WithSubquery types don't survive dynamic join chains / dynamic select shapes; the package uses `any` accumulators here (see runners.ts).
@@ -78,6 +80,18 @@ function nativeColSql(model: DealbrainModel, entity: string, path: string): Reso
 // source-filter compiler (local / to-one-joined / semijoin-inner legs) — one op impl.
 export function applyLeafOp(expr: SQL, type: AggColType, op: string, value: unknown): SQL {
   switch (op) {
+    case 'sim_gte': {
+      // Vector-distance primitive: (1 - (embedding <=> query_vector)) >= threshold. `expr` is
+      // the resolved embedding column (crispify rewrote `on` to it). Invariant #1: the vector
+      // is a BOUND string param the driver binds; ::vector is a fixed cast keyword; the
+      // threshold is bound — never sql.raw of caller data. similarity in [0,1] (the EXACT
+      // formula at compiler.ts simExpr). `value` carries { vector, threshold } (stamped by
+      // valueLeaf — a sim_gte leaf has no scalar `.value`). This ONE impl lights up the local,
+      // to-one-joined, and cross-grain EXISTS-inner legs together (its three callers).
+      const { vector, threshold } = value as { vector: number[]; threshold: number };
+      const vecLit = `[${vector.join(',')}]`;
+      return sql`(1 - (${expr} <=> ${vecLit}::vector)) >= ${threshold}`;
+    }
     case 'is_null':
       return sql`${expr} is null`;
     case 'is_not_null':
@@ -138,6 +152,31 @@ export function applyLeafOp(expr: SQL, type: AggColType, op: string, value: unkn
 // Predicate → SQL via a column resolver (LOCAL columns only: scope, having, measure.where).
 // Boolean composition here; leaf ops via applyLeafOp. The graph-aware q.filter path uses
 // compileSourceFilter instead (it resolves dotted paths to joins/semijoins per leaf).
+// Wave-2: a `relevant` leaf is crispified into sim_gte/sim_topk by normalize() BEFORE
+// compile, and those sim leaves are lowered by the vector / ranked-CTE paths — never via
+// applyLeafOp's value path. Reaching the value path with one is an internal error (fail
+// loud, never read a missing `.value`). The vector lowering lands in the steps below.
+function valueLeaf(leaf: Leaf): { op: Op | 'sim_gte'; value: unknown } {
+  // sim_gte (Wave-2, step 5) is a crisp vector-distance leaf: it has no scalar `.value`, so
+  // package its vector + threshold for applyLeafOp's sim_gte case. The same op impl lights up
+  // local / to-one / cross-grain-EXISTS legs. `relevant` (uncrispified — normalize() crispifies
+  // it BEFORE compile) and sim_topk (a ranked-CTE membership test lowered in step 6) must never
+  // reach this value path → fail loud rather than read a missing `.value`.
+  if (leaf.op === 'sim_gte') {
+    return { op: 'sim_gte', value: { vector: leaf.vector, threshold: leaf.threshold } };
+  }
+  if (leaf.op === 'relevant' || leaf.op === 'sim_topk') {
+    // `relevant` must be crispified BEFORE compile; sim_topk is a ranked-CTE MEMBERSHIP test
+    // lowered by compileSourceFilter (the global-filter path) — NEVER the value path. Reaching
+    // here means a sim_topk slipped into scope/having/measure.where (where it has no meaning) or
+    // an uncrispified `relevant` survived → fail loud rather than read a missing `.value`.
+    throw new Error(
+      `${ENGINE_ERROR.AGGREGATE} relevance op '${leaf.op}' is not valid on this predicate surface (scope/having/measure.where) — a top_k cohort lives only on the global filter`,
+    );
+  }
+  return { op: leaf.op, value: leaf.value };
+}
+
 function compilePredicateSql(resolve: Resolver, pred: Predicate): SQL {
   if ('and' in pred)
     return sql`(${sql.join(
@@ -151,7 +190,8 @@ function compilePredicateSql(resolve: Resolver, pred: Predicate): SQL {
     )})`;
   if ('not' in pred) return sql`(not ${compilePredicateSql(resolve, pred.not)})`;
   const { expr, type } = resolve(pred.on);
-  return applyLeafOp(expr, type, pred.op, pred.value);
+  const { op, value } = valueLeaf(pred);
+  return applyLeafOp(expr, type, op, value);
 }
 
 // Aggregate function as a fixed switch — no sql.raw(agg). An unknown agg throws
@@ -292,6 +332,175 @@ function lowerSemijoin(
   return sql`exists (select 1 from ${model.tables[child]!} where ${eq(fkCol, parentPkCol)} and ${inner}${scopeClause})`;
 }
 
+// ── sim_topk — the ranked-CTE MEMBERSHIP cohort (Wave-2, step 6) ───────────────────────────
+// sim_topk is NOT a boolean WHERE leaf: it's a statement-level ranked cohort (the k most-relevant
+// rows of the SEMANTIC entity) consumed as a MEMBERSHIP test (pk in (select pk from cohort)),
+// AND-composing, NEVER a fan-inducing JOIN to the ranked CTE on a non-unique key (invariant #2).
+// The cohort is hoisted ABOVE the per-source selects (db.$with) so the embed resolves ONCE and
+// every source tests the SAME population. Its ORDER BY/LIMIT runs AFTER folding the semantic
+// entity's scope (#3 — no scope-leak-via-ranking). GLOBAL (no `per`, no group_by) → a single
+// flat `order by sim desc, pk asc limit k`; PER-GROUP (`per` set, or the group_by key when
+// grouping) → row_number() OVER (PARTITION BY <expr> ORDER BY sim desc, pk asc) <= k, dropping
+// NULL-partition-key rows (so a NULL FK can't collapse into one phantom group). pk ASC is the
+// deterministic cutoff tiebreak (NEVER SELECT DISTINCT over the vector column — OOM guardrail).
+
+// similarity = 1 - (embedding <=> vector), in [0,1] — the EXACT formula at compiler.ts simExpr.
+function simSql(embExpr: SQL, vector: number[]): SQL {
+  const vecLit = `[${vector.join(',')}]`;
+  return sql`(1 - (${embExpr} <=> ${vecLit}::vector))`;
+}
+
+// A built ranked cohort: the hoisted CTE (db.$with) + the semantic entity it ranks + its pk
+// name, so a same-grain source tests `source.pk in (select pk from cohort)` and a cross-grain
+// source wraps that membership in the lowerSemijoin EXISTS shell over the semantic child.
+interface Cohort {
+  // biome-ignore lint/suspicious/noExplicitAny: WithSubquery columns are keyed dynamically by the inner select shape.
+  cte: any;
+  entity: string; // the semantic entity the cohort ranks (owner of the embedding column)
+  pk: string; // its pk db-name (the membership key)
+}
+
+// Resolve the SEMANTIC entity a sim_topk leaf ranks over: the entity that OWNS the embedding
+// column `on`. A bare `on` (the committed crispify output) is local to the aggregate root; a
+// dotted `on` resolves to-one/semijoin to the child that owns it (resolveJoinPlan reused
+// UNCHANGED). The cohort is built over THIS entity, once, statement-level.
+function topkSemanticEntity(
+  model: DealbrainModel,
+  rootEntity: string,
+  leaf: SimTopkLeaf,
+): { entity: string; column: string } {
+  const plan = resolveJoinPlan(model.analytics, rootEntity, leaf.on, 'filter');
+  switch (plan.kind) {
+    case 'local':
+      return { entity: rootEntity, column: plan.column };
+    case 'to-one':
+      return { entity: plan.target, column: plan.column };
+    case 'semijoin':
+      return { entity: plan.child, column: plan.column };
+    default:
+      throw new Error(`${ENGINE_ERROR.AGGREGATE} ${plan.reason}`);
+  }
+}
+
+// Build the statement-level ranked cohort CTE for a sim_topk leaf. GLOBAL when `per` is absent
+// AND the query isn't grouping; PER-GROUP otherwise (partition key = `per`, else the group_by
+// key). The cohort's WHERE folds the semantic entity's scope (#3) BEFORE the ORDER BY/LIMIT.
+function buildTopkCohort(
+  db: Db,
+  model: DealbrainModel,
+  q: Aggregate,
+  leaf: SimTopkLeaf,
+  scopeFor?: ScopeFor,
+  // CTE name suffix — unique per sim_topk leaf so multiple cohorts on one statement don't collide.
+  cteIdx = 0,
+): Cohort {
+  const cteName = cteIdx === 0 ? 'relevant_cohort' : `relevant_cohort_${cteIdx}`;
+  const { entity, column } = topkSemanticEntity(model, q.entity, leaf);
+  const pkName = model.analytics[entity]?.pk;
+  if (!pkName) throw new Error(`${ENGINE_ERROR.AGGREGATE} no pk registered for ${entity}`);
+  const pkCol = colObj(model, entity, pkName);
+  const { expr: embExpr } = nativeColSql(model, entity, column);
+  const sim = simSql(embExpr, leaf.vector);
+  const scope = scopeSqlFor(model, entity, scopeFor);
+  const table = model.tables[entity]!;
+
+  // PARTITION key: explicit `per`, else the group_by key when grouping, else none (GLOBAL).
+  const perKey = leaf.per ?? ((q.group_by?.length ?? 0) > 0 ? q.group_by![0] : undefined);
+
+  if (!perKey) {
+    // GLOBAL — the k most-relevant rows overall. pk ASC = deterministic cutoff tiebreak.
+    let qb = db
+      .select({ pk: sql`${pkCol}`.as('pk') })
+      .from(table)
+      .$dynamic();
+    if (scope) qb = qb.where(scope);
+    qb = qb.orderBy(sql`${sim} desc`, sql`${pkCol} asc`).limit(Number(leaf.top_k));
+    // biome-ignore lint/suspicious/noExplicitAny: WithSubquery columns keyed dynamically by inner shape.
+    return { cte: db.$with(cteName).as(qb) as any, entity, pk: pkName };
+  }
+
+  // PER-GROUP — top-k WITHIN each partition. The partition expr resolves on the semantic entity
+  // (its own column or a to-one-reached one); a NULL key is DROPPED (#group, compiler.ts NULL-
+  // partition-key rule) so a NULL FK row can't collapse into one phantom group.
+  const partLowered = lowerGroupDim(model, entity, perKey, scopeFor);
+  const partExpr = partLowered.expr;
+  const rn = sql`row_number() over (partition by ${partExpr} order by ${sim} desc, ${pkCol} asc)`;
+  // Inner ranked select (the partition joins ride along); NULL partition keys excluded.
+  const notNull = sql`${partExpr} is not null`;
+  const innerWhere = scope ? sql`(${scope}) and ${notNull}` : notNull;
+  // biome-ignore lint/suspicious/noExplicitAny: builder narrows per chained .leftJoin.
+  let inner: any = db.select({ pk: sql`${pkCol}`.as('pk'), rn: rn.as('rn') }).from(table);
+  const seen = new Set<string>([getTableName(table)]);
+  for (const j of partLowered.joins) {
+    const k = getTableName(j.table);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    inner = inner.leftJoin(j.table, j.on);
+  }
+  inner = inner.where(innerWhere);
+  const sub = inner.as('ranked_cohort');
+  // biome-ignore lint/suspicious/noExplicitAny: subquery columns keyed dynamically by alias.
+  const subCols = sub as any;
+  const outer = db
+    .select({ pk: subCols.pk })
+    .from(sub)
+    .where(sql`${subCols.rn} <= ${Number(leaf.top_k)}`);
+  // biome-ignore lint/suspicious/noExplicitAny: WithSubquery columns keyed dynamically by inner shape.
+  return { cte: db.$with(cteName).as(outer) as any, entity, pk: pkName };
+}
+
+// Lower a sim_topk leaf for a given measure source → a MEMBERSHIP test against the hoisted
+// cohort. Same-grain (source IS the semantic entity) → `source.pk in (select pk from cohort)`.
+// Cross-grain (the semantic entity is a has_many child of source) → the lowerSemijoin EXISTS
+// shell with inner `child.pk in (select pk from cohort)` (scope folded in the EXISTS body, #3).
+// NEVER a JOIN to the ranked CTE on a non-unique key (invariant #2).
+function lowerTopkMembership(
+  model: DealbrainModel,
+  source: string,
+  cohort: Cohort,
+  scopeFor?: ScopeFor,
+): SQL {
+  const cohortPk = cohort.cte.pk;
+  if (source === cohort.entity) {
+    const pkCol = colObj(model, source, cohort.pk);
+    return sql`${pkCol} in (select ${cohortPk} from ${cohort.cte})`;
+  }
+  // cross-grain: the semantic entity must be a direct has_many child of this source.
+  const plan = resolveJoinPlan(model.analytics, source, `${cohort.entity}.${cohort.pk}`, 'filter');
+  if (plan.kind !== 'semijoin') {
+    throw new Error(
+      `${ENGINE_ERROR.AGGREGATE} relevance cohort over ${cohort.entity} is not conformed to ${source} grain (a top_k cohort consumes as a same-grain membership test or a cross-grain has_many semijoin only)`,
+    );
+  }
+  const fkCol = colObj(model, plan.child, plan.fk);
+  const parentPkCol = colObj(model, source, plan.parentPk);
+  const childPkCol = colObj(model, plan.child, cohort.pk);
+  const childScope = scopeSqlFor(model, plan.child, scopeFor);
+  const scopeClause = childScope ? sql` and ${childScope}` : sql``;
+  return sql`exists (select 1 from ${model.tables[plan.child]!} where ${eq(fkCol, parentPkCol)} and ${childPkCol} in (select ${cohortPk} from ${cohort.cte})${scopeClause})`;
+}
+
+// Collect every sim_topk leaf in a predicate tree, REJECTING any that sits under `or`/`not`
+// (a top_k cohort is a ranked MEMBERSHIP set — negating/disjoining it has no grain-safe meaning;
+// fail loud). A sim_gte threshold leaf IS fine under or/not (it's a plain boolean), so only
+// sim_topk is restricted. Returns the top-level/under-AND sim_topk leaves.
+function collectTopkLeaves(pred: Predicate, underAnd = true): SimTopkLeaf[] {
+  if (isLeaf(pred)) {
+    if (pred.op === 'sim_topk') {
+      if (!underAnd) {
+        throw new Error(
+          `${ENGINE_ERROR.AGGREGATE} a relevance top_k leaf is only allowed at the top level or under \`and\` — not under \`or\`/\`not\` (a ranked cohort membership has no grain-safe negation/disjunction; use \`threshold\` there)`,
+        );
+      }
+      return [pred];
+    }
+    return [];
+  }
+  if ('and' in pred) return pred.and.flatMap((p) => collectTopkLeaves(p, underAnd));
+  if ('or' in pred) return pred.or.flatMap((p) => collectTopkLeaves(p, false));
+  return collectTopkLeaves(pred.not, false);
+}
+
 // The GLOBAL q.filter compiled PER SOURCE, graph-aware + PER LEAF (replaces the old tree-level
 // try/catch soft-drop — ADR-0024 §Decision.4 "no silent drops anywhere"). The run-drizzle guard
 // has ALREADY proved every leaf resolves on EVERY compiled measure source (a non-conforming leaf
@@ -308,19 +517,33 @@ function compileSourceFilter(
   pred: Predicate,
   joins: Array<{ table: PgTable; on: SQL }>,
   scopeFor?: ScopeFor,
+  cohorts?: Map<SimTopkLeaf, Cohort>,
 ): SQL {
   if ('and' in pred)
     return sql`(${sql.join(
-      pred.and.map((p) => compileSourceFilter(model, source, p, joins, scopeFor)),
+      pred.and.map((p) => compileSourceFilter(model, source, p, joins, scopeFor, cohorts)),
       sql` and `,
     )})`;
   if ('or' in pred)
     return sql`(${sql.join(
-      pred.or.map((p) => compileSourceFilter(model, source, p, joins, scopeFor)),
+      pred.or.map((p) => compileSourceFilter(model, source, p, joins, scopeFor, cohorts)),
       sql` or `,
     )})`;
   if ('not' in pred)
-    return sql`(not ${compileSourceFilter(model, source, pred.not, joins, scopeFor)})`;
+    return sql`(not ${compileSourceFilter(model, source, pred.not, joins, scopeFor, cohorts)})`;
+  // sim_topk — a ranked-CTE MEMBERSHIP test (NOT a value leaf). The cohort was hoisted ABOVE the
+  // per-source selects (one population for every source); here we lower the same-grain `pk in
+  // (...)` or cross-grain EXISTS membership against it. AND-composes; never reaches valueLeaf.
+  if (isLeaf(pred) && pred.op === 'sim_topk') {
+    const cohort = cohorts?.get(pred);
+    if (!cohort) {
+      throw new Error(
+        `${ENGINE_ERROR.AGGREGATE} a relevance top_k leaf reached compile without a hoisted cohort (internal: the cohort CTE must be built statement-level before per-source lowering)`,
+      );
+    }
+    return lowerTopkMembership(model, source, cohort, scopeFor);
+  }
+  const { op, value } = valueLeaf(pred);
   const plan = resolveJoinPlan(model.analytics, source, pred.on, 'filter');
   switch (plan.kind) {
     case 'local': {
@@ -330,12 +553,12 @@ function compileSourceFilter(
         throw new Error(`${ENGINE_ERROR.AGGREGATE} unknown column "${plan.column}" on ${source}`);
       }
       const { expr, type } = nativeColSql(model, source, plan.column);
-      return applyLeafOp(expr, type, pred.op, pred.value);
+      return applyLeafOp(expr, type, op, value);
     }
     case 'to-one': {
       const lowered = lowerToOne(model, plan.hops, plan.target, plan.column, scopeFor);
       for (const j of lowered.joins) joins.push(j);
-      return applyLeafOp(lowered.expr, lowered.type, pred.op, pred.value);
+      return applyLeafOp(lowered.expr, lowered.type, op, value);
     }
     case 'semijoin':
       return lowerSemijoin(
@@ -345,8 +568,8 @@ function compileSourceFilter(
         plan.fk,
         plan.parentPk,
         plan.column,
-        pred.op,
-        pred.value,
+        op,
+        value,
         scopeFor,
       );
     default: // reject — the guard rejects non-conforming leaves pre-compile; reaching here is a bug.
@@ -369,13 +592,45 @@ function lowerGroupDim(
   dim: string,
   scopeFor?: ScopeFor,
 ): { alias: string; col: PgColumn | null; expr: SQL; joins: Array<{ table: PgTable; on: SQL }> } {
+  // EAV DIMENSION (the resolved semantic layer): a select/text field exposed as a group dim on
+  // THIS source. A 1:1 field_values LEFT JOIN (on entity_id + field_definition_id) — grain-safe
+  // (groupable like a to-one dim, never fan-out). Mirrors the EAV-measure join (measureValue);
+  // group by + project the value column under the dim's safe canonical name. Checked BEFORE
+  // resolveJoinPlan (which only knows native columns + relation hops, and would reject the dim).
+  const eavField = model.analytics[source]?.fields[dim];
+  if (eavField?.eav && eavField.role === 'dimension') {
+    const valueTable = model.registry[source]?.eav?.valueTable;
+    if (!valueTable) {
+      throw new Error(`${ENGINE_ERROR.AGGREGATE} no EAV value table registered for ${source}`);
+    }
+    const fv = alias(valueTable, `fvg_${assertIdent(dim)}`);
+    const cols = Object.values(getTableColumns(fv)) as PgColumn[];
+    const byName = (n: string): PgColumn => {
+      const c = cols.find((col) => col.name === n);
+      if (!c) throw new Error(`${ENGINE_ERROR.AGGREGATE} EAV column "${n}" missing on ${source}`);
+      return c;
+    };
+    const pk = model.colByDbName[source]![model.analytics[source]!.pk]!;
+    const valueCol = byName(eavField.eav.valueColumn);
+    return {
+      alias: dim,
+      col: valueCol,
+      expr: sql`${valueCol}`,
+      joins: [
+        {
+          table: fv,
+          on: and(eq(byName('entity_id'), pk), eq(byName('field_definition_id'), eavField.eav.defId))!,
+        },
+      ],
+    };
+  }
   const plan = resolveJoinPlan(model.analytics, source, dim, 'group');
   if (plan.kind === 'reject') throw new Error(`${ENGINE_ERROR.AGGREGATE} ${plan.reason}`);
-  const alias = dim;
+  const outAlias = dim;
   if (plan.kind === 'local') {
     const col = plan.column.includes('.') ? null : colObj(model, source, plan.column);
     const { expr } = nativeColSql(model, source, plan.column);
-    return { alias, col, expr, joins: [] };
+    return { alias: outAlias, col, expr, joins: [] };
   }
   if (plan.kind !== 'to-one') {
     // group role never yields a semijoin (a to-many group dim rejects above) — defensive.
@@ -384,7 +639,7 @@ function lowerGroupDim(
     );
   }
   const lowered = lowerToOne(model, plan.hops, plan.target, plan.column, scopeFor);
-  return { alias, col: lowered.col, expr: lowered.expr, joins: lowered.joins };
+  return { alias: outAlias, col: lowered.col, expr: lowered.expr, joins: lowered.joins };
 }
 
 // One source's pre-aggregated SELECT, built with the query builder. Group dims resolve
@@ -399,6 +654,10 @@ function sourceSelect(
   source: string,
   measures: Measure[],
   scopeFor?: ScopeFor,
+  cohorts?: Map<SimTopkLeaf, Cohort>,
+  // Cohort CTEs to hoist onto THIS statement (single-source path only — the multi-source
+  // path hoists them itself via its own `.with(...)`). Empty → no `.with` prefix.
+  hoist?: Cohort[],
 ) {
   const table = model.tables[source]!;
   const joins: Array<{ table: PgTable; on: SQL }> = [];
@@ -433,7 +692,9 @@ function sourceSelect(
   // compiled per LEAF (local / to-one-join / semijoin); to-one joins push into `joins`; a
   // legit cross-source leaf becomes `true` here. No silent tree-drop.
   const scopeSql = scopeSqlFor(model, source, scopeFor);
-  const filterSql = q.filter ? compileSourceFilter(model, source, q.filter, joins, scopeFor) : null;
+  const filterSql = q.filter
+    ? compileSourceFilter(model, source, q.filter, joins, scopeFor, cohorts)
+    : null;
   const where =
     scopeSql && filterSql
       ? sql`(${scopeSql}) and (${filterSql})`
@@ -448,8 +709,16 @@ function sourceSelect(
     seen.add(k);
     dedup.push(j);
   }
-  // biome-ignore lint/suspicious/noExplicitAny: builder type narrows per chained .leftJoin; not statically typeable across a dynamic join list.
-  let qb: any = db.select(shape).from(table);
+  // Hoist the ranked cohort CTE(s) onto THIS statement (single-source path) so the membership
+  // `pk in (select pk from relevant_cohort)` resolves. The cohort is built ABOVE the per-source
+  // select, embed resolved once. Multi-source hoists them in its own `.with(...)` instead.
+  // biome-ignore lint/suspicious/noExplicitAny: builder type narrows per chained .leftJoin / .with; not statically typeable across a dynamic chain.
+  let qb: any = hoist?.length
+    ? db
+        .with(...hoist.map((c) => c.cte))
+        .select(shape)
+        .from(table)
+    : db.select(shape).from(table);
   for (const j of dedup) qb = qb.leftJoin(j.table, j.on);
   if (where) qb = qb.where(where);
   if (groupExprs.length) qb = qb.groupBy(...groupExprs);
@@ -468,6 +737,8 @@ function multiSourceSelect(
   q: Aggregate,
   plan: AggregatePlan,
   scopeFor?: ScopeFor,
+  cohorts?: Map<SimTopkLeaf, Cohort>,
+  hoist?: Cohort[],
 ): AggQuery {
   const ctes = plan.sources.map((s, i) => {
     const { qb, groupAliases } = sourceSelect(
@@ -477,6 +748,10 @@ function multiSourceSelect(
       s,
       q.measures.filter((m) => measureSource(q, m) === s),
       scopeFor,
+      cohorts,
+      // The cohort CTEs are hoisted ONCE on THIS multi-source statement's `.with(...)` below —
+      // not per-source-CTE (a WITH item can't itself carry a sibling WITH). So `hoist` stays
+      // unset here; the membership SQL references the cohort hoisted at the outer statement.
     );
     return {
       source: s,
@@ -499,9 +774,12 @@ function multiSourceSelect(
     const ci = plan.sources.indexOf(measureSource(q, m));
     shape[m.as] = sql`${ctes[ci]!.cte[m.as]}`.as(m.as);
   }
-  // biome-ignore lint/suspicious/noExplicitAny: builder type narrows per chained .fullJoin.
+  // The ranked cohort CTE(s) come FIRST in the WITH list — each per-source CTE's membership
+  // test references `relevant_cohort`, so it must be in scope before them. Embed resolved once,
+  // one population for every source (the whole point of hoisting it statement-level).
+  // biome-ignore lint/suspicious/noExplicitAny: builder type narrows per chained .fullJoin / .with.
   let qb: any = db
-    .with(...ctes.map((c) => c.cte))
+    .with(...(hoist ?? []).map((c) => c.cte), ...ctes.map((c) => c.cte))
     .select(shape)
     .from(ctes[0]!.cte);
   for (let i = 1; i < ctes.length; i++) {
@@ -585,11 +863,34 @@ export function compileGroupedDrizzle(
   // grouped aliases in the WHERE. A HAVING that names a composite alias resolves to
   // `undefined` here (the composite is computed in THIS select, not in the grouped sub)
   // → caught as an unknown-alias 400; composites stay non-filterable.
+  // Ranked cohort(s) for any sim_topk relevance leaf. Collected here (top-level/under-AND only —
+  // collectTopkLeaves REJECTS sim_topk under or/not), built ONCE per grouped statement so the
+  // embed resolves once and every measure source tests the SAME population. Rebuilt inside
+  // makeGrouped because each WithSubquery binds to a single statement (main query vs group-count).
+  const topkLeaves = q.filter ? collectTopkLeaves(q.filter) : [];
+
   const makeGrouped = (): AggQuery => {
+    // Build the cohort CTE(s) fresh for THIS statement.
+    const cohorts = new Map<SimTopkLeaf, Cohort>();
+    const hoist: Cohort[] = [];
+    topkLeaves.forEach((leaf, i) => {
+      const cohort = buildTopkCohort(db, model, q, leaf, scopeFor, i);
+      cohorts.set(leaf, cohort);
+      hoist.push(cohort);
+    });
     const groupedQ: AggQuery =
       plan.sources.length <= 1
-        ? sourceSelect(db, model, q, plan.sources[0] ?? q.entity, q.measures, scopeFor).qb
-        : multiSourceSelect(db, model, q, plan, scopeFor);
+        ? sourceSelect(
+            db,
+            model,
+            q,
+            plan.sources[0] ?? q.entity,
+            q.measures,
+            scopeFor,
+            cohorts,
+            hoist,
+          ).qb
+        : multiSourceSelect(db, model, q, plan, scopeFor, cohorts, hoist);
     const composites = q.composites ?? [];
     if (!q.having && composites.length === 0) return groupedQ;
 

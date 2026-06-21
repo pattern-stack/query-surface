@@ -33,10 +33,13 @@ import {
   type DomainQueryRequest,
   type EntityName,
   type FilterExpression,
+  type Leaf,
   type LeafFilter,
   type Op,
   RANK_SCORE_KEY,
   RANK_SNIPPET_KEY,
+  type SimGteLeaf,
+  type SimTopkLeaf,
   type Sort,
   type TextMatchDescriptor,
 } from '../../../internal/language/types.ts';
@@ -365,7 +368,26 @@ function assertTextOpTarget(op: Op, category: string | undefined, fieldLabel: st
   }
 }
 
-function compileLeafOp(col: PgColumn, op: Op, rawValue: unknown, coerceAs?: string): SQL {
+// Lower a crisp sim_gte leaf → (1 - (embedding <=> query_vector)) >= threshold (invariant #1:
+// the vector is a BOUND string param the driver binds, ::vector is a fixed cast keyword, the
+// threshold is bound — never sql.raw of caller data). `target` is the already-resolved embedding
+// column / expr (crispify rewrote `on` to the embedding column, so resolvePath yields it). The
+// EXACT similarity formula at the rank path (simExpr, ~line 779): similarity in [0,1].
+function compileSimGte(target: SQL | PgColumn, leaf: SimGteLeaf): SQL {
+  const vecLit = `[${leaf.vector.join(',')}]`;
+  return sql`(1 - (${target} <=> ${vecLit}::vector)) >= ${leaf.threshold}`;
+}
+
+function compileLeafOp(
+  col: PgColumn,
+  op: Op | 'sim_gte',
+  rawValue: unknown,
+  coerceAs?: string,
+  sim?: SimGteLeaf,
+): SQL {
+  // Vector-distance primitive: the embedding column is `col` (crispify rewrote `on` to it),
+  // so the cross-grain EXISTS inner reuses this op impl with the child-resolved column.
+  if (op === 'sim_gte') return compileSimGte(col, sim!);
   const colMeta = col as unknown as { dataType?: string; name?: string };
   assertTextOpTarget(
     op,
@@ -442,7 +464,15 @@ function coerceForExpr(value: unknown, coerceAs: string): unknown {
 // jsonb cast). Parallel to compileLeafOp, which targets a PgColumn. The LEFT
 // JOIN means an absent current value reads as NULL, so semantics match a
 // nullable column.
-function compileLeafOpExpr(expr: SQL, op: Op, rawValue: unknown, coerceAs: string): SQL {
+function compileLeafOpExpr(
+  expr: SQL,
+  op: Op | 'sim_gte',
+  rawValue: unknown,
+  coerceAs: string,
+  sim?: SimGteLeaf,
+): SQL {
+  // Vector-distance primitive over an arbitrary SQL value expression (EAV / dotted target).
+  if (op === 'sim_gte') return compileSimGte(expr, sim!);
   assertTextOpTarget(op, coercionCategory(coerceAs), coerceAs);
   const v = coerceForExpr(rawValue, coerceAs);
   switch (op) {
@@ -525,7 +555,14 @@ function pushTextMatch(ctx: CompileContext, column: string, op: Op, pattern: unk
   });
 }
 
-function compileLeaf(ctx: CompileContext, leaf: LeafFilter): SQL {
+function compileLeaf(ctx: CompileContext, leaf: Leaf): SQL {
+  // Wave-2: a crisp sim_gte leaf carries vector/threshold (not a value); `on` is the
+  // embedding column (crispify rewrote it), so resolvePath yields it / the cross-grain
+  // has_many EXISTS exactly like a value leaf. sim_topk is a ranked-CTE membership test
+  // lowered elsewhere (step 6) — never reaches this value-op leaf path.
+  const sim = leaf.op === 'sim_gte' ? leaf : undefined;
+  const op = leaf.op as Op | 'sim_gte';
+  const value = 'value' in leaf ? leaf.value : undefined;
   const resolved = resolvePath(ctx, leaf.on);
   if (resolved.kind === 'column') {
     for (const j of resolved.joins) pushJoin(ctx, j);
@@ -533,24 +570,24 @@ function compileLeaf(ctx: CompileContext, leaf: LeafFilter): SQL {
     // Joined-column text matches (e.g. opportunity.account.name on a transcript root)
     // could be snippeted from the join output, but for v1 we keep it simple and
     // restrict snippets to the root entity's own columns.
-    if (resolved.joins.length === 0 && TEXT_OPS.has(leaf.op)) {
+    if (resolved.joins.length === 0 && TEXT_OPS.has(op as Op)) {
       // Extract camelCase column name from the Drizzle column ref.
       // Drizzle exposes the column's name via the `.name` property.
       const colName = (resolved.column as unknown as { name?: string }).name;
       if (colName) {
         // colName is snake_case from the DB; convert to camelCase for the row key.
         const camelName = colName.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
-        pushTextMatch(ctx, camelName, leaf.op, leaf.value);
+        pushTextMatch(ctx, camelName, op as Op, value);
       }
     }
-    return compileLeafOp(resolved.column, leaf.op, leaf.value, resolved.coerceAs);
+    return compileLeafOp(resolved.column, op, value, resolved.coerceAs, sim);
   }
   if (resolved.kind === 'eav_expr' || resolved.kind === 'computed') {
     // Expression-backed field: EAV Shape B jsonb cast (behind a LEFT JOIN) or a
     // computed aggregate subquery (self-contained). Both compile ops against the
     // SQL expression, coerced by the field's logical type.
     for (const j of resolved.joins) pushJoin(ctx, j);
-    return compileLeafOpExpr(resolved.expr, leaf.op, leaf.value, resolved.coerceAs);
+    return compileLeafOpExpr(resolved.expr, op, value, resolved.coerceAs, sim);
   }
   // has_many → EXISTS (SELECT 1 FROM child <inner belongs_to joins> WHERE
   // child.fk = parent.pk AND <op on the inner target>). Drizzle's exists() helper
@@ -558,8 +595,8 @@ function compileLeaf(ctx: CompileContext, leaf: LeafFilter): SQL {
   const inner = resolved.inner;
   const innerCondition =
     inner.kind === 'column'
-      ? compileLeafOp(inner.column, leaf.op, leaf.value, inner.coerceAs)
-      : compileLeafOpExpr(inner.expr, leaf.op, leaf.value, inner.coerceAs);
+      ? compileLeafOp(inner.column, op, value, inner.coerceAs, sim)
+      : compileLeafOpExpr(inner.expr, op, value, inner.coerceAs, sim);
   const innerJoins = inner.joins.length
     ? sql.join(
         inner.joins.map((j) => sql` inner join ${j.table} on ${j.on}`),
@@ -581,7 +618,145 @@ function compileExpression(ctx: CompileContext, expr: FilterExpression): SQL {
   if ('not' in expr) {
     return not(compileExpression(ctx, expr.not));
   }
-  return compileLeaf(ctx, expr as LeafFilter);
+  return compileLeaf(ctx, expr as Leaf);
+}
+
+// ── sim_topk (Wave-2, step 6) — ranked MEMBERSHIP cohort on the query/fetch path ───────────────
+// sim_topk is a ranked-CTE MEMBERSHIP test, not a boolean WHERE leaf: an inline subquery that
+// ranks the SEMANTIC entity by similarity and keeps the k most-relevant pks, consumed as
+// `pk in (select pk from cohort …)` (same-grain) or the has_many EXISTS shell with inner
+// `child.pk in (…)` (cross-grain) — NEVER a fan-inducing JOIN to a non-unique key (invariant #2).
+// The cohort body folds the SAME sibling predicates as the outer query (the scope leaf rides as
+// an AND-sibling), so the cohort ranks over the scoped population BEFORE the LIMIT (invariant #3 —
+// no scope-leak-via-ranking). pk ASC = deterministic cutoff tiebreak (NEVER SELECT DISTINCT over
+// the vector(1536) column — OOM guardrail). similarity = 1-(emb<=>vec::vector), the EXACT simExpr.
+
+// Split a top-level filter into its sim_topk leaves + the boolean-only remainder. sim_topk is
+// RESTRICTED to the top level / under `and` (REJECT under `or`/`not` — a ranked cohort membership
+// has no grain-safe negation/disjunction; `threshold`/sim_gte IS fine there). `rest` is the same
+// tree with the sim_topk leaves removed (an empty AND collapses to undefined).
+function splitSimTopk(expr: FilterExpression): {
+  topk: SimTopkLeaf[];
+  rest: FilterExpression | undefined;
+} {
+  const assertNoTopk = (e: FilterExpression): void => {
+    if ('and' in e) {
+      for (const c of e.and) assertNoTopk(c);
+      return;
+    }
+    if ('or' in e) {
+      for (const c of e.or) assertNoTopk(c);
+      return;
+    }
+    if ('not' in e) {
+      assertNoTopk(e.not);
+      return;
+    }
+    if ((e as Leaf).op === 'sim_topk') {
+      throw new Error(
+        `${ENGINE_ERROR.FILTER} a relevance top_k leaf is only allowed at the top level or under \`and\` — not under \`or\`/\`not\` (a ranked cohort membership has no grain-safe negation/disjunction; use \`threshold\` there)`,
+      );
+    }
+  };
+  // Only a top-level AND (or a top-level bare leaf) may carry sim_topk; anything under or/not is
+  // rejected by assertNoTopk. Recurse only through top-level ANDs.
+  if ('and' in expr) {
+    const topk: SimTopkLeaf[] = [];
+    const keep: FilterExpression[] = [];
+    for (const child of expr.and) {
+      if (!('and' in child) && !('or' in child) && !('not' in child)) {
+        const leaf = child as Leaf;
+        if (leaf.op === 'sim_topk') {
+          topk.push(leaf as SimTopkLeaf);
+          continue;
+        }
+        keep.push(child);
+        continue;
+      }
+      if ('and' in child) {
+        const nested = splitSimTopk(child);
+        topk.push(...nested.topk);
+        if (nested.rest) keep.push(nested.rest);
+        continue;
+      }
+      // or/not subtree — must not contain sim_topk.
+      assertNoTopk(child);
+      keep.push(child);
+    }
+    const rest = keep.length === 0 ? undefined : keep.length === 1 ? keep[0] : { and: keep };
+    return { topk, rest };
+  }
+  if (!('or' in expr) && !('not' in expr) && (expr as Leaf).op === 'sim_topk') {
+    return { topk: [expr as SimTopkLeaf], rest: undefined };
+  }
+  assertNoTopk(expr);
+  return { topk: [], rest: expr };
+}
+
+// Lower ONE sim_topk leaf → a ranked membership condition. `restWhere` is the compiled outer
+// remainder (scope + sibling filters) re-applied inside the SAME-GRAIN cohort body so the cohort
+// ranks over the scoped population. The semantic entity is resolved by resolvePath: a local column
+// (bare `on`) → same-grain (rank the root); a has_many path (dotted `on`) → cross-grain (the
+// EXISTS shell over the child, ranking children globally — ruling (a): no group_by/per → GLOBAL).
+function compileSimTopk(ctx: CompileContext, leaf: SimTopkLeaf, restWhere: SQL | undefined): SQL {
+  const vecLit = `[${leaf.vector.join(',')}]`;
+  const k = Number(leaf.top_k);
+  // The partition key (`per`) → per-group top-k via row_number(); else GLOBAL top-k.
+  const resolved = resolvePath(ctx, leaf.on);
+
+  if (resolved.kind === 'column' && resolved.joins.length === 0) {
+    // SAME-GRAIN: rank the ROOT entity. The cohort body re-applies the outer remainder (scope +
+    // siblings) so the LIMIT cuts the scoped population (#3). pk ASC = deterministic cutoff.
+    const desc = registry[ctx.rootEntity];
+    const pk = (desc.columns as Record<string, PgColumn>)[desc.primaryKey];
+    const sim = sql`(1 - (${resolved.column} <=> ${vecLit}::vector))`;
+    const whereClause = restWhere ? sql` where ${restWhere}` : sql``;
+    if (leaf.per) {
+      // PER-GROUP: top-k within each partition; NULL partition keys dropped (a NULL FK can't be
+      // "top-k within its group"). row_number() OVER (PARTITION BY key ORDER BY sim desc, pk asc).
+      const partRes = resolvePath(ctx, leaf.per);
+      if (partRes.kind === 'has_many') {
+        throw new Error(`${ENGINE_ERROR.FILTER} relevance top_k 'per' cannot be a has_many path`);
+      }
+      const partExpr = partRes.kind === 'column' ? sql`${partRes.column}` : partRes.expr;
+      const notNull = sql`${partExpr} is not null`;
+      const innerWhere = restWhere
+        ? sql` where ${restWhere} and ${notNull}`
+        : sql` where ${notNull}`;
+      const rn = sql`row_number() over (partition by ${partExpr} order by ${sim} desc, ${pk} asc)`;
+      return sql`${pk} in (select pk from (select ${pk} as pk, ${rn} as rn from ${desc.table}${innerWhere}) ranked_cohort where rn <= ${k})`;
+    }
+    return sql`${pk} in (select ${pk} from ${desc.table}${whereClause} order by ${sim} desc, ${pk} asc limit ${k})`;
+  }
+
+  if (resolved.kind === 'has_many') {
+    // CROSS-GRAIN: the semantic entity is a has_many child. GLOBAL cohort (no group_by/per on the
+    // query path → ruling (a)): the EXISTS shell tests whether THIS parent has a child in the
+    // globally-ranked top-k. The embedding lives on the child (resolvePath pointed `inner` at it);
+    // membership keys on the CHILD pk. Child-local scope only (the outer remainder addresses the
+    // parent, not the child) — the cross-grain query path's best-effort scope.
+    const child = resolved;
+    const embExpr = child.inner.kind === 'column' ? sql`${child.inner.column}` : child.inner.expr;
+    const childEntity = getChildEntity(ctx, leaf.on);
+    const cdesc = registry[childEntity];
+    const childPk = (cdesc.columns as Record<string, PgColumn>)[cdesc.primaryKey];
+    const sim = sql`(1 - (${embExpr} <=> ${vecLit}::vector))`;
+    const cohort = sql`select ${childPk} from ${child.target} order by ${sim} desc, ${childPk} asc limit ${k}`;
+    return sql`exists (select 1 from ${child.target} where ${eq(child.fkColumn, child.parentPkColumn)} and ${childPk} in (${cohort}))`;
+  }
+
+  throw new Error(
+    `${ENGINE_ERROR.FILTER} relevance top_k on '${leaf.on}' does not resolve to a rankable column`,
+  );
+}
+
+// The child entity a dotted relevance `on` (has_many path) targets — the first hop's target
+// entity. Mirrors resolveFrom's has_many resolution.
+function getChildEntity(ctx: CompileContext, on: string): EntityName {
+  const segs = on.split('.');
+  const rel = registry[ctx.rootEntity].relationships[segs[0]!];
+  if (!rel) throw new Error(`${ENGINE_ERROR.FILTER} relevance 'on' path '${on}' is not a relation`);
+  return rel.target;
 }
 
 function compileSort(ctx: CompileContext, sort: Sort): SQLWrapper {
@@ -712,7 +887,13 @@ export function compile(
   // line works on the canonical shape only.
   const normalized = req.filter ? normalizeFilter(req.filter) : undefined;
   const expanded = normalized ? expandTextMagic(req.entity, normalized) : undefined;
-  const where = expanded ? compileExpression(ctx, expanded) : undefined;
+  // Split out sim_topk leaves (ranked-CTE membership, NOT boolean WHERE leaves; rejected under
+  // or/not). The remainder (scope + value/sim_gte leaves) compiles normally AND is re-applied
+  // inside each same-grain cohort body so the LIMIT cuts the SCOPED population (#3).
+  const split = expanded ? splitSimTopk(expanded) : { topk: [], rest: undefined };
+  const restWhere = split.rest ? compileExpression(ctx, split.rest) : undefined;
+  const topkConds = split.topk.map((leaf) => compileSimTopk(ctx, leaf, restWhere));
+  const where = topkConds.length > 0 ? (and(restWhere, ...topkConds) as SQL) : restWhere;
   const orderBy = (req.sort ?? []).map((s) => compileSort(ctx, s));
 
   // Resolve each projected field through the SAME machinery as filters (so a

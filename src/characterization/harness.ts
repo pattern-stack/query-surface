@@ -100,7 +100,17 @@ export interface QuerySurfaceHarness {
  * query/fetch; observations is the EXTENDED table (adds embedding/normalized_text
  * for ranking).
  */
-export function makeQuerySurface(dburl: string): QuerySurfaceHarness {
+export function makeQuerySurface(
+  dburl: string,
+  opts?: {
+    embed?: (text: string) => Promise<number[]>;
+    // Host-resolved measures (the field-management app's semantic layer). Omitted → the built-in
+    // default set. When provided, the aggregate model's measures are DATA-DRIVEN + gated.
+    measureSpecs?: import('../adapters/reference/model.dealbrain.ts').DealbrainMeasureSpec[];
+    // Host-resolved EAV dimensions (groupable select/text fields). Omitted → none.
+    dimensionSpecs?: import('../adapters/reference/model.dealbrain.ts').DealbrainDimensionSpec[];
+  },
+): QuerySurfaceHarness {
   const { db, close } = makeDb(dburl);
 
   configureQueryRegistry([
@@ -144,9 +154,11 @@ export function makeQuerySurface(dburl: string): QuerySurfaceHarness {
     // POC constant is fine: dealbrain's defs are org-owned (user_id NULL).
     actorUserId: POC_ACTOR_USER_ID,
     actorOrganizationId: DEALBRAIN_ORG,
-    aggregateModel: () => loadDealbrainModel(db),
+    aggregateModel: () => loadDealbrainModel(db, opts?.measureSpecs, opts?.dimensionSpecs),
     semanticColumns: { observations: { normalized_text: 'embedding' } },
-    embed,
+    // Default: the deterministic ILIKE stub (specs are hermetic). A caller (e.g. the demo) may
+    // inject a REAL embed provider to exercise true free-text concepts against the stored vectors.
+    embed: opts?.embed ?? embed,
   });
 
   return { service, db, close };

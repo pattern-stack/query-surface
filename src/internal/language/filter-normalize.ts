@@ -31,7 +31,7 @@
 // "and"/"or"/"not" must use the legacy {on,op,value} form.
 
 import { ENGINE_ERROR } from './error-messages.ts';
-import type { FilterExpression, LeafFilter, Op } from './types.ts';
+import type { FilterExpression, LeafFilter, Op, RelevantLeaf } from './types.ts';
 
 const E = ENGINE_ERROR.FILTER;
 
@@ -157,6 +157,63 @@ function fieldConditions(field: string, val: unknown): LeafFilter[] {
   return leaves;
 }
 
+/**
+ * Parse a relevance leaf (Wave-2): { on, op:'relevant', query, threshold?|top_k?, per? }.
+ * The crisp set is EXPLICIT + MANDATORY — EXACTLY ONE of threshold|top_k (reject neither/both,
+ * no silent default; same fail-closed discipline as conform-on-every-source). Natural aliases
+ * for the cutoff/partition keys are tolerated (small models emit min_score/k/group_by). The
+ * service stamps the resolved vector + embeddingColumn later; those are never authored here.
+ */
+function normalizeRelevantLeaf(input: Record<string, unknown>): RelevantLeaf {
+  const on = input.on;
+  if (typeof on !== 'string' || on.trim() === '') {
+    throw new Error(`${E} a 'relevant' leaf requires a non-empty "on" (the semantic text column)`);
+  }
+  const query = input.query;
+  if (typeof query !== 'string' || query.trim() === '') {
+    throw new Error(`${E} a 'relevant' leaf requires a non-empty "query" string`);
+  }
+  const pick = (...keys: string[]): unknown => {
+    for (const k of keys) if (k in input && input[k] != null) return input[k];
+    return undefined;
+  };
+  const thresholdRaw = pick('threshold', 'min_score', 'cutoff');
+  const topKRaw = pick('top_k', 'topK', 'k');
+  const hasThreshold = thresholdRaw !== undefined;
+  const hasTopK = topKRaw !== undefined;
+  if (hasThreshold === hasTopK) {
+    throw new Error(
+      `${E} a 'relevant' leaf requires EXACTLY ONE of "threshold" or "top_k" (got ${
+        hasThreshold ? 'both' : 'neither'
+      }) — the crisp set must be explicit, no silent default`,
+    );
+  }
+  const leaf: RelevantLeaf = { on, op: 'relevant', query };
+  if (hasThreshold) {
+    const t = Number(thresholdRaw);
+    if (!Number.isFinite(t) || t < 0 || t > 1) {
+      throw new Error(
+        `${E} 'relevant' "threshold" must be a similarity in [0,1] (got ${String(thresholdRaw)})`,
+      );
+    }
+    leaf.threshold = t;
+  } else {
+    const k = Number(topKRaw);
+    if (!Number.isInteger(k) || k <= 0) {
+      throw new Error(
+        `${E} 'relevant' "top_k" must be a positive integer (got ${String(topKRaw)})`,
+      );
+    }
+    leaf.top_k = k;
+  }
+  const per = pick('per', 'per_group', 'group_by', 'partition_by');
+  if (per !== undefined) {
+    if (typeof per !== 'string') throw new Error(`${E} 'relevant' "per" must be a string column`);
+    leaf.per = per;
+  }
+  return leaf;
+}
+
 export function normalizeFilter(input: unknown): FilterExpression {
   if (!isPlainObject(input)) {
     throw new Error(`${E} a filter must be a JSON object`);
@@ -181,6 +238,23 @@ export function normalizeFilter(input: unknown): FilterExpression {
       return { or: asFilterArray(input.or, 'or').map(normalizeFilter) };
     }
     return { not: normalizeFilter(input.not) };
+  }
+
+  // Relevance leaf {on, op:'relevant', query, threshold?|top_k?, per?} — passes through as a
+  // RelevantLeaf (no `value`); checked before the legacy-leaf branch since 'relevant' is not a
+  // value op (CANONICAL_OPS). The service resolves its vector/embeddingColumn before compile.
+  if ('on' in input && 'op' in input && stripKey(String(input.op)) === 'relevant') {
+    return normalizeRelevantLeaf(input);
+  }
+
+  // Crispified relevance leaves (sim_gte / sim_topk) — the PRIVATE shapes crispifyRelevant emits
+  // BEFORE compile. The retrieval compiler re-runs this front-door normalizer on the (already
+  // canonical) crispified filter, so the normalizer must be IDEMPOTENT over them: pass through
+  // verbatim (they are not value ops, carry no `value`, and are never caller-authored). Without
+  // this, a crisp leaf hits the legacy-leaf branch below and is rejected as an "unknown op".
+  if ('on' in input && 'op' in input) {
+    const op = stripKey(String(input.op));
+    if (op === 'sim_gte' || op === 'sim_topk') return input as unknown as FilterExpression;
   }
 
   // Legacy explicit leaf {on, op, value} — kept as an escape hatch (and back-compat).

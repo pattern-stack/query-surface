@@ -9,6 +9,7 @@
 import { relations } from 'drizzle-orm';
 import {
   boolean,
+  customType,
   jsonb,
   numeric,
   pgTable,
@@ -17,6 +18,17 @@ import {
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
+
+// pgvector column — registered so the AGGREGATE compiler's relevance path
+// (`${embCol} <=> ${vec}::vector`) can resolve `observations.embedding`. The
+// model.dealbrain aggregate model reads columns via colByDbName, so embedding +
+// normalized_text must live HERE (the harness's observationsExt only feeds the
+// query/fetch registry). Mirrors that customType.
+const vector = customType<{ data: number[]; driverData: string }>({
+  dataType() {
+    return 'vector';
+  },
+});
 
 export const accounts = pgTable('accounts', {
   id: uuid('id').primaryKey(),
@@ -36,6 +48,8 @@ export const observations = pgTable('observations', {
   type: varchar('type'),
   occurredAt: timestamp('occurred_at'),
   structuredData: jsonb('structured_data'),
+  normalizedText: text('normalized_text'),
+  embedding: vector('embedding'),
 });
 
 export const fieldValues = pgTable('field_values', {
