@@ -25,60 +25,35 @@
 //   4. options.semanticColumns + options.embed — a DETERMINISTIC embed stub that
 //      pulls a real stored observation embedding from the DB for a known phrase,
 //      so a semantic-rank spec can assert that row ranks #1 with similarity≈1.
-//      NOTE: semantic rank needs the `embedding` column to be a REGISTERED
-//      Drizzle column. model.dealbrain's observations table omits it, so the
-//      harness registers an EXTENDED observations table (schema.dealbrain's
-//      columns + embedding + normalized_text). The cardinality graph + EAV
-//      behavior are unchanged — the extra columns are purely additive.
+//      Semantic rank needs the `embedding` column to be a REGISTERED Drizzle
+//      column — which the CANONICAL observations table (schema.dealbrain) now
+//      carries, alongside normalized_text + the provenance/scope columns. The
+//      harness registers that canonical table directly (no extended shim).
 
-import { relations, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { POC_ACTOR_USER_ID } from '../adapters/drizzle/eav/field-map.ts';
 import { type DrizzleDb, makeDb } from '../adapters/drizzle/execute/drizzle-db.ts';
 import { configureQueryRegistry } from '../adapters/drizzle/registry/registry.ts';
-import { loadDealbrainModel } from '../adapters/reference/model.dealbrain.ts';
+import { loadDealbrainModel, observationsMeta } from '../adapters/reference/model.dealbrain.ts';
 import {
   accounts,
   accountsRelations,
   fieldValues,
+  observations,
+  observationsRelations,
   opportunities,
   opportunitiesRelations,
 } from '../adapters/reference/schema.dealbrain.ts';
 import { QueryApplicationService } from '../query.application-service.ts';
 
-import { customType, jsonb, pgTable, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
-
-// pgvector column — registered so the compiler's semantic-rank path
-// (`${embCol} <=> ${vec}::vector`) can resolve `observations.embedding`.
-const vector = customType<{ data: number[]; driverData: string }>({
-  dataType() {
-    return 'vector';
-  },
-});
-
-// Observations table EXTENDED with the columns model.dealbrain.ts omits
-// (embedding / normalized_text), so semantic + lexical ranking are exercisable
-// through the public surface. Same db table, same relations — purely additive.
-export const observationsExt = pgTable('observations', {
-  id: uuid('id').primaryKey(),
-  accountId: uuid('account_id'),
-  opportunityId: uuid('opportunity_id'),
-  type: varchar('type'),
-  occurredAt: timestamp('occurred_at'),
-  structuredData: jsonb('structured_data'),
-  normalizedText: text('normalized_text'),
-  embedding: vector('embedding'),
-});
-
-export const observationsExtRelations = relations(observationsExt, ({ one }) => ({
-  opportunity: one(opportunities, {
-    fields: [observationsExt.opportunityId],
-    references: [opportunities.id],
-  }),
-  account: one(accounts, {
-    fields: [observationsExt.accountId],
-    references: [accounts.id],
-  }),
-}));
+// Back-compat aliases: the observations retrieval surface is now CANONICAL in
+// schema.dealbrain (normalized_text + embedding + provenance/scope columns), so
+// the old harness-local extended shim is gone. These re-exports keep eval specs
+// that import `observationsExt` / `observationsExtRelations` (e.g.
+// relevant-aggregate.eval.spec) pointing at the canonical table — one source of
+// truth, two names.
+export const observationsExt = observations;
+export const observationsExtRelations = observationsRelations;
 
 // The live dealbrain organization that owns the opportunity field_definitions.
 // Asserted at boot (makeQuerySurface) so a reseed that changes it fails loudly
@@ -97,8 +72,8 @@ export interface QuerySurfaceHarness {
  * configureQueryRegistry runs EAGERLY here (the module-global registry must be
  * populated before any compile()), with the same 3 entities as model.dealbrain
  * — opportunities carries the typed-columns EAV strategy so EAV keys resolve on
- * query/fetch; observations is the EXTENDED table (adds embedding/normalized_text
- * for ranking).
+ * query/fetch; observations is the CANONICAL table (normalized_text + embedding +
+ * provenance/scope columns) shared with model.dealbrain.
  */
 export function makeQuerySurface(
   dburl: string,
@@ -123,8 +98,9 @@ export function makeQuerySurface(
     },
     {
       name: 'observations',
-      table: observationsExt,
-      relations: observationsExtRelations,
+      table: observations,
+      relations: observationsRelations,
+      fieldMeta: observationsMeta, // enrichment reaches the RETRIEVAL describe (type taxonomy, hidden embedding, etc.)
     },
   ]);
 
