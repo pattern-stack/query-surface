@@ -59,6 +59,45 @@ describe('normalizeAggregate (B3 {ref} expansion)', () => {
       }),
     ).toThrow(/duplicate measure alias "revenue"/);
   });
+
+  // Invariant #4 (ONE expression language) — the aggregate front door normalizes the forgiving
+  // Mongo/Prisma DSL on every predicate input, exactly as query/fetch's compiler does. Without it
+  // a forgiving filter reaches the aggregate compiler un-normalized (no `.on`) and crashes.
+  it('normalizes the forgiving DSL on the global filter', () => {
+    const q = normalizeAggregate(catalog, {
+      entity: 'opps',
+      measures: [{ ref: 'revenue' }],
+      filter: { stage: 'won' } as never,
+    });
+    expect(q.filter).toEqual({ on: 'stage', op: 'eq', value: 'won' });
+  });
+
+  it('normalizes the forgiving DSL on having and a measure-level where', () => {
+    const q = normalizeAggregate(catalog, {
+      entity: 'opps',
+      measures: [{ on: 'amount', agg: 'sum', as: 'pipeline', where: { stage: 'won' } as never }],
+      having: { pipeline: { gt: 1000 } } as never,
+    });
+    expect(q.measures[0]!.where).toEqual({ on: 'stage', op: 'eq', value: 'won' });
+    expect(q.having).toEqual({ on: 'pipeline', op: 'gt', value: 1000 });
+  });
+
+  it('preserves a service-stamped relevant leaf vector through normalization (idempotent)', () => {
+    const stamped = {
+      on: 'observations.text',
+      op: 'relevant',
+      query: 'risk',
+      threshold: 0.5,
+      vector: [0.1, 0.2, 0.3],
+      embeddingColumn: 'embedding',
+    };
+    const q = normalizeAggregate(catalog, {
+      entity: 'opps',
+      measures: [{ ref: 'revenue' }],
+      filter: stamped as never,
+    });
+    expect(q.filter).toMatchObject({ vector: [0.1, 0.2, 0.3], embeddingColumn: 'embedding' });
+  });
 });
 
 const ratioCatalog: MeasureCatalog = {

@@ -9,7 +9,7 @@
  */
 
 import { readFileSync, writeFileSync } from 'fs';
-import { join, dirname } from 'path';
+import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { normalizeFilter } from '../../src/internal/language/filter-normalize.ts';
 import validatePredicate from './validate-predicate.ts';
@@ -135,7 +135,10 @@ async function callOllama(system: string, userPrompt: string): Promise<string> {
 /** Extract the first balanced JSON object from a string (strips markdown fences). */
 function extractJson(raw: string): unknown {
   // Strip markdown code fences
-  let text = raw.replace(/```(?:json)?\s*/gi, '').replace(/```\s*/g, '').trim();
+  const text = raw
+    .replace(/```(?:json)?\s*/gi, '')
+    .replace(/```\s*/g, '')
+    .trim();
 
   // Find first { and extract balanced object
   const start = text.indexOf('{');
@@ -148,14 +151,26 @@ function extractJson(raw: string): unknown {
 
   for (let i = start; i < text.length; i++) {
     const ch = text[i];
-    if (escape) { escape = false; continue; }
-    if (ch === '\\' && inString) { escape = true; continue; }
-    if (ch === '"') { inString = !inString; continue; }
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (ch === '\\' && inString) {
+      escape = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
     if (inString) continue;
     if (ch === '{') depth++;
     else if (ch === '}') {
       depth--;
-      if (depth === 0) { end = i; break; }
+      if (depth === 0) {
+        end = i;
+        break;
+      }
     }
   }
 

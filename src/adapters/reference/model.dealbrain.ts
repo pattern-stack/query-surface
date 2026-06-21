@@ -34,7 +34,7 @@ const opportunitiesMeta: FieldMetaMap = {
   id: { role: 'dimension' },
   accountId: { role: 'dimension' },
   stateOfDealStatus: { role: 'dimension' },
-}; // measures (weighted_amount, deal_probability) are EAV → overlay below
+}; // measures (Amount, ExpectedRevenue, Probability — by allowed aggs) are EAV → overlay below
 const observationsMeta: FieldMetaMap = {
   id: { role: 'dimension' },
   accountId: { role: 'dimension' },
@@ -44,19 +44,23 @@ const observationsMeta: FieldMetaMap = {
   structuredData: { role: 'dimension' },
 };
 
-/** A measure the host (the field-management app) resolved from its field configs — the EAV field
- *  key + how to aggregate it. Lets the analytics model be DRIVEN BY DATA (a curated semantic layer)
- *  instead of hand-coded here. Omitted → the built-in default set (eval specs are unaffected). */
+/** An EAV field exposed as an aggregatable MEASURE. The field IS the measure — its real name (the
+ *  field_definitions.key, e.g. 'Amount') is surfaced as-is — and aggregation is a CONFIG on it:
+ *  `aggs` lists the allowed aggregations, so the catalog exposes `Amount.sum`, `Amount.avg`, … This
+ *  unwinds the old named-variant model (`weighted_amount` for `sum(ExpectedRevenue)`), which divorced
+ *  the surfaced name from the field and forced per-measure curation. `additivity` is the field's
+ *  summable-ness (the doctor refuses SUM on a `non` percentage). Host-resolvable (field-management
+ *  app) or the built-in default set. */
 export interface DealbrainMeasureSpec {
-  name: string; // the measure name exposed in the surface (e.g. 'weighted_amount')
-  key: string; // the dealbrain EAV field_definitions.key (e.g. 'ExpectedRevenue')
-  agg: 'sum' | 'avg' | 'count' | 'count_distinct' | 'min' | 'max';
-  additivity: 'additive' | 'non';
+  key: string; // the dealbrain EAV field_definitions.key AND the surfaced field name (e.g. 'Amount')
+  aggs: ('sum' | 'avg' | 'count_distinct' | 'min' | 'max')[];
+  additivity?: 'additive' | 'semi' | 'non'; // summable-ness; default 'additive'
 }
 
 const DEFAULT_MEASURE_SPECS: DealbrainMeasureSpec[] = [
-  { name: 'weighted_amount', key: 'ExpectedRevenue', agg: 'sum', additivity: 'additive' },
-  { name: 'deal_probability', key: 'Probability', agg: 'avg', additivity: 'non' },
+  { key: 'Amount', aggs: ['sum', 'avg', 'min', 'max'], additivity: 'additive' },
+  { key: 'ExpectedRevenue', aggs: ['sum', 'avg', 'min', 'max'], additivity: 'additive' },
+  { key: 'Probability', aggs: ['avg', 'min', 'max'], additivity: 'non' }, // percentage → not summable
 ];
 
 /** An EAV field exposed as a groupable DIMENSION (the host's resolved semantic layer). Referenced
@@ -125,18 +129,19 @@ export async function loadDealbrainModel(
   };
 
   // EAV measure tags, DERIVED from measureSpecs (the host's resolved semantic layer — or the
-  // built-in default). additivity stays EXPLICIT (money & percentage both resolve to value_number,
-  // uninferable). Each spec's key resolves to its EAV binding via eavByKey (fail-loud if absent).
+  // built-in default). The field is registered under its REAL name (s.key) carrying the allowed
+  // `aggs`; the catalog then exposes `<key>.<agg>`. additivity stays EXPLICIT (money & percentage
+  // both resolve to value_number, uninferable). Each key resolves its EAV binding via eavByKey.
   const eavOverlay: Record<string, Record<string, AggFieldMeta>> = {
     opportunities: {
       ...Object.fromEntries(
         measureSpecs.map((s) => [
-          s.name,
+          s.key,
           {
             type: 'number',
             role: 'measure',
-            agg: s.agg,
-            additivity: s.additivity,
+            aggs: s.aggs,
+            additivity: s.additivity ?? 'additive',
             eav: eavByKey(s.key),
           } satisfies AggFieldMeta,
         ]),
@@ -153,8 +158,8 @@ export async function loadDealbrainModel(
   };
 
   const analytics = analyticsFromRegistry(registry, eavOverlay);
-  // The named-measure catalog is DERIVED from the analytics tags (B2) — for dealbrain
-  // that's weighted_amount (sum/additive) + deal_probability (avg/non), both EAV.
+  // The measure catalog is DERIVED from the analytics tags (B2) — for dealbrain that's the
+  // field.agg combos: Amount.{sum,avg,min,max}, ExpectedRevenue.{…}, Probability.{avg,min,max}.
   const catalog = measuresFromRegistry(analytics);
   return { registry, analytics, tables, colByDbName, catalog };
 }

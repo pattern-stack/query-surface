@@ -124,33 +124,39 @@ export function validateRatioDef(
   }
 }
 
-/** DERIVE the simple-measure catalog from the analytics manifest: one atomic measure
- *  per field tagged role:'measure' that carries BOTH a default agg and an additivity
- *  (a measure missing either isn't auto-cataloggable — reference it inline with an
- *  explicit agg). Keyed by field name; a name shared by measures on two entities is
- *  ambiguous for a bare `{ref}` → refused. */
+/** DERIVE the simple-measure catalog from the analytics manifest. The field IS the measure;
+ *  aggregation is a config on it. A role:'measure' field that declares `aggs` yields one entry
+ *  per allowed agg, keyed `field.agg` (e.g. `Amount.sum`, `Amount.avg`); a legacy single-`agg`
+ *  field yields one entry keyed by field name. Either way `additivity` must be present (it is the
+ *  field's summable-ness, consumed by the doctor). A key shared across two entities is ambiguous
+ *  for a bare `{ref}` → refused.
+ *
+ *  Entry additivity is field-authoritative for `sum`/`count` (the doctor reads it to gate SUM) and
+ *  `non` for the rest — `avg`/`min`/`max`/`count_distinct` are never themselves summable, and `non`
+ *  is always equal-or-tighter than the field's, so validateMeasureDef's no-loosening rule holds. */
 export function measuresFromRegistry(analytics: AggRegistry): MeasureCatalog {
   const catalog: MeasureCatalog = {};
   const owner: Record<string, string> = {};
   for (const [source, ent] of Object.entries(analytics)) {
     for (const [field, meta] of Object.entries(ent.fields)) {
-      if (meta.role !== 'measure' || !meta.agg || !meta.additivity) continue;
-      if (owner[field]) {
-        throw new Error(
-          `${ENGINE_ERROR.AGGREGATE} ambiguous measure name "${field}" (on "${owner[field]}" and ` +
-            `"${source}") — measure field names must be unique across entities to be auto-cataloged`,
-        );
+      if (meta.role !== 'measure' || !meta.additivity) continue;
+      const aggs = meta.aggs ?? (meta.agg ? [meta.agg] : []);
+      if (aggs.length === 0) continue; // role:measure but no agg(s) → not auto-cataloggable
+      const named = meta.aggs !== undefined; // declared aggs → `field.agg` keys; legacy → `field`
+      for (const agg of aggs) {
+        const key = named ? `${field}.${agg}` : field;
+        if (owner[key]) {
+          throw new Error(
+            `${ENGINE_ERROR.AGGREGATE} ambiguous measure name "${key}" (on "${owner[key]}" and ` +
+              `"${source}") — measure keys must be unique across entities to be auto-cataloged`,
+          );
+        }
+        owner[key] = source;
+        const additivity: Additivity = agg === 'sum' || agg === 'count' ? meta.additivity : 'non';
+        const def: AtomicMeasureDef = { kind: 'atomic', on: field, agg, source, additivity };
+        validateMeasureDef(analytics, key, def);
+        catalog[key] = def;
       }
-      owner[field] = source;
-      const def: AtomicMeasureDef = {
-        kind: 'atomic',
-        on: field,
-        agg: meta.agg,
-        source,
-        additivity: meta.additivity,
-      };
-      validateMeasureDef(analytics, field, def);
-      catalog[field] = def;
     }
   }
   return catalog;

@@ -211,6 +211,12 @@ function normalizeRelevantLeaf(input: Record<string, unknown>): RelevantLeaf {
     if (typeof per !== 'string') throw new Error(`${E} 'relevant' "per" must be a string column`);
     leaf.per = per;
   }
+  // Idempotency: a leaf the service has ALREADY resolved carries its embed vector + column. Those
+  // are engine-internal (never authored), but normalizeFilter may run AFTER stamping when a path
+  // normalizes late — preserve them so re-normalizing a resolved leaf can't drop its resolution
+  // (which would land the uncrispified-leaf landmine in crispifyRelevant).
+  if (Array.isArray(input.vector)) leaf.vector = input.vector as number[];
+  if (typeof input.embeddingColumn === 'string') leaf.embeddingColumn = input.embeddingColumn;
   return leaf;
 }
 

@@ -448,7 +448,11 @@ suite('relevance-as-filter — aggregate() live dealbrain (ADR-0024 §A / Amendm
     expect(Array.isArray(res.params)).toBe(true);
     expect(
       (res.params ?? []).some((p) => {
-        const a = Array.isArray(p) ? p : typeof p === 'string' && p.startsWith('[') ? JSON.parse(p) : null;
+        const a = Array.isArray(p)
+          ? p
+          : typeof p === 'string' && p.startsWith('[')
+            ? JSON.parse(p)
+            : null;
         return Array.isArray(a) && a.length === 1536;
       }),
     ).toBe(true);

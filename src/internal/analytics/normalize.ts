@@ -12,6 +12,8 @@
 // tracked in the uniqueness set, so a user alias can never silently collide with one.
 
 import { ENGINE_ERROR } from '../language/error-messages';
+import { normalizeFilter } from '../language/filter-normalize';
+import { toIdentifier } from '../language/identifier';
 import type { FilterExpression, RelevantLeaf, SimGteLeaf, SimTopkLeaf } from '../language/types';
 import { mapLeaves } from './filter-columns';
 import {
@@ -57,7 +59,10 @@ export function normalizeAggregate(catalog: MeasureCatalog, input: AggregateInpu
     if (!def) {
       throw new Error(`${ENGINE_ERROR.AGGREGATE} unknown measure ref "${item.ref}"`);
     }
-    const as = item.as ?? item.ref;
+    // A catalog ref like `Amount.sum` is a discovery NAME, not a SQL identifier — coerce it to a
+    // safe output alias (`amount_sum`) so a bare `{ref:'Amount.sum'}` lands a safe column; an
+    // explicit `as` still wins.
+    const as = item.as ?? toIdentifier(item.ref);
     // A cumulative metric is a WINDOW (running total, rows preserved), not a collapse —
     // it belongs on query({ window }), not aggregate(). Refuse with a clear pointer
     // BEFORE claiming the alias (nothing to emit). This is the collapse/window split:
@@ -90,7 +95,23 @@ export function normalizeAggregate(catalog: MeasureCatalog, input: AggregateInpu
     });
   }
 
-  return { ...input, measures, ...(composites.length ? { composites } : {}) };
+  // ONE expression language (invariant #4): normalize the forgiving Mongo/Prisma DSL on EVERY
+  // predicate input — global `filter`, post-agg `having`, and each measure-local `where` — into the
+  // canonical AST, exactly as compiler.ts does for query/fetch at its front door. Without this the
+  // aggregate compiler receives un-normalized leaves (no `.on`) and crashes on a forgiving filter.
+  // (This is the tactical half of ADR-0024 §F — the two compilers still differ; the front-door
+  // normalization is now shared.) normalizeFilter is idempotent on canonical leaves and preserves a
+  // service-stamped relevant leaf's vector.
+  const normalizedMeasures = measures.map((m) =>
+    m.where ? { ...m, where: normalizeFilter(m.where) } : m,
+  );
+  return {
+    ...input,
+    measures: normalizedMeasures,
+    ...(input.filter ? { filter: normalizeFilter(input.filter) } : {}),
+    ...(input.having ? { having: normalizeFilter(input.having) } : {}),
+    ...(composites.length ? { composites } : {}),
+  };
 }
 
 // ---------------------------------------------------------------------------
