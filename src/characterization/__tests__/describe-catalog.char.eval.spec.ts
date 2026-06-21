@@ -412,28 +412,26 @@ suite('describe-catalog — characterization', () => {
       expect(byKey.get('id')?.type).toBe('uuid');
       expect(byKey.get('account_id')?.type).toBe('uuid');
       expect(byKey.get('opportunity_id')?.type).toBe('uuid');
-      // `type` is registered as varchar() → catalogs as 'string', NOT 'enum',
-      // and carries NO enumValues — even though the column holds a fixed set of
-      // observation types in the data. The catalog reflects the DRIZZLE column
-      // shape (varchar), not the de-facto enum in the rows.
+      // `type` is a varchar (catalogs as 'string', not 'enum'), but its qField
+      // `selectOptions` declares the observation-type taxonomy, which the native
+      // path surfaces as enumValues — so describe teaches the agent the legal
+      // values (parity with EAV field_definitions.select_options).
       expect(byKey.get('type')).toMatchObject({ type: 'string', eav: false });
-      expect(byKey.get('type')?.enumValues).toBeUndefined();
+      expect(byKey.get('type')?.enumValues).toContain('pricing_signal');
       expect(byKey.get('occurred_at')?.type).toBe('datetime');
       expect(byKey.get('structured_data')?.type).toBe('json');
       expect(byKey.get('normalized_text')?.type).toBe('string');
     });
 
-    it('SUSPECTED-DIVERGENCE: the pgvector `embedding` column catalogs as string', async () => {
-      // SUSPECTED-DIVERGENCE: `embedding` is a pgvector customType; columnTypeFromPg
-      // has no case for it, so it falls through to the default → 'string'. A
-      // 1536-dim vector reported as a string field. Pinned as-is. — revisit
+    it('the pgvector `embedding` column is hidden from the catalog (infra, isVisible:false)', async () => {
+      // embedding powers semantic rank (wired via semanticColumns); it is not a
+      // queryable field — observationsMeta marks it isVisible:false, so describe
+      // excludes it entirely (no more vector-typed-as-string surfaced to the agent).
       const cat = await h.service.describe('observations');
-      const emb = cat.fields.find((f) => f.key === 'embedding');
-      expect(emb).toMatchObject({ type: 'string', eav: false });
+      expect(cat.fields.find((f) => f.key === 'embedding')).toBeUndefined();
 
-      // GROUND TRUTH: the DB column is a USER-DEFINED (vector) type, not text.
-      // truth: select data_type from information_schema.columns
-      //        where table_name='observations' and column_name='embedding'
+      // GROUND TRUTH: the column still EXISTS in the DB (USER-DEFINED vector) — it
+      // is the CATALOG that hides it, not the schema.
       const dt = await truth(
         "select data_type from information_schema.columns where table_name='observations' and column_name='embedding'",
       );
