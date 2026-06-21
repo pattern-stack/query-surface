@@ -32,19 +32,19 @@ console.log(
   Object.keys(tools.find((t) => t.name === 'aggregate')?.inputSchema?.properties ?? {}).join(', '),
 );
 
-// 2. describe — discovery (catalog + conformed dims)
+// 2. describe — discovery (curated-first: measures + dimensions, field catalog as a drill-down)
 const d = (await client.callTool({
   name: 'describe',
   arguments: { entity: 'opportunities' },
 })) as Awaited<ReturnType<typeof client.callTool>> & { content: { type: string; text?: string }[] };
 const dParsed = JSON.parse(text(d));
 console.log(
-  '\nDESCRIBE opportunities → fields:',
-  (dParsed.catalog?.fields ?? []).length,
-  '· conformed dims:',
-  Array.isArray(dParsed.conformed_dimensions)
-    ? dParsed.conformed_dimensions.length
-    : dParsed.conformed_dimensions,
+  '\nDESCRIBE opportunities → measures:',
+  Array.isArray(dParsed.measures) ? dParsed.measures.length : dParsed.measures,
+  '· dimensions:',
+  Array.isArray(dParsed.dimensions) ? dParsed.dimensions.length : dParsed.dimensions,
+  '· field catalog total:',
+  dParsed.fields?.total,
 );
 
 // 3. aggregate — a simple grain-safe count

@@ -96,28 +96,72 @@ export function registerQueryTools(server: McpServer, service: QueryApplicationS
     {
       title: 'Describe the queryable surface',
       description:
-        "List the queryable entities and their fields (native + EAV), with each field's type. " +
-        'Call with no entity to see ALL entities; call with one to also get its MEASURES (the ' +
-        '`field.agg` combinations you can aggregate, e.g. "Amount.sum") and its CONFORMED DIMENSIONS ' +
-        '(the fields legal to group_by/filter at that grain, reachable by an unambiguous to-one path). ' +
-        'Start here to learn what you can query and aggregate.',
+        'Learn what you can query and aggregate. Omit `entity` for the entity list. With an entity ' +
+        'you get its MEASURES (the `field.agg` combos you can aggregate, e.g. "Amount.sum") and its ' +
+        'DIMENSIONS (the fields legal to group_by at that grain) — the curated capabilities, lead with ' +
+        'these. Hosts can carry thousands of fields, so the full field catalog is NOT dumped: a small ' +
+        'sample + the total is returned, and you search the rest by name with `find` (e.g. ' +
+        '{entity:"opportunities", find:"stage"}) when you need a column to filter on.',
       inputSchema: {
         entity: z.string().optional().describe('entity name, e.g. "opportunities"; omit for all'),
+        find: z
+          .string()
+          .optional()
+          .describe("substring to search this entity's full field catalog (for a filter column)"),
       },
     },
-    async ({ entity }): Promise<ToolResult> => {
+    async ({ entity, find }): Promise<ToolResult> => {
       try {
-        if (!entity) return ok({ entities: await service.describe() });
+        if (!entity) {
+          const entities = await service.describe();
+          return ok({
+            entities: entities.map((e) => ({
+              entity: e.entity,
+              field_count: e.fields.length,
+              relationships: e.relationships.map((r) => `${r.name}:${r.kind}→${r.target}`),
+            })),
+          });
+        }
         const catalog = await service.describe(entity as EntityName);
-        // Measures + conformed dims need the aggregate model; best-effort so describe still works
-        // without it (an unavailable marker rather than failing the whole catalog).
+        // Saturated field catalog → a lean agent shape: name+type+eav only (drop the `sources`
+        // provenance + the structural `enableRLS` phantom). The full list stays SEARCHABLE via `find`
+        // — inclusive (nothing excluded), but never dumped wholesale.
+        const fields = catalog.fields
+          .filter((f) => f.key !== 'enableRLS')
+          .map((f) => ({ name: f.key, type: f.type, eav: f.eav }));
+
+        if (find) {
+          const q = find.toLowerCase();
+          return ok({
+            entity,
+            matched_fields: fields.filter((f) => f.name.toLowerCase().includes(q)),
+          });
+        }
+
+        // Curated capabilities lead. Best-effort (an `unavailable` marker, not a hard fail).
         const guard = async <T>(p: Promise<T>): Promise<T | { unavailable: string }> =>
           p.catch((e) => ({ unavailable: e instanceof Error ? e.message : String(e) }));
-        const [measures, conformed_dimensions] = await Promise.all([
+        const [measures, dims] = await Promise.all([
           guard(service.describeMeasures(entity as EntityName)),
           guard(service.describeConformedDimensions(entity as EntityName)),
         ]);
-        return ok({ catalog, measures, conformed_dimensions });
+        // Drop degenerate uuid/identity columns from the groupable view (id/account_id) — keep
+        // string/enum/date/bool dims an agent would actually group by.
+        const dimensions = Array.isArray(dims) ? dims.filter((d) => d.type !== 'uuid') : dims;
+        const SAMPLE = 12;
+        const sample = fields.filter((f) => f.type !== 'uuid').slice(0, SAMPLE);
+
+        return ok({
+          entity,
+          measures,
+          dimensions,
+          relationships: catalog.relationships,
+          fields: {
+            total: fields.length,
+            sample: sample.map((f) => `${f.name}:${f.type}`),
+            find_hint: `${fields.length} fields total — call describe({entity:"${entity}", find:"<substring>"}) to search them all for a filter column`,
+          },
+        });
       } catch (e) {
         return fail(e);
       }
