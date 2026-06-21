@@ -11,6 +11,10 @@ dealbrain copies). **All query-surface work happens HERE now**, not in those cop
    (the run/falsify commands, what's DONE, what's next).
 2. [`.ai-docs/decisions/ADR-0024-conformed-dimensions.md`](.ai-docs/decisions/ADR-0024-conformed-dimensions.md)
    — the conformed-dimension model (shipped) + the ratified Wave-2 §Direction (Amendment 1).
+3. [`.ai-docs/decisions/ADR-0028-engine-unification-and-query-backend.md`](.ai-docs/decisions/ADR-0028-engine-unification-and-query-backend.md)
+   — the **engine reorg** design (the *codebase* hexagonal reorg already shipped; this is the
+   remaining ENGINE work): unify the two forked compilers onto one `grain:'row'|'group'` pipeline +
+   extract the `QueryPlan` IR + `QueryBackend` port. **Designed, 0% built** — strangler sequence inside.
 
 ## The primitives
 - `describe(entity?)` — typed field catalog (native ⊕ EAV) + the graph-derived **conformed
