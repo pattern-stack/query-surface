@@ -27,7 +27,7 @@ import { computedSelectShape } from '../compile/computed.ts';
 import type { EavContext } from '../eav/field-map.ts';
 import { hydrateEavRows } from '../eav/read.ts';
 import { registry } from '../registry/registry.ts';
-import { expandRows, parseExpandPaths } from './expand.ts';
+import { type ExpandScopeResolver, expandRows, parseExpandPaths } from './expand.ts';
 import { catalogPreview, nativeSelectShape } from './preview.ts';
 
 // ============================================================================
@@ -267,6 +267,12 @@ export async function runFetch(
   db: NodePgDatabase<Record<string, unknown>>,
   req: FetchRequest,
   eav?: EavContext,
+  // Fail-closed tenancy-scope resolver for TRAVERSED expand relations (invariant #3).
+  // Omitted ⇒ expand runs unscoped (trusted/standalone mode, e.g. evals/demos), matching
+  // the verbs' unscoped behavior when no scope resolver is configured. The root rows are
+  // already scoped (req.filter carries the service's root scope); this folds scope through
+  // every EXPANDED entity so a relational hydration cannot read across tenancy.
+  scopeFor?: ExpandScopeResolver,
 ): Promise<FetchResponse> {
   const desc = registry[req.entity];
   if (!desc) throw new Error(`${ENGINE_ERROR.UNKNOWN_ENTITY}${req.entity}`);
@@ -317,7 +323,7 @@ export async function runFetch(
   // in place; original columns stay untouched.
   if (req.expand && req.expand.length > 0) {
     const tree = parseExpandPaths(req.expand);
-    await expandRows(db, req.entity, rows, tree, eav);
+    await expandRows(db, req.entity, rows, tree, eav, scopeFor);
   }
 
   return {
