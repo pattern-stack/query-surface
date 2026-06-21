@@ -1,6 +1,6 @@
 import type { AggregateModel } from '../../adapters/drizzle/registry/model.ts';
 import type { RegisterSchemaOptions } from '../../adapters/drizzle/registry/schema-registry.ts';
-import type { ScopeResolver } from '../../query.application-service.ts';
+import type { ScopeResolver, ViewingScope } from '../../query.application-service.ts';
 
 /**
  * The identity a query runs as. Shape-compatible with the host's ambient
@@ -67,6 +67,15 @@ export interface QuerySurfaceModuleOptions {
    *  every query/fetch. `opts.asUser` (a resolved user id) narrows to one
    *  user's owned rows, composed AFTER the org anchor. */
   scopeFor: (requester: QuerySurfaceRequester, opts?: { asUser?: string }) => ScopeResolver;
+  /**
+   * Read-time ATTRIBUTION grain for the requester (ADR-0027 W1) — distinct from
+   * `scopeFor` (tenancy). Resolves the viewing connection's scope: `personal`
+   * (owner grain, the floor) vs `org_wide` (participant/edge grain). Sync — the
+   * host pre-resolves from the requester's connection context. Omit ⇒ every
+   * engine is `personal` (fail-closed). Multi-connection mixed scope (OQ-1) and
+   * async connection lookup are the host's concern / W5; W1 only THREADS the
+   * resolved value (no caller branches on it until W3). */
+  viewingScopeFor?: (requester: QuerySurfaceRequester, opts?: { asUser?: string }) => ViewingScope;
   /**
    * Host-supplied builder for the aggregate analytics model (cardinality/EAV
    * registry + DERIVED manifest + Drizzle table/column refs). Lazy-cached per
