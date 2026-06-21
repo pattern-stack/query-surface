@@ -31,6 +31,13 @@ const INSTRUCTIONS = [
 export interface QuerySurfaceMcpOptions {
   name?: string;
   version?: string;
+  /** Default field exposure in describe(entity). The full catalog is ALWAYS searchable via `find`
+   *  regardless — this only sets what describe returns BY DEFAULT:
+   *    - omit  → curated: a small sample + a `find` hint (right for large/open schemas)
+   *    - 'all' → every field inline (right for small, known schemas — no drill needed)
+   *    - Record<entity, string[]> → the host-declared working set per entity. When you know what
+   *      the agent will need, surface exactly that and skip the drill round-trip. */
+  surfaceFields?: 'all' | Record<string, string[]>;
 }
 
 /** Build an MCP server exposing the five primitives of `service` as tools. */
@@ -42,6 +49,6 @@ export function createQuerySurfaceMcpServer(
     { name: opts.name ?? 'query-surface', version: opts.version ?? '0.1.0' },
     { instructions: INSTRUCTIONS },
   );
-  registerQueryTools(server, service);
+  registerQueryTools(server, service, { surfaceFields: opts.surfaceFields });
   return server;
 }

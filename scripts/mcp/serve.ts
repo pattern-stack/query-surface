@@ -45,7 +45,23 @@ function makeRealEmbed(): ((text: string) => Promise<number[]>) | undefined {
 
 const realEmbed = makeRealEmbed();
 const { service, close } = makeQuerySurface(DBURL, realEmbed ? { embed: realEmbed } : {});
-const server = createQuerySurfaceMcpServer(service);
+
+// Field exposure default (optional): SURFACE_FIELDS=all → dump every field inline;
+// SURFACE_FIELDS=opportunities:StageName,Amount,CloseDate → a host working set per entity
+// (entity1:a,b;entity2:c). Omitted → curated sample + `find` drill-down.
+function parseSurfaceFields(): 'all' | Record<string, string[]> | undefined {
+  const raw = process.env.SURFACE_FIELDS?.trim();
+  if (!raw) return undefined;
+  if (raw === 'all') return 'all';
+  const out: Record<string, string[]> = {};
+  for (const group of raw.split(';')) {
+    const [entity, names] = group.split(':');
+    if (entity && names) out[entity.trim()] = names.split(',').map((s) => s.trim());
+  }
+  return out;
+}
+
+const server = createQuerySurfaceMcpServer(service, { surfaceFields: parseSurfaceFields() });
 
 const transport = new StdioServerTransport();
 await server.connect(transport);

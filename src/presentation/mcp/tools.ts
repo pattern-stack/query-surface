@@ -88,7 +88,18 @@ function prune<T extends Record<string, unknown>>(obj: T): Partial<T> {
 
 // ── the tools ──────────────────────────────────────────────────────────────────────────────────
 
-export function registerQueryTools(server: McpServer, service: QueryApplicationService): void {
+/** Tool-surface options. `surfaceFields` sets the DEFAULT field exposure in describe(entity) —
+ *  the full catalog stays searchable via `find` regardless (see server.ts QuerySurfaceMcpOptions). */
+export interface RegisterToolsOptions {
+  surfaceFields?: 'all' | Record<string, string[]>;
+}
+
+export function registerQueryTools(
+  server: McpServer,
+  service: QueryApplicationService,
+  opts: RegisterToolsOptions = {},
+): void {
+  const surfaceFields = opts.surfaceFields;
   // 1. DISCOVER — the agent's first call: the typed catalog + the graph-derived dimensions that
   //    are LEGAL to group_by/filter at this entity's grain (so it never proposes a fan-out dim).
   server.registerTool(
@@ -148,19 +159,40 @@ export function registerQueryTools(server: McpServer, service: QueryApplicationS
         // Drop degenerate uuid/identity columns from the groupable view (id/account_id) — keep
         // string/enum/date/bool dims an agent would actually group by.
         const dimensions = Array.isArray(dims) ? dims.filter((d) => d.type !== 'uuid') : dims;
-        const SAMPLE = 12;
-        const sample = fields.filter((f) => f.type !== 'uuid').slice(0, SAMPLE);
+
+        // Field exposure — host-configurable (surfaceFields):
+        //   'all'                    → every field inline (small known schema; no drill needed)
+        //   {entity: [names]}        → the host-declared working set for THIS entity (skip the drill)
+        //   omitted / no entry       → curated: a small sample + a `find` hint (large/open schema)
+        const fmt = (f: { name: string; type: string }) => `${f.name}:${f.type}`;
+        const working =
+          surfaceFields && surfaceFields !== 'all' ? surfaceFields[entity] : undefined;
+        let fieldsOut: Record<string, unknown>;
+        if (surfaceFields === 'all') {
+          fieldsOut = { total: fields.length, all: fields.map(fmt) };
+        } else if (working) {
+          const set = new Set(working);
+          fieldsOut = {
+            total: fields.length,
+            fields: fields.filter((f) => set.has(f.name)).map(fmt),
+            find_hint: `host working set (${working.length}); ${fields.length} total — describe({entity:"${entity}", find:"<substring>"}) to search the rest`,
+          };
+        } else {
+          const SAMPLE = 12;
+          const sample = fields.filter((f) => f.type !== 'uuid').slice(0, SAMPLE);
+          fieldsOut = {
+            total: fields.length,
+            sample: sample.map(fmt),
+            find_hint: `${fields.length} fields total — call describe({entity:"${entity}", find:"<substring>"}) to search them all for a filter column`,
+          };
+        }
 
         return ok({
           entity,
           measures,
           dimensions,
           relationships: catalog.relationships,
-          fields: {
-            total: fields.length,
-            sample: sample.map((f) => `${f.name}:${f.type}`),
-            find_hint: `${fields.length} fields total — call describe({entity:"${entity}", find:"<substring>"}) to search them all for a filter column`,
-          },
+          fields: fieldsOut,
         });
       } catch (e) {
         return fail(e);

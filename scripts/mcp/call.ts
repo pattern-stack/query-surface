@@ -27,7 +27,18 @@ const parsed = JSON.parse(raw) as
 const steps = Array.isArray(parsed) ? parsed : [parsed];
 
 const { service, close } = makeQuerySurface(DBURL);
-const server = createQuerySurfaceMcpServer(service);
+// SURFACE_FIELDS=all | entity:a,b;entity2:c → exercise the describe field-exposure modes.
+const sf = process.env.SURFACE_FIELDS?.trim();
+const surfaceFields =
+  !sf || sf === 'all'
+    ? (sf as 'all' | undefined)
+    : Object.fromEntries(
+        sf.split(';').map((g) => {
+          const [e, n] = g.split(':');
+          return [e!.trim(), (n ?? '').split(',').map((s) => s.trim())];
+        }),
+      );
+const server = createQuerySurfaceMcpServer(service, surfaceFields ? { surfaceFields } : {});
 const client = new Client({ name: 'call', version: '0.0.0' });
 const [a, b] = InMemoryTransport.createLinkedPair();
 await Promise.all([server.connect(a), client.connect(b)]);
