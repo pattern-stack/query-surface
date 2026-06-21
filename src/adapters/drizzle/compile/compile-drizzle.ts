@@ -21,6 +21,7 @@ import type {
   ScopeFor,
 } from '../../../internal/analytics/types';
 import { ENGINE_ERROR } from '../../../internal/language/error-messages';
+import { isIdentifier } from '../../../internal/language/identifier';
 import { isLeaf } from '../../../internal/language/types';
 import type { Leaf, Op, SimTopkLeaf } from '../../../internal/language/types';
 import type { DealbrainModel } from '../../reference/model.dealbrain';
@@ -32,7 +33,6 @@ export type AggQuery = { toSQL(): { sql: string; params: unknown[] } } & Promise
   Record<string, unknown>[]
 >;
 
-const IDENT = /^[a-z_][a-z0-9_]*$/;
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const BINOP: Record<string, string> = {
   eq: '=',
@@ -43,7 +43,7 @@ const BINOP: Record<string, string> = {
   lte: '<=',
 };
 const assertIdent = (n: string) => {
-  if (!IDENT.test(n)) throw new Error(`${ENGINE_ERROR.AGGREGATE} unsafe identifier: ${n}`);
+  if (!isIdentifier(n)) throw new Error(`${ENGINE_ERROR.AGGREGATE} unsafe identifier: ${n}`);
   return n;
 };
 
@@ -619,7 +619,10 @@ function lowerGroupDim(
       joins: [
         {
           table: fv,
-          on: and(eq(byName('entity_id'), pk), eq(byName('field_definition_id'), eavField.eav.defId))!,
+          on: and(
+            eq(byName('entity_id'), pk),
+            eq(byName('field_definition_id'), eavField.eav.defId),
+          )!,
         },
       ],
     };

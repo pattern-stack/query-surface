@@ -23,7 +23,12 @@ import { makeQuerySurface } from '../../src/characterization/harness.ts';
 const pretty = (sql?: string): string | undefined => {
   if (!sql) return sql;
   try {
-    return formatSql(sql, { language: 'postgresql', keywordCase: 'lower', tabWidth: 2, expressionWidth: 64 });
+    return formatSql(sql, {
+      language: 'postgresql',
+      keywordCase: 'lower',
+      tabWidth: 2,
+      expressionWidth: 64,
+    });
   } catch {
     return sql;
   }
@@ -31,17 +36,28 @@ const pretty = (sql?: string): string | undefined => {
 
 // Compact the bound params for display: a relevance vector param is the full 1536-d embedding —
 // show it as a labeled, truncated preview (NOT 16KB of floats), keep scalars (uuid/threshold/k) as-is.
-function displayParams(params: unknown[] | undefined, query: string): { i: number; kind: 'vector' | 'scalar'; value: string }[] {
+function displayParams(
+  params: unknown[] | undefined,
+  query: string,
+): { i: number; kind: 'vector' | 'scalar'; value: string }[] {
   if (!params) return [];
   return params.map((p, idx) => {
     // pgvector params arrive as a stringified array ("[0.01,..]") or a real number[].
-    const arr =
-      Array.isArray(p) ? (p as number[])
-        : typeof p === 'string' && p.startsWith('[') && p.length > 100 ? (JSON.parse(p) as number[])
-          : null;
+    const arr = Array.isArray(p)
+      ? (p as number[])
+      : typeof p === 'string' && p.startsWith('[') && p.length > 100
+        ? (JSON.parse(p) as number[])
+        : null;
     if (arr && arr.length > 32) {
-      const head = arr.slice(0, 4).map((n) => n.toFixed(4)).join(', ');
-      return { i: idx + 1, kind: 'vector' as const, value: `⟨embedding of “${query}” · ${arr.length}-d⟩  [${head}, …]` };
+      const head = arr
+        .slice(0, 4)
+        .map((n) => n.toFixed(4))
+        .join(', ');
+      return {
+        i: idx + 1,
+        kind: 'vector' as const,
+        value: `⟨embedding of “${query}” · ${arr.length}-d⟩  [${head}, …]`,
+      };
     }
     return { i: idx + 1, kind: 'scalar' as const, value: String(p) };
   });
@@ -74,7 +90,8 @@ function makeRealEmbed(): ((text: string) => Promise<number[]>) | undefined {
       headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
       body: JSON.stringify({ model: EMBED_MODEL, input: text, dimensions: 1536 }),
     });
-    if (!r.ok) throw new Error(`embed provider ${EMBED_MODEL} failed: ${r.status} ${await r.text()}`);
+    if (!r.ok)
+      throw new Error(`embed provider ${EMBED_MODEL} failed: ${r.status} ${await r.text()}`);
     const j = (await r.json()) as { data: { embedding: number[] }[] };
     const vec = j.data[0]!.embedding;
     cache.set(text, vec);
@@ -88,10 +105,28 @@ const EMBED_MODE = realEmbed ? `live · ${EMBED_MODEL}` : 'stub · ILIKE phrase-
 // app's resolved model — closed-by-default (baseline tier only). Fetched at boot; if the app isn't
 // running, fall back to the built-in defaults so the demo still works. ────────────────────────────
 const CRM_API = process.env.CRM_API ?? 'http://localhost:3210';
-type MDef = { source?: string; on: string; agg: 'sum' | 'avg' | 'count'; as: string; label: string; fmt: 'usd' | 'pct' | 'int' };
-type ResolvedMeasure = { key: string; name: string; agg: string; additivity: string; label: string; format: string | null };
+type MDef = {
+  source?: string;
+  on: string;
+  agg: 'sum' | 'avg' | 'count';
+  as: string;
+  label: string;
+  fmt: 'usd' | 'pct' | 'int';
+};
+type ResolvedMeasure = {
+  key: string;
+  name: string;
+  agg: string;
+  additivity: string;
+  label: string;
+  format: string | null;
+};
 type ResolvedDimension = { key: string; name: string; label: string };
-type ResolvedModel = { measures: ResolvedMeasure[]; dimensions: ResolvedDimension[]; gated: { total: number; exposed: number; dormant: number } };
+type ResolvedModel = {
+  measures: ResolvedMeasure[];
+  dimensions: ResolvedDimension[];
+  gated: { total: number; exposed: number; dormant: number };
+};
 
 // Mutable model state — REBUILT (rebuild()) on boot and on POST /api/refresh, so curating a field
 // in the field-management UI lights up here WITHOUT a restart (the live curate→surface loop).
@@ -103,7 +138,9 @@ let DEFAULT_MEASURE = 'deals';
 let h: ReturnType<typeof makeQuerySurface>;
 
 async function rebuild(): Promise<void> {
-  MEASURES = { deals: { on: '*', agg: 'count', as: 'deals', label: 'Opportunity count', fmt: 'int' } }; // built-in count
+  MEASURES = {
+    deals: { on: '*', agg: 'count', as: 'deals', label: 'Opportunity count', fmt: 'int' },
+  }; // built-in count
   GROUP_DIMS = [];
   let measureSpecs: NonNullable<Parameters<typeof makeQuerySurface>[1]>['measureSpecs'];
   let dimensionSpecs: NonNullable<Parameters<typeof makeQuerySurface>[1]>['dimensionSpecs'];
@@ -124,15 +161,34 @@ async function rebuild(): Promise<void> {
       additivity: (m.additivity === 'additive' ? 'additive' : 'non') as 'additive' | 'non',
     }));
     for (const m of resolved.measures) {
-      MEASURES[m.name] = { on: m.name, agg: m.agg as MDef['agg'], as: m.name, label: m.label, fmt: (m.format ?? 'usd') as MDef['fmt'] };
+      MEASURES[m.name] = {
+        on: m.name,
+        agg: m.agg as MDef['agg'],
+        as: m.name,
+        label: m.label,
+        fmt: (m.format ?? 'usd') as MDef['fmt'],
+      };
     }
     dimensionSpecs = resolved.dimensions.map((d) => ({ name: d.name, key: d.key }));
-    for (const d of resolved.dimensions) GROUP_DIMS.push({ dim: d.name, label: `${d.label} — EAV ✓` });
+    for (const d of resolved.dimensions)
+      GROUP_DIMS.push({ dim: d.name, label: `${d.label} — EAV ✓` });
     SEMANTIC_GATED = resolved.gated;
     SEMANTIC_SOURCE = `field-management app · baseline-gated (${resolved.measures.length} measures, ${resolved.dimensions.length} dims, ${resolved.gated.dormant} of ${resolved.gated.total} fields dormant)`;
   } else {
-    MEASURES.weighted_amount = { on: 'weighted_amount', agg: 'sum', as: 'weighted_amount', label: 'Weighted pipeline (default)', fmt: 'usd' };
-    MEASURES.deal_probability = { on: 'deal_probability', agg: 'avg', as: 'deal_probability', label: 'Avg win probability (default)', fmt: 'pct' };
+    MEASURES.weighted_amount = {
+      on: 'weighted_amount',
+      agg: 'sum',
+      as: 'weighted_amount',
+      label: 'Weighted pipeline (default)',
+      fmt: 'usd',
+    };
+    MEASURES.deal_probability = {
+      on: 'deal_probability',
+      agg: 'avg',
+      as: 'deal_probability',
+      label: 'Avg win probability (default)',
+      fmt: 'pct',
+    };
     SEMANTIC_SOURCE = 'built-in default (field-management app not reachable)';
   }
 
@@ -171,9 +227,16 @@ async function apiRelevant(body: any) {
         // observation (EXISTS, counted once). Distinct from the citation's match_count, which is
         // the number of matching OBSERVATIONS (the evidence) — usually more, since a deal can have
         // several. M observations → N deals → Σ metric over those N.
-        ...(m.agg === 'count' && m.on === '*' ? [] : [{ on: '*', agg: 'count' as const, as: 'cohort_deals' }]),
+        ...(m.agg === 'count' && m.on === '*'
+          ? []
+          : [{ on: '*', agg: 'count' as const, as: 'cohort_deals' }]),
       ],
-      filter: { on: 'observations.normalized_text', op: 'relevant', query: body.query, ...crispFrom(body) },
+      filter: {
+        on: 'observations.normalized_text',
+        op: 'relevant',
+        query: body.query,
+        ...crispFrom(body),
+      },
     },
     { include_sql: true, citation: { boundary: true } },
   );
@@ -192,7 +255,12 @@ async function apiExplore(body: any) {
   const t0 = performance.now();
   const res = await h.service.query('observations', {
     filter: { on: 'normalized_text', op: 'relevant', query: body.query, ...crispFrom(body) },
-    rank_by: { on: 'normalized_text', method: 'semantic', query: body.query, limit: Math.min(200, body.limit ?? 25) },
+    rank_by: {
+      on: 'normalized_text',
+      method: 'semantic',
+      query: body.query,
+      limit: Math.min(200, body.limit ?? 25),
+    },
     columns: ['type', 'normalized_text', 'account_id', 'opportunity_id'],
     preview: true,
     include_sql: true,
@@ -220,7 +288,12 @@ async function apiGroup(body: any) {
         { on: 'weighted_amount', agg: 'sum', as: 'pipeline' },
         { on: '*', agg: 'count', as: 'deals' },
       ],
-      filter: { on: 'observations.normalized_text', op: 'relevant', query: body.query, ...crispFrom(body) },
+      filter: {
+        on: 'observations.normalized_text',
+        op: 'relevant',
+        query: body.query,
+        ...crispFrom(body),
+      },
       order_by: [{ on: 'pipeline', dir: 'desc' }],
       limit: 25,
     },
@@ -259,8 +332,12 @@ const server = Bun.serve({
       // Re-pull the resolved model from the field-management app + rebuild the aggregate model.
       // Curate a field there → POST here → it's live (no restart).
       return rebuild()
-        .then(() => Response.json({ ok: true, semanticSource: SEMANTIC_SOURCE, gated: SEMANTIC_GATED }))
-        .catch((e) => Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 }));
+        .then(() =>
+          Response.json({ ok: true, semanticSource: SEMANTIC_SOURCE, gated: SEMANTIC_GATED }),
+        )
+        .catch((e) =>
+          Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 }),
+        );
     }
     if (url.pathname === '/api/info') {
       return Response.json({
@@ -280,7 +357,10 @@ const server = Bun.serve({
       try {
         return Response.json(await apiDescribe(url.searchParams.get('entity') ?? 'opportunities'));
       } catch (e) {
-        return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
+        return Response.json(
+          { error: e instanceof Error ? e.message : String(e) },
+          { status: 400 },
+        );
       }
     }
     const route = ROUTES[url.pathname];
@@ -290,7 +370,10 @@ const server = Bun.serve({
       } catch (e) {
         // The engine's fail-loud refusals (XOR violation, scope gap, non-conforming) land here —
         // surface them verbatim; they're the trust story, not noise.
-        return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
+        return Response.json(
+          { error: e instanceof Error ? e.message : String(e) },
+          { status: 400 },
+        );
       }
     }
     return new Response('not found', { status: 404 });
@@ -298,4 +381,6 @@ const server = Bun.serve({
 });
 
 console.log(`\n  query-surface · relevance explorer  →  http://localhost:${server.port}`);
-console.log(`  embed: ${EMBED_MODE}${realEmbed ? '' : '  (set OPENAI_API_KEY for true free-text concepts)'}\n`);
+console.log(
+  `  embed: ${EMBED_MODE}${realEmbed ? '' : '  (set OPENAI_API_KEY for true free-text concepts)'}\n`,
+);

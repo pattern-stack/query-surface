@@ -593,7 +593,8 @@ export class QueryApplicationService {
     let scopeForEntity: ReturnType<NonNullable<typeof scope>> | undefined;
     if (scope) {
       const globals = new Set<string>(this.options.tenantGlobalEntities ?? []);
-      const decision = scope(targetEntity) ?? (globals.has(targetEntity) ? TENANT_GLOBAL : undefined);
+      const decision =
+        scope(targetEntity) ?? (globals.has(targetEntity) ? TENANT_GLOBAL : undefined);
       if (decision === undefined) {
         throw new Error(
           `${ENGINE_ERROR.AGGREGATE} relevance citation: source "${targetEntity}" has no tenancy scope and was not declared TENANT_GLOBAL — refusing to read it unscoped (scope coverage gap)`,
