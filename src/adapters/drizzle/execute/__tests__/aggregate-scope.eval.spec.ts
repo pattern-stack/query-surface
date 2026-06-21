@@ -63,7 +63,7 @@ suite('aggregate scope — pre-aggregation, per-source, non-bypassable (live dea
         entity: 'opportunities',
         group_by: ['account_id'],
         measures: [
-          { on: 'weighted_amount', agg: 'sum' as const, as: 'weighted' },
+          { on: 'ExpectedRevenue', agg: 'sum' as const, as: 'weighted' },
           { source: 'observations', on: '*', agg: 'count' as const, as: 'obs' },
         ],
       },
@@ -130,7 +130,7 @@ suite('aggregate scope — pre-aggregation, per-source, non-bypassable (live dea
         entity: 'opportunities',
         group_by: ['account_id'],
         measures: [
-          { on: 'weighted_amount', agg: 'sum', as: 'w' },
+          { on: 'ExpectedRevenue', agg: 'sum', as: 'w' },
           { source: 'observations', on: '*', agg: 'count', as: 'o' },
         ],
         filter: { on: 'type', op: 'eq', value: 'commitment' },
@@ -204,7 +204,7 @@ suite('aggregate scope — pre-aggregation, per-source, non-bypassable (live dea
           entity: 'opportunities',
           group_by: ['account_id'],
           measures: [
-            { on: 'weighted_amount', agg: 'sum', as: 'w' },
+            { on: 'ExpectedRevenue', agg: 'sum', as: 'w' },
             { source: 'observations', on: '*', agg: 'count', as: 'o' },
           ],
         },
@@ -229,7 +229,7 @@ suite('aggregate scope — pre-aggregation, per-source, non-bypassable (live dea
         // would rewrite the JOIN ON clause if raw-interpolated
         group_by: ['account_id) = cte_1.account_id or (1=1'],
         measures: [
-          { on: 'weighted_amount', agg: 'sum', as: 'w' },
+          { on: 'ExpectedRevenue', agg: 'sum', as: 'w' },
           { source: 'observations', on: '*', agg: 'count', as: 'o' },
         ],
       }),
@@ -243,7 +243,7 @@ suite('aggregate scope — pre-aggregation, per-source, non-bypassable (live dea
       entity: 'opportunities',
       group_by: ['account_id'],
       measures: [
-        { on: 'weighted_amount', agg: 'sum' as const, as: 'w' },
+        { on: 'ExpectedRevenue', agg: 'sum' as const, as: 'w' },
         { source: 'observations', on: '*', agg: 'count' as const, as: 'o' },
       ],
     };

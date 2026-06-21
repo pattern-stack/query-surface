@@ -207,7 +207,7 @@ suite('scope-failclosed — characterization', () => {
       h.service.aggregate('opportunities', {
         group_by: ['type'],
         measures: [
-          { on: 'weighted_amount', agg: 'sum', as: 'w' },
+          { on: 'ExpectedRevenue', agg: 'sum', as: 'w' },
           { source: 'observations', on: '*', agg: 'count', as: 'o' },
         ],
       }),
@@ -220,7 +220,7 @@ suite('scope-failclosed — characterization', () => {
       {
         group_by: ['account_id'],
         measures: [
-          { on: 'weighted_amount', agg: 'sum', as: 'w' },
+          { on: 'ExpectedRevenue', agg: 'sum', as: 'w' },
           { source: 'observations', on: '*', agg: 'count', as: 'o' },
         ],
       },
@@ -260,7 +260,7 @@ suite('scope-failclosed — characterization', () => {
       // biome-ignore lint/suspicious/noExplicitAny: appending a host ratio onto the derived catalog (mirrors host registration)
       (m as any).catalog = {
         ...m.catalog,
-        wpd: { kind: 'ratio', numerator: 'weighted_amount', denominator: 'deal_probability' },
+        wpd: { kind: 'ratio', numerator: 'ExpectedRevenue.sum', denominator: 'Probability.avg' },
       };
       return m;
     };
@@ -309,7 +309,7 @@ suite('scope-failclosed — characterization', () => {
       // biome-ignore lint/suspicious/noExplicitAny: see F11
       (m as any).catalog = {
         ...m.catalog,
-        wpd: { kind: 'ratio', numerator: 'weighted_amount', denominator: 'deal_probability' },
+        wpd: { kind: 'ratio', numerator: 'ExpectedRevenue.sum', denominator: 'Probability.avg' },
       };
       return m;
     };

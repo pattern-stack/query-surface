@@ -52,6 +52,9 @@ export interface FieldMeta {
   role?: 'measure' | 'dimension';
   /** Default aggregation for a measure. */
   agg?: 'sum' | 'count' | 'count_distinct' | 'avg' | 'min' | 'max';
+  /** Allowed aggregations — the field IS the measure, aggregation is a config on it. The
+   *  catalog exposes a `field.agg` entry per listed agg (e.g. `Amount.sum`, `Amount.avg`). */
+  aggs?: ('sum' | 'count' | 'count_distinct' | 'avg' | 'min' | 'max')[];
   /** additive | semi (not summable over time) | non (never sum). EXPLICIT — money
    *  and percentage both type as 'number', so additivity can't be inferred. */
   additivity?: 'additive' | 'semi' | 'non';

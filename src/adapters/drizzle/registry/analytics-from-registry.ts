@@ -44,6 +44,7 @@ export function analyticsFromRegistry(
         type: colType(col),
         role: meta.role,
         ...(meta.agg ? { agg: meta.agg } : {}),
+        ...(meta.aggs ? { aggs: meta.aggs } : {}),
         ...(meta.additivity ? { additivity: meta.additivity } : {}),
         ...(meta.time ? { time: meta.time } : {}),
       };
