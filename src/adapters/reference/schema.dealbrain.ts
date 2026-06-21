@@ -19,11 +19,11 @@ import {
   varchar,
 } from 'drizzle-orm/pg-core';
 
-// pgvector column — registered so the AGGREGATE compiler's relevance path
+// pgvector column — registered so the compiler's semantic-rank path
 // (`${embCol} <=> ${vec}::vector`) can resolve `observations.embedding`. The
-// model.dealbrain aggregate model reads columns via colByDbName, so embedding +
-// normalized_text must live HERE (the harness's observationsExt only feeds the
-// query/fetch registry). Mirrors that customType.
+// observations table below is the CANONICAL retrieval surface (normalized_text +
+// embedding + the provenance/scope columns), so the harness no longer needs an
+// extended shim. Mirrors that customType.
 const vector = customType<{ data: number[]; driverData: string }>({
   dataType() {
     return 'vector';
@@ -43,13 +43,18 @@ export const opportunities = pgTable('opportunities', {
 
 export const observations = pgTable('observations', {
   id: uuid('id').primaryKey(),
+  organizationId: uuid('organization_id'), // tenancy — the org allowed to read this observation
   accountId: uuid('account_id'),
   opportunityId: uuid('opportunity_id'),
+  artifactId: uuid('artifact_id'), // source artifact (email / note / meeting record) the obs was extracted from
   type: varchar('type'),
+  scope: varchar('scope'), // 'deal' | 'organization' — deal-local vs org-wide visibility
   occurredAt: timestamp('occurred_at'),
   structuredData: jsonb('structured_data'),
   normalizedText: text('normalized_text'),
+  sourceRefs: jsonb('source_refs'), // provenance: quoted text excerpt + artifact reference
   embedding: vector('embedding'),
+  retractedAt: timestamp('retracted_at'), // soft-delete marker; NULL ⇒ active
 });
 
 export const fieldValues = pgTable('field_values', {

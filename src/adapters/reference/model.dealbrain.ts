@@ -35,13 +35,86 @@ const opportunitiesMeta: FieldMetaMap = {
   accountId: { role: 'dimension' },
   stateOfDealStatus: { role: 'dimension' },
 }; // measures (Amount, ExpectedRevenue, Probability — by allowed aggs) are EAV → overlay below
-const observationsMeta: FieldMetaMap = {
+/** The deal-type taxonomy — observation semantic types. Used as the STATIC
+ *  fallback for observations.type.selectOptions when the data-driven SELECT
+ *  DISTINCT (loadDealbrainModel) can't run (e.g. no live DB). The live corpus
+ *  also carries org-scope playbook types (workflow_playbook, role_policy, …),
+ *  which the data-driven path surfaces; this list is the deal-scope core. */
+export const OBSERVATION_TYPE_TAXONOMY = [
+  'product_request',
+  'requirement',
+  'pain',
+  'risk',
+  'objection',
+  'pricing_signal',
+  'competitor_signal',
+  'stakeholder_signal',
+  'commitment',
+  'timeline',
+  'urgency',
+  'buying_intent',
+  'seller_intent',
+  'discovery',
+  'risk_resolution',
+  'product_information',
+  'implementation_information',
+  'commercial_information',
+  'summary',
+  'background',
+  'questions',
+  'coaching',
+] as const;
+
+/** Observations FieldMeta. `type.selectOptions` is overridden DATA-DRIVEN at
+ *  model-load (SELECT DISTINCT type) when the DB is available — see
+ *  loadDealbrainModel; this declaration carries the static taxonomy default plus
+ *  the retrieval-surface semantics (searchable text, hidden embedding/tenancy
+ *  columns, provenance + scope dimensions). */
+export const observationsMeta: FieldMetaMap = {
   id: { role: 'dimension' },
+  organizationId: { role: 'dimension', isVisible: false }, // tenancy — structural, hidden from the catalog
   accountId: { role: 'dimension' },
   opportunityId: { role: 'dimension' },
-  type: { role: 'dimension' },
-  occurredAt: { role: 'dimension', time: true },
+  artifactId: {
+    role: 'dimension',
+    description: 'ID of the source artifact (email, note, meeting record) the observation was extracted from',
+  },
+  type: {
+    role: 'dimension',
+    isKeyField: true,
+    selectOptions: [...OBSERVATION_TYPE_TAXONOMY],
+    description: 'Observation semantic type — the intent/signal this captures (the deal-type taxonomy)',
+  },
+  scope: {
+    role: 'dimension',
+    selectOptions: ['deal', 'organization'],
+    searchable: false, // a closed 2-value enum dimension — filter by eq, not full-text search
+    description: 'Visibility scope: deal-local or organization-wide',
+  },
+  occurredAt: {
+    role: 'dimension',
+    time: true,
+    isKeyField: true,
+    description: 'When this observation was recorded',
+  },
   structuredData: { role: 'dimension' },
+  normalizedText: {
+    isKeyField: true,
+    searchable: true,
+    description: 'Normalized prose text — the semantic ranking surface (lexical + vector)',
+  },
+  sourceRefs: {
+    role: 'dimension',
+    description: 'Provenance citation: quoted text excerpt + artifact reference',
+  },
+  embedding: {
+    isVisible: false,
+    description: 'pgvector embedding of normalized_text for semantic search',
+  },
+  retractedAt: {
+    isVisible: false,
+    description: 'Soft-delete timestamp; NULL ⇒ active, set ⇒ retracted',
+  },
 };
 
 /** An EAV field exposed as an aggregatable MEASURE. The field IS the measure — its real name (the
@@ -77,6 +150,23 @@ export async function loadDealbrainModel(
   measureSpecs: DealbrainMeasureSpec[] = DEFAULT_MEASURE_SPECS,
   dimensionSpecs: DealbrainDimensionSpec[] = [],
 ): Promise<DealbrainModel> {
+  // DATA-DRIVEN type taxonomy: SELECT DISTINCT type at model-load (the same
+  // pattern the EAV field-defs use below), so observations.type.selectOptions
+  // reflects the LIVE corpus — which carries more types than the deal-scope core
+  // (org-scope playbook types: workflow_playbook, role_policy, …). Falls back to
+  // the static taxonomy when the query yields nothing.
+  const typeRes = await db.execute(
+    sql`select distinct type from observations where type is not null order by type`,
+  );
+  const liveTypes = (typeRes.rows as Array<{ type: string }>).map((r) => r.type);
+  const observationsMetaEffective: FieldMetaMap = {
+    ...observationsMeta,
+    type: {
+      ...observationsMeta.type,
+      selectOptions: liveTypes.length > 0 ? liveTypes : [...OBSERVATION_TYPE_TAXONOMY],
+    },
+  };
+
   const registry = buildRegistry([
     { name: 'accounts', table: accounts, relations: accountsRelations, fieldMeta: accountsMeta },
     {
@@ -90,7 +180,7 @@ export async function loadDealbrainModel(
       name: 'observations',
       table: observations,
       relations: observationsRelations,
-      fieldMeta: observationsMeta,
+      fieldMeta: observationsMetaEffective,
     },
   ]);
 

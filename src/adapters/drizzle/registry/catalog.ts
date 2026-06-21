@@ -219,12 +219,16 @@ export function buildEntityCatalog(entity: EntityName, fieldMap?: FieldMap): Ent
 
     const c = col as unknown as PgColumnIntrospect;
     const key = c.name;
-    const { type, enumValues } = columnTypeFromPg(col);
+    const { type, enumValues: nativeEnum } = columnTypeFromPg(col);
+    // A native varchar carries no Drizzle enum; a qField `selectOptions` declares its
+    // domain (parity with EAV field_definitions.select_options) so describe still teaches
+    // the agent the legal values — e.g. the observations.type taxonomy.
+    const enumValues = nativeEnum ?? meta?.selectOptions;
     const sources: CatalogField['sources'] = {
       type: 'drizzle',
       nullable: 'drizzle',
     };
-    if (enumValues) sources.enumValues = 'drizzle';
+    if (enumValues) sources.enumValues = nativeEnum ? 'drizzle' : 'field_meta';
 
     const linked = fieldByLowerKey.get(key.toLowerCase());
     if (linked?.def) claimedFieldKeys.add(linked.key);
