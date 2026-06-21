@@ -86,6 +86,29 @@ function prune<T extends Record<string, unknown>>(obj: T): Partial<T> {
   return out as Partial<T>;
 }
 
+// node-postgres returns numerics (count/sum/bigint/numeric) as STRINGS to avoid precision loss. For
+// an agent a count "100" is awkward to reason over, so LOSSLESSLY coerce: a string becomes a number
+// ONLY when it round-trips exactly (`String(Number(v)) === v`) — so "100"→100 and "10929000"→10929000,
+// while a precision-exceeding "115042.105263157895" or "0.000…" stays a string (no silent rounding),
+// and non-numeric strings (names, uuids, dates) are untouched (regex + round-trip both reject them).
+// Applied ONLY to the analytical responses (aggregate/compare), never to fetch()/query() rows — those
+// carry arbitrary domain fields where a numeric-looking string may be a semantic id/zip/phone.
+export function losslessNumber(v: string): number | string {
+  if (v === '' || !/^-?\d+(\.\d+)?$/.test(v)) return v;
+  const n = Number(v);
+  return Number.isFinite(n) && String(n) === v ? n : v;
+}
+export function coerceNumbers(v: unknown): unknown {
+  if (typeof v === 'string') return losslessNumber(v);
+  if (Array.isArray(v)) return v.map(coerceNumbers);
+  if (v && typeof v === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, val] of Object.entries(v)) out[k] = coerceNumbers(val);
+    return out;
+  }
+  return v;
+}
+
 // ── the tools ──────────────────────────────────────────────────────────────────────────────────
 
 /** Tool-surface options. `surfaceFields` sets the DEFAULT field exposure in describe(entity) —
@@ -340,7 +363,7 @@ export function registerQueryTools(
           include_sql: a.include_sql,
           citation: a.cite_boundary ? { boundary: true } : undefined,
         });
-        return ok(await service.aggregate(a.entity as EntityName, q, opts));
+        return ok(coerceNumbers(await service.aggregate(a.entity as EntityName, q, opts)));
       } catch (e) {
         return fail(e);
       }
@@ -388,7 +411,7 @@ export function registerQueryTools(
           delivery: a.delivery,
         }) as unknown as CompareRequest;
         const opts = prune({ citation: a.cite_boundary ? { boundary: true } : undefined });
-        return ok(await service.compare(a.entity as EntityName, req, opts));
+        return ok(coerceNumbers(await service.compare(a.entity as EntityName, req, opts)));
       } catch (e) {
         return fail(e);
       }
