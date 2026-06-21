@@ -8,6 +8,7 @@ import {
   type FetchOptions,
   QueryApplicationService,
   type QueryOptions,
+  type ViewingScope,
 } from '../../query.application-service.ts';
 import type { QuerySurfaceModuleOptions, QuerySurfaceRequester, ScopeUser } from './options.ts';
 import { QUERY_SURFACE_DRIZZLE, QUERY_SURFACE_OPTIONS } from './tokens.ts';
@@ -58,14 +59,19 @@ export class QuerySurfaceService implements OnModuleInit {
 
   private engine(asUser?: string): QueryApplicationService {
     const requester = this.options.getRequester();
-    const key = this.engineKey(requester, asUser);
+    const opts = asUser ? { asUser } : undefined;
+    // Resolved attribution grain (ADR-0027): part of the cache key so a scope
+    // change yields a distinct engine (never a stale-scope cache hit).
+    const viewingScope = this.options.viewingScopeFor?.(requester, opts) ?? 'personal';
+    const key = this.engineKey(requester, asUser, viewingScope);
     const cached = this.engines.get(key);
     if (cached) return cached;
 
     const engine = new QueryApplicationService(this.db, {
       actorUserId: requester.userId,
       ...(requester.organizationId ? { actorOrganizationId: requester.organizationId } : {}),
-      scope: this.options.scopeFor(requester, asUser ? { asUser } : undefined),
+      scope: this.options.scopeFor(requester, opts),
+      viewingScope,
       ...(this.options.aggregateModel ? { aggregateModel: this.options.aggregateModel } : {}),
       ...(this.options.tenantGlobalEntities
         ? { tenantGlobalEntities: this.options.tenantGlobalEntities }
@@ -77,8 +83,12 @@ export class QuerySurfaceService implements OnModuleInit {
     return engine;
   }
 
-  private engineKey(requester: QuerySurfaceRequester, asUser?: string): string {
-    return `${requester.userId}|${requester.organizationId ?? ''}|${asUser ?? ''}`;
+  private engineKey(
+    requester: QuerySurfaceRequester,
+    asUser?: string,
+    viewingScope: ViewingScope = 'personal',
+  ): string {
+    return `${requester.userId}|${requester.organizationId ?? ''}|${asUser ?? ''}|${viewingScope}`;
   }
 
   /**
