@@ -14,6 +14,11 @@ export const ENGINE_ERROR = {
   EXPAND_PATH: 'Expand path',
   /** Prefix for exceeding the expand depth limit. */
   EXPAND_DEPTH: 'Expand depth',
+  /** Prefix for a tenancy-scope coverage gap on a TRAVERSED expand relation
+   *  (invariant #3, fail-closed): a configured scope resolver returned undefined
+   *  for an expanded entity that was not declared TENANT_GLOBAL — refuse rather
+   *  than read it unscoped. A host-configuration refusal, not a caller-input error. */
+  EXPAND_SCOPE: 'Expand scope',
   /** Substring marking an unsupported traversal shape in a path. */
   UNSUPPORTED_IN_PATH: 'not supported in path',
   /** Prefix for an invalid `rank_by` directive. */

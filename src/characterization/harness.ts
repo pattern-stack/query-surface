@@ -44,7 +44,8 @@ import {
   opportunities,
   opportunitiesRelations,
 } from '../adapters/reference/schema.dealbrain.ts';
-import { QueryApplicationService } from '../query.application-service.ts';
+import type { EntityName } from '../internal/language/types.ts';
+import { QueryApplicationService, type ScopeResolver } from '../query.application-service.ts';
 
 // Back-compat aliases: the observations retrieval surface is now CANONICAL in
 // schema.dealbrain (normalized_text + embedding + provenance/scope columns), so
@@ -84,6 +85,11 @@ export function makeQuerySurface(
     measureSpecs?: import('../adapters/reference/model.dealbrain.ts').DealbrainMeasureSpec[];
     // Host-resolved EAV dimensions (groupable select/text fields). Omitted → none.
     dimensionSpecs?: import('../adapters/reference/model.dealbrain.ts').DealbrainDimensionSpec[];
+    // Per-entity tenancy scope (fail-closed, folded per-source incl. through expand).
+    // Omitted → unscoped trusted mode (the default the eval suite runs in).
+    scope?: ScopeResolver;
+    // Entities intentionally carrying no tenancy — exempt from the fail-closed refusal.
+    tenantGlobalEntities?: readonly EntityName[];
   },
 ): QuerySurfaceHarness {
   const { db, close } = makeDb(dburl);
@@ -135,6 +141,9 @@ export function makeQuerySurface(
     // Default: the deterministic ILIKE stub (specs are hermetic). A caller (e.g. the demo) may
     // inject a REAL embed provider to exercise true free-text concepts against the stored vectors.
     embed: opts?.embed ?? embed,
+    // Optional per-entity tenancy scope (e.g. the expand-scope char spec). Omitted → unscoped.
+    ...(opts?.scope ? { scope: opts.scope } : {}),
+    ...(opts?.tenantGlobalEntities ? { tenantGlobalEntities: opts.tenantGlobalEntities } : {}),
   });
 
   return { service, db, close };
