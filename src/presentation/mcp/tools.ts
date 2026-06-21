@@ -133,7 +133,9 @@ export function registerQueryTools(
         'Learn what you can query and aggregate. Omit `entity` for the entity list. With an entity ' +
         'you get its MEASURES (the `field.agg` combos you can aggregate, e.g. "Amount.sum") and its ' +
         'DIMENSIONS (the fields legal to group_by at that grain) — the curated capabilities, lead with ' +
-        'these. Hosts can carry thousands of fields, so the full field catalog is NOT dumped: a small ' +
+        'these — plus KEY_FIELDS (the curated filterable fields + their allowed values, e.g. a type ' +
+        'taxonomy) so you can write a typed filter without drilling. Hosts can carry thousands of ' +
+        'fields, so the full field catalog is NOT dumped: a small ' +
         'sample + the total is returned, and you search the rest by name with `find` (e.g. ' +
         '{entity:"opportunities", find:"stage"}) when you need a column to filter on.',
       inputSchema: {
@@ -163,6 +165,19 @@ export function registerQueryTools(
         const fields = catalog.fields
           .filter((f) => f.key !== 'enableRLS')
           .map((f) => ({ name: f.key, type: f.type, eav: f.eav }));
+
+        // Key fields up front WITH their value domains — the curated RETRIEVAL facets
+        // (is_key_field) + any field carrying an enum, so an agent can build a typed
+        // filter from describe ALONE (e.g. observations.type's taxonomy) without a drill.
+        // The long tail stays in `fields` (sample + find); this is the same key-field
+        // curation, just carrying the values an agent needs to write the predicate.
+        const keyFields = catalog.fields
+          .filter((f) => f.key !== 'enableRLS' && (f.preview || (f.enumValues?.length ?? 0) > 0))
+          .map((f) => ({
+            name: f.key,
+            type: f.type,
+            ...(f.enumValues?.length ? { values: f.enumValues } : {}),
+          }));
 
         if (find) {
           const q = find.toLowerCase();
@@ -214,6 +229,7 @@ export function registerQueryTools(
           entity,
           measures,
           dimensions,
+          key_fields: keyFields,
           relationships: catalog.relationships,
           fields: fieldsOut,
         });

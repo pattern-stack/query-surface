@@ -105,20 +105,21 @@ suite('fetch + expand + projection — characterization', () => {
       const id = String(t[0].id);
       const res = await h.service.fetch('observations', [id]);
       const keys = Object.keys(res.rows[0]).sort();
-      // EXACT: the registered observationsExt columns, snake_cased. NB this
-      // includes `embedding` (the raw 1536-dim pgvector) and `normalized_text`.
-      // SUSPECTED-DIVERGENCE: a raw fetch ships the full embedding vector + full
-      // normalized_text body inline — heavy and arguably not consumer-facing — but
-      // this is current behavior (the service returns the raw registered shape; the
-      // nest projection layer, not the service, is where curation happens). — revisit
+      // EXACT: the VISIBLE registered observation columns, snake_cased. The canonical
+      // model hides infra columns (embedding / organization_id / retracted_at, via
+      // isVisible:false), so a raw fetch ships the retrieval surface — normalized_text
+      // + source_refs (provenance) + the scope/artifact_id/type dimensions — but NOT
+      // the raw 1536-dim embedding vector.
       expect(keys).toEqual(
         [
           'account_id',
-          'embedding',
+          'artifact_id',
           'id',
           'normalized_text',
           'occurred_at',
           'opportunity_id',
+          'scope',
+          'source_refs',
           'structured_data',
           'type',
         ].sort(),
@@ -433,7 +434,7 @@ suite('fetch + expand + projection — characterization', () => {
         'type',
         'account_id',
         'opportunity_id',
-        'embedding',
+        'source_refs',
         'normalized_text',
       ]) {
         expect(fieldKeys).toContain(k);
