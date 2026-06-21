@@ -26,6 +26,8 @@ import { registry } from './adapters/drizzle/registry/registry.ts';
 import { mapLeaves, walkLeaves } from './internal/analytics/filter-columns.ts';
 import { TENANT_GLOBAL, conformedDimensions, runCompare } from './internal/analytics/index.ts';
 import type {
+  Additivity,
+  Agg,
   AggregateInput,
   AggregateResponse,
   CompareRequest,
@@ -146,6 +148,18 @@ export interface FetchOptions {
  *  `measures` may be inline OR catalog {ref}s — normalizeAggregate expands them. */
 export type AggregateRequest = Omit<AggregateInput, 'entity'>;
 
+/** One advertised measure: a `field.agg` the agent can aggregate (ADR-0024 field-first model).
+ *  `name` doubles as a catalog `{ref}` and decomposes to the inline `{ on, agg }`. */
+export interface MeasureCatalogEntry {
+  /** the catalog ref + discovery handle, e.g. `Amount.sum` */
+  name: string;
+  /** the field aggregated, preserved as-is, e.g. `Amount` */
+  on: string;
+  agg: Agg;
+  /** summable-ness of the underlying field (a `non` field refuses SUM) */
+  additivity: Additivity;
+}
+
 export class QueryApplicationService {
   constructor(
     // biome-ignore lint/suspicious/noExplicitAny: engine is schema-agnostic; Drizzle's DB type is generic over the host schema, unknown at the package level
@@ -239,6 +253,26 @@ export class QueryApplicationService {
       throw new Error(`${ENGINE_ERROR.UNKNOWN_ENTITY}${entity}`);
     }
     return conformedDimensions(model.analytics, entity as string);
+  }
+
+  /**
+   * The aggregatable measures advertised for an entity (ADR-0024 field-first model): the catalog's
+   * atomic entries sourced on it — one `field.agg` per allowed aggregation (`Amount.sum`,
+   * `Amount.avg`, …, `Probability.avg`). Surfaced so an agent DISCOVERS what it can aggregate
+   * rather than guessing a measure name; the field name is preserved. Requires the aggregate model.
+   */
+  async describeMeasures(entity: EntityName): Promise<MeasureCatalogEntry[]> {
+    const model = await this.aggregateModel();
+    if (!model.analytics[entity as string]) {
+      throw new Error(`${ENGINE_ERROR.UNKNOWN_ENTITY}${entity}`);
+    }
+    const measures: MeasureCatalogEntry[] = [];
+    for (const [name, def] of Object.entries(model.catalog ?? {})) {
+      // Only atomic measures are entity-sourced; ratios/cumulatives compose them (advertised later).
+      if (def.kind !== 'atomic' || def.source !== (entity as string)) continue;
+      measures.push({ name, on: def.on, agg: def.agg, additivity: def.additivity });
+    }
+    return measures.sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /** Find IDs (+ optional preview rows) matching a filter. */
