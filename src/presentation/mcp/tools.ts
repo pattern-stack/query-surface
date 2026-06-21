@@ -97,9 +97,10 @@ export function registerQueryTools(server: McpServer, service: QueryApplicationS
       title: 'Describe the queryable surface',
       description:
         "List the queryable entities and their fields (native + EAV), with each field's type. " +
-        'Call with no entity to see ALL entities; call with one to also get its CONFORMED DIMENSIONS — ' +
-        'the dimensions reachable by an unambiguous to-one path, i.e. the ones legal to group_by/filter ' +
-        'at that grain. Start here to learn what you can query.',
+        'Call with no entity to see ALL entities; call with one to also get its MEASURES (the ' +
+        '`field.agg` combinations you can aggregate, e.g. "Amount.sum") and its CONFORMED DIMENSIONS ' +
+        '(the fields legal to group_by/filter at that grain, reachable by an unambiguous to-one path). ' +
+        'Start here to learn what you can query and aggregate.',
       inputSchema: {
         entity: z.string().optional().describe('entity name, e.g. "opportunities"; omit for all'),
       },
@@ -108,14 +109,15 @@ export function registerQueryTools(server: McpServer, service: QueryApplicationS
       try {
         if (!entity) return ok({ entities: await service.describe() });
         const catalog = await service.describe(entity as EntityName);
-        // Conformed dims need the aggregate model; best-effort so describe still works without it.
-        let conformed_dimensions: unknown;
-        try {
-          conformed_dimensions = await service.describeConformedDimensions(entity as EntityName);
-        } catch (e) {
-          conformed_dimensions = { unavailable: e instanceof Error ? e.message : String(e) };
-        }
-        return ok({ catalog, conformed_dimensions });
+        // Measures + conformed dims need the aggregate model; best-effort so describe still works
+        // without it (an unavailable marker rather than failing the whole catalog).
+        const guard = async <T>(p: Promise<T>): Promise<T | { unavailable: string }> =>
+          p.catch((e) => ({ unavailable: e instanceof Error ? e.message : String(e) }));
+        const [measures, conformed_dimensions] = await Promise.all([
+          guard(service.describeMeasures(entity as EntityName)),
+          guard(service.describeConformedDimensions(entity as EntityName)),
+        ]);
+        return ok({ catalog, measures, conformed_dimensions });
       } catch (e) {
         return fail(e);
       }
