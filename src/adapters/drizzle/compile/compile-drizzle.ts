@@ -8,7 +8,12 @@
 import { type SQL, and, eq, getTableColumns, getTableName, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { type PgColumn, type PgTable, alias } from 'drizzle-orm/pg-core';
-import { groupKeyColumns, measureSource, planAggregate } from '../../../internal/analytics/grain';
+import {
+  groupKeyColumns,
+  measureField,
+  measureSource,
+  planAggregate,
+} from '../../../internal/analytics/grain';
 import { resolveJoinPlan } from '../../../internal/analytics/join-plan';
 import { TENANT_GLOBAL } from '../../../internal/analytics/types';
 import type {
@@ -21,7 +26,7 @@ import type {
   ScopeFor,
 } from '../../../internal/analytics/types';
 import { ENGINE_ERROR } from '../../../internal/language/error-messages';
-import { isIdentifier } from '../../../internal/language/identifier';
+import { isIdentifier, toIdentifier } from '../../../internal/language/identifier';
 import { isLeaf } from '../../../internal/language/types';
 import type { Leaf, Op, SimTopkLeaf } from '../../../internal/language/types';
 import type { DealbrainModel } from '../../reference/model.dealbrain';
@@ -215,9 +220,40 @@ function aggCore(agg: Agg, valExpr: SQL, isStar: boolean): SQL {
   }
 }
 
+// The EAV value join — the ONE place the resolved-semantic-layer field_values join is built, shared
+// by every verb that reads an EAV field (measure · group dim · filter). A 1:1 join keyed on
+// (entity_id = source.pk AND field_definition_id = defId), exposing the typed value column; the
+// caller supplies a unique alias (so multiple EAV refs in one statement don't collide) and decides
+// how to use the result. Column OBJECTS + defId bound param — no raw table name / qualified refs.
+// (This used to be copy-pasted per verb, and the FILTER verb was missed entirely — that was the gap.)
+function eavValueJoin(
+  model: DealbrainModel,
+  source: string,
+  eav: { valueColumn: string; defId: string },
+  aliasName: string,
+): { valueCol: PgColumn; join: { table: PgTable; on: SQL } } {
+  const valueTable = model.registry[source]?.eav?.valueTable;
+  if (!valueTable) {
+    throw new Error(`${ENGINE_ERROR.AGGREGATE} no EAV value table registered for ${source}`);
+  }
+  const fv = alias(valueTable, aliasName);
+  const cols = Object.values(getTableColumns(fv)) as PgColumn[];
+  const byName = (n: string): PgColumn => {
+    const c = cols.find((col) => col.name === n);
+    if (!c) throw new Error(`${ENGINE_ERROR.AGGREGATE} EAV column "${n}" missing on ${source}`);
+    return c;
+  };
+  const pk = model.colByDbName[source]![model.analytics[source]!.pk]!;
+  return {
+    valueCol: byName(eav.valueColumn),
+    join: {
+      table: fv,
+      on: and(eq(byName('entity_id'), pk), eq(byName('field_definition_id'), eav.defId))!,
+    },
+  };
+}
+
 // The value expression a measure aggregates over, plus any EAV join it needs.
-// EAV: alias(valueTable) + column OBJECTS (entity_id/field_definition_id/value_*),
-// defId as a bound param — no raw table name, no raw qualified refs.
 function measureValue(
   model: DealbrainModel,
   source: string,
@@ -225,28 +261,14 @@ function measureValue(
   joins: Array<{ table: PgTable; on: SQL }>,
 ): { valExpr: SQL; isStar: boolean } {
   if (m.on === '*') return { valExpr: sql``, isStar: true };
-  const head = m.on.split('.')[0]!;
+  const head = measureField(m); // field relative to source — strips the relation prefix of a dotted `on`
   const field = model.analytics[source]?.fields[head];
   if (field?.eav) {
-    const valueTable = model.registry[source]?.eav?.valueTable;
-    if (!valueTable) {
-      throw new Error(`${ENGINE_ERROR.AGGREGATE} no EAV value table registered for ${source}`);
-    }
-    const fv = alias(valueTable, `fv_${assertIdent(m.as)}`);
-    const cols = Object.values(getTableColumns(fv)) as PgColumn[];
-    const byName = (n: string): PgColumn => {
-      const c = cols.find((col) => col.name === n);
-      if (!c) throw new Error(`${ENGINE_ERROR.AGGREGATE} EAV column "${n}" missing on ${source}`);
-      return c;
-    };
-    const pk = model.colByDbName[source]![model.analytics[source]!.pk]!;
-    joins.push({
-      table: fv,
-      on: and(eq(byName('entity_id'), pk), eq(byName('field_definition_id'), field.eav.defId))!,
-    });
-    return { valExpr: sql`${byName(field.eav.valueColumn)}`, isStar: false };
+    const { valueCol, join } = eavValueJoin(model, source, field.eav, `fv_${assertIdent(m.as)}`);
+    joins.push(join);
+    return { valExpr: sql`${valueCol}`, isStar: false };
   }
-  return { valExpr: nativeColSql(model, source, m.on).expr, isStar: false };
+  return { valExpr: nativeColSql(model, source, head).expr, isStar: false };
 }
 
 // model.colByDbName lookup with a clear failure. fk/pk/column names come from the
@@ -547,9 +569,27 @@ function compileSourceFilter(
   const plan = resolveJoinPlan(model.analytics, source, pred.on, 'filter');
   switch (plan.kind) {
     case 'local': {
+      const head = plan.column.split('.')[0]!;
+      // EAV-bound field (resolved semantic layer): lower via the shared 1:1 field_values join,
+      // mirroring the group-dim / measure EAV paths. Checked BEFORE the native path — colByDbName
+      // only knows native columns and would reject it. This is the verb the EAV bypass used to miss.
+      const eavField = model.analytics[source]?.fields[head];
+      if (eavField?.eav) {
+        // toIdentifier (sanitize), NOT assertIdent (reject): `head` is a HOST field key and EAV keys
+        // are routinely PascalCase ("Amount", "StageName") — safe, just not lowercase-snake. The
+        // alias is internal, so normalizing the case is harmless. assertIdent here was the bug.
+        const { valueCol, join } = eavValueJoin(
+          model,
+          source,
+          eavField.eav,
+          `fvf_${toIdentifier(head)}`,
+        );
+        joins.push(join);
+        return applyLeafOp(sql`${valueCol}`, eavField.type ?? 'string', op, value);
+      }
       // The guard proved this leaf resolves on every compiled source, so the column is present;
       // the check is defensive (an absent column → 400, NEVER a silent `true` no-op).
-      if (!model.colByDbName[source]?.[plan.column.split('.')[0]!]) {
+      if (!model.colByDbName[source]?.[head]) {
         throw new Error(`${ENGINE_ERROR.AGGREGATE} unknown column "${plan.column}" on ${source}`);
       }
       const { expr, type } = nativeColSql(model, source, plan.column);
@@ -599,33 +639,8 @@ function lowerGroupDim(
   // resolveJoinPlan (which only knows native columns + relation hops, and would reject the dim).
   const eavField = model.analytics[source]?.fields[dim];
   if (eavField?.eav && eavField.role === 'dimension') {
-    const valueTable = model.registry[source]?.eav?.valueTable;
-    if (!valueTable) {
-      throw new Error(`${ENGINE_ERROR.AGGREGATE} no EAV value table registered for ${source}`);
-    }
-    const fv = alias(valueTable, `fvg_${assertIdent(dim)}`);
-    const cols = Object.values(getTableColumns(fv)) as PgColumn[];
-    const byName = (n: string): PgColumn => {
-      const c = cols.find((col) => col.name === n);
-      if (!c) throw new Error(`${ENGINE_ERROR.AGGREGATE} EAV column "${n}" missing on ${source}`);
-      return c;
-    };
-    const pk = model.colByDbName[source]![model.analytics[source]!.pk]!;
-    const valueCol = byName(eavField.eav.valueColumn);
-    return {
-      alias: dim,
-      col: valueCol,
-      expr: sql`${valueCol}`,
-      joins: [
-        {
-          table: fv,
-          on: and(
-            eq(byName('entity_id'), pk),
-            eq(byName('field_definition_id'), eavField.eav.defId),
-          )!,
-        },
-      ],
-    };
+    const { valueCol, join } = eavValueJoin(model, source, eavField.eav, `fvg_${assertIdent(dim)}`);
+    return { alias: dim, col: valueCol, expr: sql`${valueCol}`, joins: [join] };
   }
   const plan = resolveJoinPlan(model.analytics, source, dim, 'group');
   if (plan.kind === 'reject') throw new Error(`${ENGINE_ERROR.AGGREGATE} ${plan.reason}`);
@@ -989,21 +1004,13 @@ export function compileNaiveDrizzle(db: Db, model: DealbrainModel, q: Aggregate)
       isStar = true;
       valExpr = sql``;
     } else {
-      const field = model.analytics[src]?.fields[m.on.split('.')[0]!];
+      const head = measureField(m); // field relative to source — strips a dotted `on`'s relation prefix
+      const field = model.analytics[src]?.fields[head];
       if (field?.eav) {
-        const valueTable = model.registry[src]?.eav?.valueTable;
-        const fv = alias(valueTable!, `fv_${assertIdent(m.as)}`);
-        const cols = Object.values(getTableColumns(fv)) as PgColumn[];
-        const byName = (n: string) => cols.find((c) => c.name === n)!;
-        joins.push({
-          table: fv,
-          on: and(
-            eq(byName('entity_id'), model.colByDbName[src]!.id!),
-            eq(byName('field_definition_id'), field.eav.defId),
-          )!,
-        });
-        valExpr = sql`${byName(field.eav.valueColumn)}`;
-      } else valExpr = sql`${model.colByDbName[src]![m.on.split('.')[0]!]!}`;
+        const { valueCol, join } = eavValueJoin(model, src, field.eav, `fv_${assertIdent(m.as)}`);
+        joins.push(join);
+        valExpr = sql`${valueCol}`;
+      } else valExpr = nativeColSql(model, src, head).expr;
     }
     shape[m.as] = aggCore(m.agg, valExpr, isStar).as(m.as);
   }
