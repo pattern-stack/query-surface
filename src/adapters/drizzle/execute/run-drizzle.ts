@@ -62,7 +62,12 @@ export async function runAggregateDrizzle(
         const r = resolveJoinPlan(model.analytics, s, on, 'filter');
         if (r.kind !== 'reject') {
           const owner = r.kind === 'local' ? s : r.kind === 'to-one' ? r.target : r.child;
-          if (model.colByDbName[owner]?.[r.column.split('.')[0]!]) continue; // resolves here
+          const col = r.column.split('.')[0]!;
+          if (model.colByDbName[owner]?.[col]) continue; // native column resolves here
+          // EAV-bound field (the resolved semantic layer): not a native column, but a registered
+          // dimension/measure reachable via a 1:1 field_values join — grain-safe, lowered by
+          // compileSourceFilter's EAV branch (mirrors the EAV group-dim / measure value paths).
+          if (r.kind === 'local' && model.analytics[owner]?.fields[col]?.eav) continue;
         } else if (r.code === 'ambiguous' || r.code === 'unsupported') {
           // a join diamond / multi-hop collection path on this source — informative reason.
           throw new Error(`${ENGINE_ERROR.AGGREGATE} ${r.reason}`);

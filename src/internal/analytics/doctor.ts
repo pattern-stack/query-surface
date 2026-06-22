@@ -2,7 +2,7 @@
 // refusals. Extends the package's existing doctor model (Finding/Severity).
 
 import { ENGINE_ERROR } from '../language/error-messages';
-import { groupGrain, measureSource } from './grain';
+import { groupGrain, measureField, measureSource } from './grain';
 import type { AggRegistry, Aggregate } from './types';
 
 export type AggFindingCode =
@@ -29,7 +29,7 @@ export function diagnoseAggregate(reg: AggRegistry, q: Aggregate): AggFinding[] 
     if (m.on === '*') continue;
     const src = measureSource(q, m);
     const ent = reg[src];
-    const head = m.on.split('.')[0]!;
+    const head = measureField(m);
     const field = ent?.fields[head];
     if (!field) {
       findings.push({
