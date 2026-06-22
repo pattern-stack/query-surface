@@ -10,6 +10,7 @@
 // catalog from ever NAMING a non-additive field as summable.
 
 import { ENGINE_ERROR } from '../language/error-messages';
+import { measureField } from './grain';
 import type { Additivity, Agg, AggRegistry, Aggregate, Measure, Predicate } from './types';
 
 /** A simple (single-column) measure: an aggregate over one field of one source. */
@@ -85,7 +86,7 @@ export function validateMeasureDef(
   name: string,
   def: AtomicMeasureDef,
 ): void {
-  const head = def.on.split('.')[0]!;
+  const head = measureField(def);
   const field = analytics[def.source]?.fields[head];
   if (!field) {
     throw new Error(
