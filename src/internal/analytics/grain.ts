@@ -51,6 +51,17 @@ export function measureSource(q: Aggregate, m: Measure): string {
   return q.entity;
 }
 
+/** A measure's field NAME relative to its source. A dotted `on` ("relation.field") names the source
+ *  in its FIRST segment (see measureSource) and the FIELD in the rest — so the field is everything
+ *  AFTER the first dot (a json subpath rides along: "rel.data.k" → "data.k"). A bare `on` already IS
+ *  the field; `*` passes through. Mirrors group_by's dim handling (post-dot segment) so a measure and
+ *  a group_by parse the SAME dotted syntax the same way — `on:"observations.id"` and
+ *  `source:"observations", on:"id"` resolve identically. */
+export function measureField(m: { on: string }): string {
+  if (m.on === '*') return '*';
+  return m.on.includes('.') ? m.on.split('.').slice(1).join('.') : m.on;
+}
+
 /** A measure FANS at the group grain iff its source is strictly finer
  *  (reached from the group grain across a has_many edge). */
 export function measureFans(reg: AggRegistry, groupGrainEntity: string, source: string): boolean {
