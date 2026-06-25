@@ -8,7 +8,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
-import { type DealbrainModel, loadDealbrainModel } from '../../../reference/model.dealbrain';
+import { type AggregateModel, loadDealbrainModel } from '../../../reference/model.dealbrain';
 import { type DrizzleDb, makeDb } from '../drizzle-db';
 import { runAggregateDrizzle } from '../run-drizzle';
 
@@ -23,7 +23,7 @@ suite(
   () => {
     let db: DrizzleDb;
     let close: () => Promise<void>;
-    let model: DealbrainModel;
+    let model: AggregateModel;
     const truth = async (text: string) =>
       (await db.execute(sql.raw(text))).rows as Record<string, unknown>[];
     const num = (v: unknown) => Number(v);

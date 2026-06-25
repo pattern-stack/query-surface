@@ -13,7 +13,7 @@ import {
 } from '../../../../internal/analytics/compare';
 import type { AggregateInput } from '../../../../internal/analytics/measure-catalog';
 import { QueryApplicationService } from '../../../../query.application-service';
-import { type DealbrainModel, loadDealbrainModel } from '../../../reference/model.dealbrain';
+import { type AggregateModel, loadDealbrainModel } from '../../../reference/model.dealbrain';
 import { type DrizzleDb, makeDb } from '../drizzle-db';
 import { runAggregateDrizzle } from '../run-drizzle';
 
@@ -23,7 +23,7 @@ const suite = DBURL ? describe : describe.skip;
 suite('compare() — live dealbrain (variant-vs-variant on observation type)', () => {
   let db: DrizzleDb;
   let close: () => Promise<void>;
-  let model: DealbrainModel;
+  let model: AggregateModel;
   const truth = async (text: string) =>
     (await db.execute(sql.raw(text))).rows as Record<string, unknown>[];
   const num = (v: unknown) => Number(v);

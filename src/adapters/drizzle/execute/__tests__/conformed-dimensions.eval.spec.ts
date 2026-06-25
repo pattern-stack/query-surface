@@ -12,7 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { conformedDimensions } from '../../../../internal/analytics/join-plan';
 import { TENANT_GLOBAL } from '../../../../internal/analytics/types';
-import { type DealbrainModel, loadDealbrainModel } from '../../../reference/model.dealbrain';
+import { type AggregateModel, loadDealbrainModel } from '../../../reference/model.dealbrain';
 import { type DrizzleDb, makeDb } from '../drizzle-db';
 import { runAggregateDrizzle } from '../run-drizzle';
 
@@ -22,7 +22,7 @@ const suite = DBURL ? describe : describe.skip;
 suite('conformed dimensions — live dealbrain (ADR-0024 wave 1)', () => {
   let db: DrizzleDb;
   let close: () => Promise<void>;
-  let model: DealbrainModel;
+  let model: AggregateModel;
   const truth = async (text: string) =>
     (await db.execute(sql.raw(text))).rows as Record<string, unknown>[];
   const num = (v: unknown) => Number(v);

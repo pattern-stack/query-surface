@@ -29,7 +29,7 @@ import { ENGINE_ERROR } from '../../../internal/language/error-messages';
 import { isIdentifier, toIdentifier } from '../../../internal/language/identifier';
 import { isLeaf } from '../../../internal/language/types';
 import type { Leaf, Op, SimTopkLeaf } from '../../../internal/language/types';
-import type { DealbrainModel } from '../../reference/model.dealbrain';
+import type { AggregateModel } from '../registry/model';
 
 // biome-ignore lint/suspicious/noExplicitAny: Drizzle's query-builder + WithSubquery types don't survive dynamic join chains / dynamic select shapes; the package uses `any` accumulators here (see runners.ts).
 type Db = NodePgDatabase<any>;
@@ -64,7 +64,7 @@ type Resolver = (path: string) => Resolved;
 
 // Native column → a `sql` wrapping the COLUMN OBJECT (Drizzle qualifies + escapes),
 // with JSON dotted paths lowered to ->> over bound path segments. No raw strings.
-function nativeColSql(model: DealbrainModel, entity: string, path: string): Resolved {
+function nativeColSql(model: AggregateModel, entity: string, path: string): Resolved {
   const [head, ...rest] = path.split('.');
   const col = model.colByDbName[entity]?.[head!];
   if (!col) throw new Error(`${ENGINE_ERROR.AGGREGATE} unknown column "${head}" on ${entity}`);
@@ -227,7 +227,7 @@ function aggCore(agg: Agg, valExpr: SQL, isStar: boolean): SQL {
 // how to use the result. Column OBJECTS + defId bound param — no raw table name / qualified refs.
 // (This used to be copy-pasted per verb, and the FILTER verb was missed entirely — that was the gap.)
 function eavValueJoin(
-  model: DealbrainModel,
+  model: AggregateModel,
   source: string,
   eav: { valueColumn: string; defId: string },
   aliasName: string,
@@ -255,7 +255,7 @@ function eavValueJoin(
 
 // The value expression a measure aggregates over, plus any EAV join it needs.
 function measureValue(
-  model: DealbrainModel,
+  model: AggregateModel,
   source: string,
   m: Measure,
   joins: Array<{ table: PgTable; on: SQL }>,
@@ -273,7 +273,7 @@ function measureValue(
 
 // model.colByDbName lookup with a clear failure. fk/pk/column names come from the
 // registry + the join-plan resolver — exact-match lookups, never interpolated.
-function colObj(model: DealbrainModel, entity: string, name: string): PgColumn {
+function colObj(model: AggregateModel, entity: string, name: string): PgColumn {
   const c = model.colByDbName[entity]?.[name];
   if (!c) throw new Error(`${ENGINE_ERROR.AGGREGATE} unknown column "${name}" on ${entity}`);
   return c;
@@ -287,7 +287,7 @@ function colObj(model: DealbrainModel, entity: string, name: string): PgColumn {
 // semijoin child — scope is non-bypassable across the WHOLE graph the query touches (the
 // design-hardening proof: a value-predicate scope has no FK-tenant invariant behind it, so
 // a join/semijoin to an unscoped parent/child would leak or fabricate membership).
-function scopeSqlFor(model: DealbrainModel, entity: string, scopeFor?: ScopeFor): SQL | null {
+function scopeSqlFor(model: AggregateModel, entity: string, scopeFor?: ScopeFor): SQL | null {
   if (!scopeFor) return null;
   const decision = scopeFor(entity);
   if (decision === undefined) {
@@ -304,7 +304,7 @@ function scopeSqlFor(model: DealbrainModel, entity: string, scopeFor?: ScopeFor)
 // SAME single-row-join class as the EAV value join. Scope folds into the ON (not a WHERE):
 // an out-of-scope parent yields NULL columns rather than dropping the (in-scope) child row.
 function lowerToOne(
-  model: DealbrainModel,
+  model: AggregateModel,
   hops: { from: string; to: string; fk: string; toPk: string }[],
   target: string,
   column: string,
@@ -335,7 +335,7 @@ function lowerToOne(
 // only (wave 1). Child scope ANDs into the EXISTS body — an unscoped child could FABRICATE
 // cross-tenant membership (strictly worse than a leak).
 function lowerSemijoin(
-  model: DealbrainModel,
+  model: AggregateModel,
   source: string,
   child: string,
   fk: string,
@@ -387,7 +387,7 @@ interface Cohort {
 // dotted `on` resolves to-one/semijoin to the child that owns it (resolveJoinPlan reused
 // UNCHANGED). The cohort is built over THIS entity, once, statement-level.
 function topkSemanticEntity(
-  model: DealbrainModel,
+  model: AggregateModel,
   rootEntity: string,
   leaf: SimTopkLeaf,
 ): { entity: string; column: string } {
@@ -409,7 +409,7 @@ function topkSemanticEntity(
 // key). The cohort's WHERE folds the semantic entity's scope (#3) BEFORE the ORDER BY/LIMIT.
 function buildTopkCohort(
   db: Db,
-  model: DealbrainModel,
+  model: AggregateModel,
   q: Aggregate,
   leaf: SimTopkLeaf,
   scopeFor?: ScopeFor,
@@ -477,7 +477,7 @@ function buildTopkCohort(
 // shell with inner `child.pk in (select pk from cohort)` (scope folded in the EXISTS body, #3).
 // NEVER a JOIN to the ranked CTE on a non-unique key (invariant #2).
 function lowerTopkMembership(
-  model: DealbrainModel,
+  model: AggregateModel,
   source: string,
   cohort: Cohort,
   scopeFor?: ScopeFor,
@@ -534,7 +534,7 @@ function collectTopkLeaves(pred: Predicate, underAnd = true): SimTopkLeaf[] {
 // non-conforming measure unfiltered, fabricating cross-measure comparisons). A reject reaching
 // here is a guard bug → fail closed, never a silent drop. and/or/not just compose real conditions.
 function compileSourceFilter(
-  model: DealbrainModel,
+  model: AggregateModel,
   source: string,
   pred: Predicate,
   joins: Array<{ table: PgTable; on: SQL }>,
@@ -627,7 +627,7 @@ function compileSourceFilter(
 // GROUP BY key, the FULL OUTER JOIN key, and order_by/having all agree. (A bare local dim
 // keeps today's bare-column key.)
 function lowerGroupDim(
-  model: DealbrainModel,
+  model: AggregateModel,
   source: string,
   dim: string,
   scopeFor?: ScopeFor,
@@ -667,7 +667,7 @@ function lowerGroupDim(
 // the builder must keep its TypedQueryBuilder shape so db.$with().as() accepts it.
 function sourceSelect(
   db: Db,
-  model: DealbrainModel,
+  model: AggregateModel,
   q: Aggregate,
   source: string,
   measures: Measure[],
@@ -751,7 +751,7 @@ function sourceSelect(
 // OBJECTS from the WithSubquery — escaped by construction, never raw.
 function multiSourceSelect(
   db: Db,
-  model: DealbrainModel,
+  model: AggregateModel,
   q: Aggregate,
   plan: AggregatePlan,
   scopeFor?: ScopeFor,
@@ -853,7 +853,7 @@ export interface CompiledDrizzle {
 
 export function compileGroupedDrizzle(
   db: Db,
-  model: DealbrainModel,
+  model: AggregateModel,
   q: Aggregate,
   scopeFor?: ScopeFor,
 ): CompiledDrizzle {
@@ -977,7 +977,7 @@ export function compileGroupedDrizzle(
 }
 
 /** The WRONG single-pass root-join (builder), for eval contrast: fans out. */
-export function compileNaiveDrizzle(db: Db, model: DealbrainModel, q: Aggregate): AggQuery {
+export function compileNaiveDrizzle(db: Db, model: AggregateModel, q: Aggregate): AggQuery {
   const root = q.entity;
   const joins: Array<{ table: PgTable; on: SQL }> = [];
   const joined = new Set<string>();
