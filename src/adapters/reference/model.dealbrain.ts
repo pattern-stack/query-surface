@@ -25,8 +25,11 @@ import {
 } from './schema.dealbrain';
 
 /** The dealbrain reference instance is a plain AggregateModel — the alias is
- *  retained for the engine internals + eval specs that reference it by name. */
+ *  retained as the reference instance's local name (loadDealbrainModel's return
+ *  type). Callers outside this adapter use AggregateModel directly; re-exported
+ *  here for the eval specs that load this fixture. */
 export type DealbrainModel = AggregateModel;
+export type { AggregateModel };
 
 // Native dimension tags ride on FieldMeta (keyed by column PROPERTY name).
 const accountsMeta: FieldMetaMap = { id: { role: 'dimension' }, name: { role: 'dimension' } };
