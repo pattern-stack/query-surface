@@ -11,7 +11,7 @@ import type {
   AtomicMeasureDef,
   RatioMeasureDef,
 } from '../../../../internal/analytics/measure-catalog';
-import { type DealbrainModel, loadDealbrainModel } from '../../../reference/model.dealbrain';
+import { type AggregateModel, loadDealbrainModel } from '../../../reference/model.dealbrain';
 import { compileNaiveDrizzle } from '../../compile/compile-drizzle';
 import { type DrizzleDb, makeDb } from '../drizzle-db';
 import { aggregate, runAggregateDrizzle } from '../run-drizzle';
@@ -24,7 +24,7 @@ const DP = `(select id from field_definitions where entity_type='opportunity' an
 suite('aggregate engine — Drizzle-native, live dealbrain eval superset', () => {
   let db: DrizzleDb;
   let close: () => Promise<void>;
-  let model: DealbrainModel;
+  let model: AggregateModel;
   const truth = async (text: string) => {
     return (await db.execute(sql.raw(text))).rows as Record<string, unknown>[];
   };
@@ -321,7 +321,7 @@ suite('aggregate engine — Drizzle-native, live dealbrain eval superset', () =>
     source: 'opportunities',
     additivity: 'additive',
   };
-  const modelWithRatios = (): DealbrainModel => ({
+  const modelWithRatios = (): AggregateModel => ({
     ...model,
     catalog: {
       ...model.catalog,
@@ -523,7 +523,7 @@ suite('aggregate engine — Drizzle-native, live dealbrain eval superset', () =>
     // A running total preserves rows (window), so aggregate() must refuse it and point
     // the caller at query({window}) — the path proven by query-window.eval.spec.ts.
     const m = modelWithRatios();
-    const withCumulative: DealbrainModel = {
+    const withCumulative: AggregateModel = {
       ...m,
       catalog: {
         ...m.catalog,

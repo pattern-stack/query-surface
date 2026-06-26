@@ -7,7 +7,7 @@
 //   DBURL=postgres://postgres:PW@localhost:54321/dealbrain bun test measure-on-relation.eval
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
-import { type DealbrainModel, loadDealbrainModel } from '../../../reference/model.dealbrain';
+import { type AggregateModel, loadDealbrainModel } from '../../../reference/model.dealbrain';
 import { type DrizzleDb, makeDb } from '../drizzle-db';
 import { runAggregateDrizzle } from '../run-drizzle';
 
@@ -17,7 +17,7 @@ const suite = DBURL ? describe : describe.skip;
 suite('measure on:"relation.field" — resolves the field, ≡ source+bare (live dealbrain)', () => {
   let db: DrizzleDb;
   let close: () => Promise<void>;
-  let model: DealbrainModel;
+  let model: AggregateModel;
   const n = (v: unknown) => Number(v);
   const run = (measures: Parameters<typeof runAggregateDrizzle>[2]['measures']) =>
     runAggregateDrizzle(db, model, { entity: 'opportunities', measures });
