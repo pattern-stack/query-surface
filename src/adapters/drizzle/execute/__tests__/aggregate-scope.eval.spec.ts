@@ -9,7 +9,7 @@ import { sql } from 'drizzle-orm';
 import { TENANT_GLOBAL } from '../../../../internal/analytics/types';
 import type { ScopeFor } from '../../../../internal/analytics/types';
 import { QueryApplicationService } from '../../../../query.application-service';
-import { type DealbrainModel, loadDealbrainModel } from '../../../reference/model.dealbrain';
+import { type AggregateModel, loadDealbrainModel } from '../../../reference/model.dealbrain';
 import { type DrizzleDb, makeDb } from '../drizzle-db';
 import { aggregate, runAggregateDrizzle } from '../run-drizzle';
 
@@ -31,7 +31,7 @@ const obsScope: ScopeFor = (s) =>
 suite('aggregate scope — pre-aggregation, per-source, non-bypassable (live dealbrain)', () => {
   let db: DrizzleDb;
   let close: () => Promise<void>;
-  let model: DealbrainModel;
+  let model: AggregateModel;
   const truth = async (text: string) =>
     (await db.execute(sql.raw(text))).rows as Record<string, unknown>[];
   const num = (v: unknown) => Number(v);
