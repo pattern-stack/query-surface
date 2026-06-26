@@ -1,6 +1,6 @@
 // B1 falsifiers: scope is folded PRE-aggregation, PER source CTE, and is
 // non-bypassable — proven against live dealbrain data (the engine path AND the
-// QueryApplicationService.aggregate() public path).
+// QueryApplicationService.measure() public path).
 //
 //   DBURL=postgres://postgres:PW@localhost:54321/dealbrain bun test aggregate-scope.eval
 
@@ -169,13 +169,13 @@ suite('aggregate scope — pre-aggregation, per-source, non-bypassable (live dea
     expect(p).not.toContain('where'); // unscoped, unfiltered → no WHERE at all
   });
 
-  it('S6 service path: QueryApplicationService.aggregate() applies options.scope per source', async () => {
+  it('S6 service path: QueryApplicationService.measure() applies options.scope per source', async () => {
     const svc = new QueryApplicationService(db, {
       aggregateModel: () => loadDealbrainModel(db),
       scope: (entity) =>
         entity === 'observations' ? { on: 'type', op: 'eq', value: 'commitment' } : undefined,
     });
-    const res = await svc.aggregate(
+    const res = await svc.measure(
       'observations' as never,
       { measures: [{ on: '*', agg: 'count', as: 'n' }] },
       { include_sql: true },
@@ -188,7 +188,7 @@ suite('aggregate scope — pre-aggregation, per-source, non-bypassable (live dea
   it('S6b service path: aggregate() without aggregateModel fails loud', async () => {
     const svc = new QueryApplicationService(db, {});
     expect(
-      svc.aggregate('observations' as never, { measures: [{ on: '*', agg: 'count', as: 'n' }] }),
+      svc.measure('observations' as never, { measures: [{ on: '*', agg: 'count', as: 'n' }] }),
     ).rejects.toThrow(/aggregateModel is required/);
   });
 
@@ -253,14 +253,14 @@ suite('aggregate scope — pre-aggregation, per-source, non-bypassable (live dea
       scope: scope as never,
       tenantGlobalEntities: ['opportunities', 'accounts'] as never,
     });
-    const res = await ok.aggregate('opportunities' as never, q);
+    const res = await ok.measure('opportunities' as never, q);
     expect(res.rows.length).toBeGreaterThan(0);
     // NOT declared → denied (opportunities uncovered + not global).
     const denied = new QueryApplicationService(db, {
       aggregateModel: () => loadDealbrainModel(db),
       scope: scope as never,
     });
-    expect(denied.aggregate('opportunities' as never, q)).rejects.toThrow(
+    expect(denied.measure('opportunities' as never, q)).rejects.toThrow(
       /has no tenancy scope|tenant_global/i,
     );
   });

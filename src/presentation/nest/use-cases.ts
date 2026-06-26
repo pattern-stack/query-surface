@@ -92,7 +92,7 @@ export class SearchUseCase {
     return translateEngineErrors(async () => {
       const { scope, ...queryOpts } = opts;
       const asUser = await resolveScope(this.querySurface, scope);
-      const result = await this.querySurface.query(entity, queryOpts, asUser);
+      const result = await this.querySurface.select(entity, queryOpts, asUser);
       if (!result.preview || result.preview.length === 0) return result;
       const catalog = await this.querySurface.describe(entity);
       const keys = publicKeySet(catalog, this.querySurface.exposeColumns);
@@ -117,7 +117,7 @@ export class AggregateUseCase {
       const asUser = await resolveScope(this.querySurface, scope);
       // No row projection: grouped rows carry no entity id and no EAV virtual
       // columns to allowlist — the result is named measure aliases + group keys.
-      return this.querySurface.aggregate(entity, q, { include_sql }, asUser);
+      return this.querySurface.measure(entity, q, { include_sql }, asUser);
     });
   }
 }

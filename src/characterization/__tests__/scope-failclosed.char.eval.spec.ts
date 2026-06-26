@@ -74,7 +74,7 @@ suite('scope-failclosed — characterization', () => {
     const svc = scopedService((e) =>
       e === 'observations' ? { on: 'type', op: 'eq', value: 'commitment' } : undefined,
     );
-    const res = await svc.query('observations', { page: { limit: 5000 }, include_sql: true });
+    const res = await svc.select('observations', { page: { limit: 5000 }, include_sql: true });
     const ref = await truth(COMMITMENT);
     // scope alone collapses the population to type=commitment (2084), NOT the 29092 total.
     expect(res.total).toBe(num(ref[0]!.n));
@@ -86,7 +86,7 @@ suite('scope-failclosed — characterization', () => {
     const svc = scopedService((e) =>
       e === 'observations' ? { on: 'type', op: 'eq', value: 'commitment' } : undefined,
     );
-    const res = await svc.query('observations', {
+    const res = await svc.select('observations', {
       filter: { on: 'type', op: 'eq', value: 'discovery' },
       page: { limit: 5000 },
     });
@@ -98,7 +98,7 @@ suite('scope-failclosed — characterization', () => {
     const svc = scopedService((e) =>
       e === 'observations' ? { on: 'type', op: 'in', value: ['commitment', 'risk'] } : undefined,
     );
-    const res = await svc.query('observations', {
+    const res = await svc.select('observations', {
       filter: { on: 'type', op: 'eq', value: 'commitment' },
       page: { limit: 5000 },
     });
@@ -142,7 +142,7 @@ suite('scope-failclosed — characterization', () => {
     // reconcile these two error messages into one fail-closed contract; the
     // BEHAVIOR (refuse, never drop) already matches. — revisit
     expect(
-      h.service.query('observations', {
+      h.service.select('observations', {
         filter: { on: 'nonexistent_col', op: 'eq', value: 'x' },
         page: { limit: 10 },
       }),
@@ -154,7 +154,7 @@ suite('scope-failclosed — characterization', () => {
     // ANDs onto the id-IN, and an unresolvable column throws FIELD_PATH, NOT a
     // silent drop. Pinned AS-IS; the IR should land on ONE fail-closed error
     // contract across query/fetch/aggregate. — revisit
-    const some = await h.service.query('observations', { page: { limit: 3 } });
+    const some = await h.service.select('observations', { page: { limit: 3 } });
     expect(
       h.service.fetch('observations', some.ids, {
         filter: { on: 'nonexistent_col', op: 'eq', value: 'x' },
@@ -165,7 +165,7 @@ suite('scope-failclosed — characterization', () => {
   it('F7 ITEM-F control: a RESOLVABLE filter column does narrow (proves the throw is column-specific)', async () => {
     // Same shape as F5 but with a real column → no throw, narrows to the truth.
     // Confirms F5/F6 throw because the column is unresolvable, not because filtering is broken.
-    const res = await h.service.query('observations', {
+    const res = await h.service.select('observations', {
       filter: { on: 'type', op: 'eq', value: 'commitment' },
       page: { limit: 5000 },
     });
@@ -183,7 +183,7 @@ suite('scope-failclosed — characterization', () => {
     // filter column is refused (not silently dropped → never answers a DIFFERENT
     // question). Distinct error text from F5/F6 (see the F5 divergence note).
     expect(
-      h.service.aggregate('observations', {
+      h.service.measure('observations', {
         measures: [{ on: '*', agg: 'count', as: 'n' }],
         filter: { on: 'nonexistent_col', op: 'eq', value: 'x' },
       }),
@@ -204,7 +204,7 @@ suite('scope-failclosed — characterization', () => {
     // `opportunities.state_of_deal_status` which joins to-one; a genuinely to-many dim like
     // `observations.type` on the opp measure is rejected by the resolver. Either way: REFUSED.)
     expect(
-      h.service.aggregate('opportunities', {
+      h.service.measure('opportunities', {
         group_by: ['type'],
         measures: [
           { on: 'ExpectedRevenue', agg: 'sum', as: 'w' },
@@ -215,7 +215,7 @@ suite('scope-failclosed — characterization', () => {
   });
 
   it('F10 multi-source: a SHARED key (account_id) FULL OUTER JOINs + COALESCEs — group keys = the UNION', async () => {
-    const res = await h.service.aggregate(
+    const res = await h.service.measure(
       'opportunities',
       {
         group_by: ['account_id'],
@@ -269,7 +269,7 @@ suite('scope-failclosed — characterization', () => {
       actorOrganizationId: DEALBRAIN_ORG,
       aggregateModel: withRatio,
     });
-    const res = await svc.aggregate('opportunities', {
+    const res = await svc.measure('opportunities', {
       group_by: ['account_id'],
       measures: [{ ref: 'wpd' }],
     });
@@ -318,7 +318,7 @@ suite('scope-failclosed — characterization', () => {
       actorOrganizationId: DEALBRAIN_ORG,
       aggregateModel: withRatio,
     });
-    const res = await svc.aggregate('opportunities', {
+    const res = await svc.measure('opportunities', {
       group_by: ['account_id'],
       measures: [{ ref: 'wpd' }],
     });

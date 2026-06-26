@@ -83,7 +83,7 @@ suite('relevance-as-filter (query/fetch) — characterization', () => {
     ).map((r) => r.id);
     expect(expectedIds.length).toBe(178); // non-vacuity pin (drifts if the fixture is reseeded)
 
-    const res = await h.service.query('observations', {
+    const res = await h.service.select('observations', {
       filter: { on: 'normalized_text', op: 'relevant', query: ANCHOR, threshold: THRESHOLD },
       page: { limit: 5000 }, // lift the default page cap so ids carries the WHOLE cohort
       include_sql: true,
@@ -124,7 +124,7 @@ suite('relevance-as-filter (query/fetch) — characterization', () => {
       `with q as ${Q} select o.id, ${SIM} as sim from observations o, q where o.embedding is not null and ${SIM} < ${THRESHOLD} order by sim desc, o.id asc limit 1`,
     );
 
-    const res = await h.service.query('observations', {
+    const res = await h.service.select('observations', {
       filter: { on: 'normalized_text', op: 'relevant', query: ANCHOR, threshold: THRESHOLD },
       citation: { boundary: true }, // highest_excluded is ON-REQUEST
     });
@@ -147,7 +147,7 @@ suite('relevance-as-filter (query/fetch) — characterization', () => {
   });
 
   it('citation: highest_excluded is ABSENT unless citation.boundary is requested', async () => {
-    const res = await h.service.query('observations', {
+    const res = await h.service.select('observations', {
       filter: { on: 'normalized_text', op: 'relevant', query: ANCHOR, threshold: 0.6 },
       // no citation.boundary
     });
@@ -170,7 +170,7 @@ suite('relevance-as-filter (query/fetch) — characterization', () => {
     const expectedIds = topk.map((r) => r.id).sort();
     const kthSim = Number(topk[K - 1]!.sim);
 
-    const res = await h.service.query('observations', {
+    const res = await h.service.select('observations', {
       filter: { on: 'normalized_text', op: 'relevant', query: ANCHOR, top_k: K },
       page: { limit: 5000 },
       include_sql: true,
@@ -195,14 +195,14 @@ suite('relevance-as-filter (query/fetch) — characterization', () => {
   it('top_k XOR: neither threshold nor top_k REJECTS; both REJECT; exactly one is required', async () => {
     // neither → reject (no silent default).
     await expect(
-      h.service.query('observations', {
+      h.service.select('observations', {
         filter: { on: 'normalized_text', op: 'relevant', query: ANCHOR },
       }),
     ).rejects.toThrow(/EXACTLY ONE of "threshold" or "top_k".*neither/);
 
     // both → reject (ambiguous crisp set).
     await expect(
-      h.service.query('observations', {
+      h.service.select('observations', {
         filter: { on: 'normalized_text', op: 'relevant', query: ANCHOR, threshold: 0.5, top_k: 10 },
       }),
     ).rejects.toThrow(/EXACTLY ONE of "threshold" or "top_k".*both/);
@@ -217,7 +217,7 @@ suite('relevance-as-filter (query/fetch) — characterization', () => {
       `with q as ${Q} select o.id, ${SIM} as sim from observations o, q where o.embedding is not null order by (o.embedding <=> q.e) asc, o.id asc limit 4`,
     );
 
-    const res = await h.service.query('observations', {
+    const res = await h.service.select('observations', {
       filter: { on: 'normalized_text', op: 'relevant', query: ANCHOR, threshold: 0.5 },
     });
     const ex = res.citation?.exemplars ?? [];
@@ -254,7 +254,7 @@ suite('relevance-as-filter (query/fetch) — characterization', () => {
     );
     expect(Number(expected)).toBeGreaterThan(0); // non-vacuity
 
-    const res = await h.service.query('accounts', {
+    const res = await h.service.select('accounts', {
       filter: {
         on: 'observations.normalized_text',
         op: 'relevant',
@@ -299,7 +299,7 @@ suite('relevance-as-filter (query/fetch) — characterization', () => {
        select count(distinct account_id)::int as c from cohort where account_id is not null`,
     );
 
-    const res = await h.service.query('accounts', {
+    const res = await h.service.select('accounts', {
       filter: { on: 'observations.normalized_text', op: 'relevant', query: ANCHOR, top_k: K },
       page: { limit: 5000 },
       include_sql: true,
@@ -322,7 +322,7 @@ suite('relevance-as-filter (query/fetch) — characterization', () => {
   // ---------------------------------------------------------------------------
   it('fetch() refinement: a relevant leaf narrows the id list to its relevant members', async () => {
     // Seed an id list (pricing_signal observations), then refine it by relevance to the anchor.
-    const seed = await h.service.query('observations', {
+    const seed = await h.service.select('observations', {
       filter: { on: 'type', op: 'eq', value: 'pricing_signal' },
       page: { limit: 60 },
     });
@@ -388,7 +388,7 @@ suite('relevance-as-filter (query/fetch) — characterization', () => {
     });
 
     // A plain value-op query → NO embed.
-    await spy.query('observations', {
+    await spy.select('observations', {
       filter: { on: 'type', op: 'eq', value: 'pricing_signal' },
       page: { limit: 1 },
     });
@@ -396,7 +396,7 @@ suite('relevance-as-filter (query/fetch) — characterization', () => {
 
     // A relevant query → embed is invoked exactly once (the cohort vector + the citation reuse it,
     // NO second embed).
-    const res = await spy.query('observations', {
+    const res = await spy.select('observations', {
       filter: { on: 'normalized_text', op: 'relevant', query: ANCHOR, threshold: 0.7 },
       page: { limit: 100 },
     });
@@ -443,7 +443,7 @@ suite('relevance-as-filter (query/fetch) — characterization', () => {
     });
 
     await expect(
-      gappy.query('observations', {
+      gappy.select('observations', {
         filter: { on: 'normalized_text', op: 'relevant', query: ANCHOR, threshold: 0.6 },
       }),
     ).rejects.toThrow(/refusing to read it unscoped|scope coverage gap/i);
