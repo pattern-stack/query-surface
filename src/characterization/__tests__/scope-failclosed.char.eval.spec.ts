@@ -32,7 +32,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { POC_ACTOR_USER_ID } from '../../adapters/drizzle/eav/field-map.ts';
 import { loadDealbrainModel } from '../../adapters/reference/model.dealbrain.ts';
-import { QueryApplicationService } from '../../query.application-service.ts';
+import { QueryApplicationService, UNSCOPED } from '../../query.application-service.ts';
 import { DEALBRAIN_ORG, type QuerySurfaceHarness, makeQuerySurface } from '../harness.ts';
 
 const DBURL = process.env.DBURL;
@@ -265,6 +265,7 @@ suite('scope-failclosed — characterization', () => {
       return m;
     };
     const svc = new QueryApplicationService(h.db, {
+      scope: UNSCOPED,
       actorUserId: POC_ACTOR_USER_ID,
       actorOrganizationId: DEALBRAIN_ORG,
       aggregateModel: withRatio,
@@ -314,6 +315,7 @@ suite('scope-failclosed — characterization', () => {
       return m;
     };
     const svc = new QueryApplicationService(h.db, {
+      scope: UNSCOPED,
       actorUserId: POC_ACTOR_USER_ID,
       actorOrganizationId: DEALBRAIN_ORG,
       aggregateModel: withRatio,

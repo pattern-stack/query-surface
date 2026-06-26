@@ -19,6 +19,12 @@ export const ENGINE_ERROR = {
    *  for an expanded entity that was not declared TENANT_GLOBAL — refuse rather
    *  than read it unscoped. A host-configuration refusal, not a caller-input error. */
   EXPAND_SCOPE: 'Expand scope',
+  /** Prefix for a tenancy-scope coverage gap on the QUERIED/FETCHED ROOT entity
+   *  (invariant #3, fail-closed): a configured scope resolver returned undefined
+   *  for the root entity that was not declared TENANT_GLOBAL, and the surface is
+   *  not in the explicit UNSCOPED mode — refuse rather than read it unscoped. A
+   *  host-configuration refusal, not a caller-input error. */
+  SCOPE: 'Scope',
   /** Substring marking an unsupported traversal shape in a path. */
   UNSUPPORTED_IN_PATH: 'not supported in path',
   /** Prefix for an invalid `rank_by` directive. */

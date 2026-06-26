@@ -7,7 +7,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import type { SearchEntityResult } from '../../../../internal/language/types';
-import { QueryApplicationService } from '../../../../query.application-service';
+import { QueryApplicationService, UNSCOPED } from '../../../../query.application-service';
 import {
   accounts,
   accountsRelations,
@@ -41,6 +41,7 @@ suite('query() window measures — live dealbrain', () => {
       { name: 'observations', table: observations, relations: observationsRelations },
     ]);
     svc = new QueryApplicationService(db, {
+      scope: UNSCOPED,
       actorUserId: 'x',
       actorOrganizationId: 'e7e24eb2-49ba-45cb-88b1-43696d1e9ed8',
     });
