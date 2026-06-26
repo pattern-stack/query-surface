@@ -50,7 +50,7 @@ suite('query() window measures — live dealbrain', () => {
   });
 
   it('count(*) OVER (PARTITION BY account_id) annotates rows WITHOUT collapsing', async () => {
-    const res = (await svc.query('observations', {
+    const res = (await svc.select('observations', {
       columns: ['account_id'],
       window: [{ on: '*', agg: 'count', partition_by: ['account_id'], as: 'acct_total' }],
       preview: true,

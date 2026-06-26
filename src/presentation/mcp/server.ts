@@ -3,7 +3,7 @@
 // Transport-agnostic: this builds the server and registers the tools; the caller connects a
 // transport (stdio for local agents, or any other). It is a thin DRIVING adapter — given a
 // composed QueryApplicationService (the host owns composition: DB, registry, model, scope), it
-// exposes describe/query/fetch/aggregate/compare as agent-callable tools.
+// exposes describe/select/fetch/measure/compare as agent-callable tools.
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { QueryApplicationService } from '../../query.application-service.ts';

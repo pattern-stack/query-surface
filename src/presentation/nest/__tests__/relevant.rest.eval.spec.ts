@@ -277,7 +277,7 @@ suite('relevant leaf + citation — REST presentation chain (live dealbrain)', (
       },
       META,
     );
-    const res = await controller.aggregate('observations', body);
+    const res = await controller.measure('observations', body);
 
     // landmine (a) net-new on aggregate(): the collapse path embedded the cohort vector.
     expect(embedCalls).toBe(before + 1);

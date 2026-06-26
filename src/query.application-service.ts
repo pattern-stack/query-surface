@@ -6,7 +6,8 @@
 //
 //   describe(entity?) → the typed field catalog (queryable fields per model,
 //                       assembled from EAV ⊕ Drizzle introspection)
-//   query(entity,…)   → find IDs (+ optional preview) matching a FilterExpression
+//   select(entity,…)  → find IDs (+ optional preview) matching a FilterExpression
+//                       (structured OR semantic/relevance); measure()/compare() collapse
 //   fetch(entity,…)   → hydrate IDs into full rows (+ refinement filter / expand)
 //
 // The pure logic lives underneath (catalog.ts, compiler.ts, service.ts runners);
@@ -277,7 +278,7 @@ export class QueryApplicationService {
   }
 
   /** Find IDs (+ optional preview rows) matching a filter. */
-  async query(entity: EntityName, opts: QueryOptions = {}): Promise<SearchEntityResult> {
+  async select(entity: EntityName, opts: QueryOptions = {}): Promise<SearchEntityResult> {
     const eav = await this.eav();
     // Normalize rank_by aliases (group_by/per → partition_by, top_k → limit, quoted keys),
     // then fill rank_by.on with the entity's default text column when the caller omits it —
@@ -543,7 +544,7 @@ export class QueryApplicationService {
    * non-bypassable (a caller `filter` can only narrow it, never widen). The
    * grain-safe engine (per-source pre-agg + key join) makes fan-out impossible.
    */
-  async aggregate(
+  async measure(
     entity: EntityName,
     q: AggregateRequest,
     opts: { include_sql?: boolean; citation?: { boundary?: boolean } } = {},
@@ -607,7 +608,7 @@ export class QueryApplicationService {
     // Citation is MANDATORY when the BASE filter carries a relevant leaf (ruling b: ONE cohort
     // for all variants). Computed ONCE from the resolved base filter, attached to the result.
     const [result, citation] = await Promise.all([
-      runCompare(entity, resolvedReq, (agg) => this.aggregate(entity, agg)),
+      runCompare(entity, resolvedReq, (agg) => this.measure(entity, agg)),
       this.citationFor(entity, filter, opts.citation?.boundary),
     ]);
     return citation ? { ...result, citation } : result;

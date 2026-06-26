@@ -51,7 +51,7 @@ suite('EAV fields as conformed group dimensions — aggregate() (ADR-0025 §3)',
         group by b.v order by pipeline desc`,
     );
 
-    const res = await h.service.aggregate(
+    const res = await h.service.measure(
       'opportunities',
       {
         group_by: ['deal_size_band'],
@@ -88,7 +88,7 @@ suite('EAV fields as conformed group dimensions — aggregate() (ADR-0025 §3)',
       `select count(distinct o.id) n from opportunities o
          join ${fv('deal_size_band', 'value_text')} b on b.eid = o.id`,
     );
-    const res = await h.service.aggregate('opportunities', {
+    const res = await h.service.measure('opportunities', {
       group_by: ['deal_size_band'],
       measures: [{ on: '*', agg: 'count', as: 'deals' }],
     });
@@ -113,7 +113,7 @@ suite('EAV fields as conformed group dimensions — aggregate() (ADR-0025 §3)',
         group by b.v order by pipeline desc`,
     );
 
-    const res = await h.service.aggregate('opportunities', {
+    const res = await h.service.measure('opportunities', {
       group_by: ['deal_size_band'],
       measures: [{ on: 'ExpectedRevenue', agg: 'sum', as: 'pipeline' }],
       filter: {
@@ -133,7 +133,7 @@ suite('EAV fields as conformed group dimensions — aggregate() (ADR-0025 §3)',
   it('R4 an UNDECLARED EAV field is NOT groupable (closed-by-default): rejects, never silently drops', async () => {
     // 'champion_status' exists in dealbrain but is NOT in dimensionSpecs here → not conformed → reject.
     await expect(
-      h.service.aggregate('opportunities', {
+      h.service.measure('opportunities', {
         group_by: ['champion_status'],
         measures: [{ on: 'ExpectedRevenue', agg: 'sum', as: 'p' }],
       }),
