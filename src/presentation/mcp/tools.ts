@@ -1,7 +1,7 @@
 // MCP tool surface — the agent-facing shape of the query-surface primitives.
 //
 // This is a DRIVING adapter (presentation/): it maps the five primitives of
-// QueryApplicationService (describe / query / fetch / aggregate / compare) to MCP tools an
+// QueryApplicationService (describe / select / fetch / measure / compare) to MCP tools an
 // agent can call. No engine logic lives here — only the tool *shape* (names, descriptions,
 // input schemas) and a thin pass-through to the service. The shape is the deliverable: it's
 // what an agent reasons over, so the descriptions are written FOR a small model.
@@ -91,7 +91,7 @@ function prune<T extends Record<string, unknown>>(obj: T): Partial<T> {
 // ONLY when it round-trips exactly (`String(Number(v)) === v`) — so "100"→100 and "10929000"→10929000,
 // while a precision-exceeding "115042.105263157895" or "0.000…" stays a string (no silent rounding),
 // and non-numeric strings (names, uuids, dates) are untouched (regex + round-trip both reject them).
-// Applied ONLY to the analytical responses (aggregate/compare), never to fetch()/query() rows — those
+// Applied ONLY to the analytical responses (measure/compare), never to fetch()/select() rows — those
 // carry arbitrary domain fields where a numeric-looking string may be a semantic id/zip/phone.
 export function losslessNumber(v: string): number | string {
   if (v === '' || !/^-?\d+(\.\d+)?$/.test(v)) return v;
@@ -239,17 +239,18 @@ export function registerQueryTools(
     },
   );
 
-  // 2. QUERY — find matching IDs at row grain (+ optional preview rows, semantic rank, citation).
+  // 2. SELECT — find matching IDs at row grain (+ optional preview rows, semantic rank, citation).
   server.registerTool(
-    'query',
+    'select',
     {
       title: 'Find matching rows (grain preserved)',
       description:
-        'Find the IDs (and a preview of the rows) of one entity matching a filter. Grain is PRESERVED — ' +
-        'this selects rows, it does not collapse them. Supports semantic ranking via rank_by and ' +
-        'relevance filtering (op:"relevant"). Use this to inspect a cohort or gather IDs to fetch.',
+        'Find records of one entity by STRUCTURED filters OR SEMANTIC/RELEVANCE similarity; returns their ' +
+        'IDs and a light preview. Grain is PRESERVED — this selects rows, it does not collapse them. ' +
+        'Semantic ranking via rank_by; relevance filtering via op:"relevant". Use this to inspect a cohort ' +
+        'or gather IDs to fetch.',
       inputSchema: {
-        entity: z.string().describe('entity to query, e.g. "observations"'),
+        entity: z.string().describe('entity to select from, e.g. "observations"'),
         filter: filterArg.optional(),
         rank_by: z
           .object({
@@ -294,7 +295,7 @@ export function registerQueryTools(
           include_sql: a.include_sql,
           citation: a.cite_boundary ? { boundary: true } : undefined,
         }) as QueryOptions;
-        return ok(await service.query(a.entity as EntityName, opts));
+        return ok(await service.select(a.entity as EntityName, opts));
       } catch (e) {
         return fail(e);
       }
@@ -334,14 +335,15 @@ export function registerQueryTools(
     },
   );
 
-  // 4. AGGREGATE — collapse to grouped measures, grain-safe (each measure pre-aggregates in its
+  // 4. MEASURE — collapse to grouped measures, grain-safe (each measure pre-aggregates in its
   //    own source CTE). A global filter must CONFORM on every measure source or the engine refuses.
   server.registerTool(
-    'aggregate',
+    'measure',
     {
       title: 'Collapse to grouped measures (grain-safe)',
       description:
-        'Collapse an entity to grouped rows with measures (sum/avg/count/…). Fan-safe: each measure ' +
+        'Collapse an entity to grouped rows with measures (counts, sums, ratios, running totals — not ' +
+        'only aggregations). Fan-safe: each measure ' +
         'pre-aggregates in its own source CTE. group_by only accepts CONFORMED dimensions (see describe). ' +
         'A global filter must conform on EVERY measure source or the request is rejected (no silent no-op); ' +
         'for source-local intent use a measure-level `where`. A relevant filter adds a citation.',
@@ -379,7 +381,7 @@ export function registerQueryTools(
           include_sql: a.include_sql,
           citation: a.cite_boundary ? { boundary: true } : undefined,
         });
-        return ok(coerceNumbers(await service.aggregate(a.entity as EntityName, q, opts)));
+        return ok(coerceNumbers(await service.measure(a.entity as EntityName, q, opts)));
       } catch (e) {
         return fail(e);
       }
@@ -436,4 +438,4 @@ export function registerQueryTools(
 }
 
 /** The tool names this adapter registers, in agent-workflow order. Exported for tests/inspection. */
-export const QUERY_TOOL_NAMES = ['describe', 'query', 'fetch', 'aggregate', 'compare'] as const;
+export const QUERY_TOOL_NAMES = ['describe', 'select', 'fetch', 'measure', 'compare'] as const;

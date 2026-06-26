@@ -94,4 +94,36 @@ Both compile to a **ranked CTE the cohort joins/semijoins against** (NOT a plain
 - **match count at cutoff**.
 This makes the cohort **calibratable**: near-term the agent need not pre-set a perfect threshold — cheap first call → inspect the boundary → adjust next call (an agent-driven calibration loop). This is the chosen answer to "the agent shouldn't always have to set the threshold": expose it explicitly **and** make the output teach the cutoff, rather than have the engine guess (consistent with "consistency now beats gradient now"; the gradient lever stays deferred). **[settle in build]** exact payload shape + whether highest-excluded is always computed or only on request.
 
+---
+
+## Amendment 3 — The verb rename LOCKED: `describe · select · fetch · measure · compare` (2026-06-25, Dug)
+
+§A's open item ("whether to adopt the SELECT/MEASURE/RANK rename surface-wide") was deferred in Amendment 2 §1 (kept `query`/`aggregate`/`compare`) because RANK was entangled with the then-open relevance-leaf question. That question is now SHIPPED (relevance IS a Predicate leaf), so the rename is cleanly separable — and is being locked now because the surface is about to ship fresh to a consumer (Doug's work team), so they should adopt the FINAL vocabulary from day one (the verb rename is public-only + mechanical — REST routes + MCP tool names + service methods — and does NOT depend on the ADR-0028 engine reorg; it lands PRE-ship, decoupled from the cut).
+
+**LOCKED surface (the "5 words"):**
+
+| was | now | rationale |
+|---|---|---|
+| `describe` | **`describe`** | unchanged — perfect routing, industry-legible |
+| `query` | **`select`** | pairs cleanly with `fetch`; routing-neutral vs `query` |
+| `fetch` | **`fetch`** | KEPT (not `read`, not collapsed) — see eval |
+| `aggregate` | **`measure`** | semantically correct: the catalog has `ratio`/`cumulative` measure kinds that are NOT aggregations (`types.ts:3` "a MEASURE is a leaf; AGGREGATION is a stage") |
+| `compare` | **`compare`** | unchanged — perfect routing |
+
+**RANK stays dissolved** — relevance is a Predicate leaf (`op:'relevant'`) that flows into `select`/`measure`/`compare`, NOT a verb. This is strictly more powerful than a dedicated `search` verb (the same semantic filter composes inside `measure`/`compare`, e.g. "avg deal size of opps *similar to X*, by region"). **REQUIREMENT:** `select`'s tool description MUST explicitly advertise semantic/relevance filtering, else agents invent a phantom `search` verb (see eval [B]).
+
+### Evidence — 4 LLM routing-eval rounds (~1,600 calls, gemini-3.1-flash-lite + 2.5-flash; scripts in session scratchpad)
+- **Rename is legibility-safe.** All naming sets score 0.91–0.95 primary-verb accuracy; name-only (L0) ≈ one-line (L1) — the *names* carry routing, not the descriptions. `select`/`measure` route identically to `query`/`aggregate`.
+- **Don't collapse `fetch` into `select`+`expand`.** Two-phase narrow→hydrate: explicit hydrate verb = 1.00; collapsed = 0.75 and the model **never expressed hydration** (never reached for `expand`). The verb teaches the cheap path; the flag hides it.
+- **`fetch` over `read`** (the close call): overall lone-hydrate tie (0.07); but `read` is **stickier** — over-fetches on select-only tasks 0.13 vs `fetch` 0.03 ("reading records" feels default). Mirror-image lexical priming (each over-triggers on its own lexeme: `read` resists "fetch/grab" 0.03 but succumbs to "read/show" 0.19). A one-line description drives ALL over-triggering to 0.00 regardless of name → the difference is moot in production; `fetch` wins on over-fetch discipline + incumbency (only 2 verbs change, not 3).
+- **`measure` does NOT cannibalize `compare`** — pop/ab routing identical across `aggregate` and `measure` sets (inherent compare-vs-measure fuzziness, not a naming effect).
+- **Semantic discoverability** — with a plain `select` gloss the model invents a phantom `semantic_search` verb 75% of the time; **advertising relevance in `select`'s description → 1.00 routing, 0.00 phantom** (a dedicated `search` verb also works and does NOT steal structured finds, but is redundant with the predicate and less composable — rejected).
+
+**Recommended tool glosses** (description matters at exactly two boundaries — semantic, and PoP-vs-measure):
+- `select` — *"find records by structured filters OR semantic/relevance similarity; returns ids + a light preview"* ← advertise relevance
+- `measure` — *"collapse records into grouped rows with measures (counts, sums, ratios, running totals — not only aggregations)"*
+- `compare` — *"period-over-period or A-vs-B aligned comparison"* ← lead with "period-over-period"
+
+**Rollout:** rename lands PRE-ship (public-only, mechanical), decoupled from ADR-0028's engine cut. Supersedes ADR-0028 §Parked note ("fold the rename into the cut") — the fresh-consumer timing flips that: ship final names from day one so the team never eats a rename.
+
 **6. Fixture — adopt dealbrain's "Bean Maxx" Agentic-Search dataset** (replaces the live-mutating dev DB + the ILIKE embed stub). The live dealbrain dev DB is non-hermetic — eval ground-truth counts drifted 46→51 mid-session (red baseline ≠ regression), and the ILIKE stub can't grade free-text. **Bean Maxx** (Tempo-Systems/dealbrain, Nick Handel) is purpose-built for "Agentic Search": ~3,592 observations w/ real embeddings, 100 deals, 727 transcripts, **2,400 retrieval question/goldens + 23,843 observation-extraction goldens**, audited (`just db-audit-bm`) + frozen (versioned snapshot). Seed via `just db-seed-bm -- --fixture-dir=<dev-data-generation>` or restore `dev-snapshot/versions/*.dump`. **The goldens are the prize:** Wave-2 relevance-as-filter falsifies against known-good retrieval answers instead of hand-asserted counts. **Effort caveat (not a trivial pull):** the fixture-dir is a local artifact (Nick's iCloud), the dump is large/likely-LFS, and query-surface's `adapters/reference/{schema,model}.dealbrain` must be reconciled against Bean Maxx's (current migrated) schema. **[settle]** confirm a local copy (Dug) vs fetch; then re-baseline the eval ground-truths against Bean Maxx in the same PR.

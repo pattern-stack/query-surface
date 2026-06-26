@@ -55,7 +55,7 @@ suite('retrieval (belongs_to JOIN + has_many EXISTS) — characterization', () =
     );
     expect(want).toBe(1); // pin the live value (1 opportunity under Abnormal Security — Bean Maxx is 1 opp/account)
 
-    const res = await h.service.query('opportunities', {
+    const res = await h.service.select('opportunities', {
       filter: { on: 'account.name', op: 'eq', value: 'Abnormal Security' },
       page: { limit: 100 },
     });
@@ -75,7 +75,7 @@ suite('retrieval (belongs_to JOIN + has_many EXISTS) — characterization', () =
         )
       )[0]?.name,
     );
-    const res = await h.service.query('opportunities', {
+    const res = await h.service.select('opportunities', {
       sort: [{ field: 'account.name', dir: 'asc' }],
       columns: ['account.name'],
       page: { limit: 1 },
@@ -102,7 +102,7 @@ suite('retrieval (belongs_to JOIN + has_many EXISTS) — characterization', () =
     );
     expect(want).toBe(21953); // pin the live value
 
-    const res = await h.service.query('observations', {
+    const res = await h.service.select('observations', {
       filter: { on: 'opportunity.Amount', op: 'gt', value: 50000 },
       page: { limit: 30000 },
     });
@@ -119,7 +119,7 @@ suite('retrieval (belongs_to JOIN + has_many EXISTS) — characterization', () =
     );
     expect(want).toBe(295); // pin the live value
 
-    const res = await h.service.query('observations', {
+    const res = await h.service.select('observations', {
       filter: { on: 'opportunity.account.name', op: 'eq', value: 'Abnormal Security' },
       page: { limit: 1000 },
     });
@@ -156,7 +156,7 @@ suite('retrieval (belongs_to JOIN + has_many EXISTS) — characterization', () =
     expect(direct).toBe(295); // Abnormal Security's observations carry the direct account_id
     expect(viaOpp).toBe(295); // …and reach the same account via their opportunity — they COINCIDE
 
-    const res = await h.service.query('observations', {
+    const res = await h.service.select('observations', {
       filter: { on: 'account.name', op: 'eq', value: 'Abnormal Security' },
       page: { limit: 1000 },
     });
@@ -181,7 +181,7 @@ suite('retrieval (belongs_to JOIN + has_many EXISTS) — characterization', () =
     expect(direct).toBe(379);
     expect(viaOpp).toBe(379);
 
-    const res = await h.service.query('observations', {
+    const res = await h.service.select('observations', {
       filter: { on: 'account.name', op: 'eq', value: 'Abridge' },
       page: { limit: 1000 },
     });
@@ -207,7 +207,7 @@ suite('retrieval (belongs_to JOIN + has_many EXISTS) — characterization', () =
     expect(exists).toBe(100); // Bean Maxx: every account has a 'risk' observation (all 100)
     expect(naiveJoinRows).toBe(2160); // a JOIN would over-count by ~21.6x (2160 risk obs across 100 accounts)
 
-    const res = await h.service.query('accounts', {
+    const res = await h.service.select('accounts', {
       filter: { on: 'observations.type', op: 'eq', value: 'risk' },
       page: { limit: 500 },
     });
@@ -246,7 +246,7 @@ suite('retrieval (belongs_to JOIN + has_many EXISTS) — characterization', () =
     // observations.type above) work; only the EAV inner leg is broken. Pinned
     // AS-IS — the refactor's IR must declare the alias inside the EXISTS. — revisit
     await expect(
-      h.service.query('accounts', {
+      h.service.select('accounts', {
         filter: { on: 'opportunities.Amount', op: 'gt', value: 50000 },
         page: { limit: 500 },
       }),
@@ -261,7 +261,7 @@ suite('retrieval (belongs_to JOIN + has_many EXISTS) — characterization', () =
     // observations → opportunity (belongs_to, pushes a join) → observations
     // (has_many, but joins.length>0) → throws.
     await expect(
-      h.service.query('observations', {
+      h.service.select('observations', {
         filter: { on: 'opportunity.observations.type', op: 'eq', value: 'risk' },
       }),
     ).rejects.toThrow('belongs_to → has_many is not supported in path');
@@ -270,7 +270,7 @@ suite('retrieval (belongs_to JOIN + has_many EXISTS) — characterization', () =
   it('has_many → has_many THROWS (no nested correlation)', async () => {
     // accounts → opportunities (has_many) → observations (has_many) → throws.
     await expect(
-      h.service.query('accounts', {
+      h.service.select('accounts', {
         filter: { on: 'opportunities.observations.type', op: 'eq', value: 'risk' },
       }),
     ).rejects.toThrow('has_many → has_many is not supported in path');
@@ -279,7 +279,7 @@ suite('retrieval (belongs_to JOIN + has_many EXISTS) — characterization', () =
   it('an invalid relationship segment THROWS a Field-path error', async () => {
     // 'widgets' is not a relationship on observations.
     await expect(
-      h.service.query('observations', {
+      h.service.select('observations', {
         filter: { on: 'widgets.name', op: 'eq', value: 'x' },
       }),
     ).rejects.toThrow('Field path');
@@ -287,7 +287,7 @@ suite('retrieval (belongs_to JOIN + has_many EXISTS) — characterization', () =
 
   it('cannot sort by a has_many path (THROWS)', async () => {
     await expect(
-      h.service.query('accounts', {
+      h.service.select('accounts', {
         sort: [{ field: 'observations.type', dir: 'asc' }],
       }),
     ).rejects.toThrow('Cannot sort by has_many path');
@@ -310,7 +310,7 @@ suite('retrieval (belongs_to JOIN + has_many EXISTS) — characterization', () =
     expect(want).toBe(3233);
     expect(typeOnly).toBe(2429); // strictly less — proves normalized_text is also in the fan-out
 
-    const res = await h.service.query('observations', {
+    const res = await h.service.select('observations', {
       filter: { on: 'text', op: 'contains', value: 'risk' },
       page: { limit: 1000 },
     });
@@ -326,7 +326,7 @@ suite('retrieval (belongs_to JOIN + has_many EXISTS) — characterization', () =
     const want = await n("select count(*) as n from accounts where name ilike '%ai%'");
     expect(want).toBe(17);
 
-    const res = await h.service.query('accounts', {
+    const res = await h.service.select('accounts', {
       filter: { on: 'text', op: 'contains', value: 'ai' },
       page: { limit: 500 },
     });

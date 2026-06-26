@@ -123,8 +123,8 @@ export class QueryController {
   @Post(':entity')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Search an entity: filter to matching IDs (+ optional preview rows)',
-    operationId: 'querySearch',
+    summary: 'Select an entity: filter (structured or semantic/relevance) to matching IDs (+ optional preview rows)',
+    operationId: 'querySelect',
   })
   @ApiParam(ENTITY_PARAM)
   @ApiBody({ schema: { $ref: '#/components/schemas/QuerySearchRequestDto' } })
@@ -143,11 +143,11 @@ export class QueryController {
     return this.http(() => this.searchUseCase.execute(entity, body));
   }
 
-  @Post(':entity/aggregate')
+  @Post(':entity/measure')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Aggregate an entity: collapse to grouped rows with measures (grain-safe)',
-    operationId: 'queryAggregate',
+    summary: 'Measure an entity: collapse to grouped rows with measures (grain-safe)',
+    operationId: 'queryMeasure',
   })
   @ApiParam(ENTITY_PARAM)
   @ApiBody({ schema: { $ref: '#/components/schemas/AggregateRequestDto' } })
@@ -158,7 +158,7 @@ export class QueryController {
   @ApiResponse({ status: 400, schema: ERROR_REF })
   @ApiResponse({ status: 401, schema: ERROR_REF })
   @ApiResponse({ status: 404, schema: ERROR_REF })
-  async aggregate(
+  async measure(
     @Param('entity') entity: string,
     @Body(new ZodValidationPipe(aggregateRequestSchema))
     body: AggregateRequestDto,

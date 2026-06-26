@@ -135,7 +135,7 @@ suite('relevance-as-filter — aggregate() live dealbrain (ADR-0024 §A / Amendm
   // ── 1. THRESHOLD COHORT IDENTITY + MATCH-COUNT ─────────────────────────────────────────────
   it('R1 threshold: grouped count == the SQL cohort partitioned by group; embed INVOKED', async () => {
     const before = embedCalls;
-    const res = await service.aggregate('observations', {
+    const res = await service.measure('observations', {
       group_by: ['type'],
       measures: [{ on: '*', agg: 'count', as: 'n' }],
       filter: relevant({ threshold: 0.6 }),
@@ -171,7 +171,7 @@ suite('relevance-as-filter — aggregate() live dealbrain (ADR-0024 §A / Amendm
 
   it('R2 threshold COHORT IDENTITY: the returned member set == the SQL cohort id set (exact)', async () => {
     // Group by the row pk so each group is one member → the GROUP KEY SET is the cohort id set.
-    const res = await service.aggregate('observations', {
+    const res = await service.measure('observations', {
       group_by: ['id'],
       measures: [{ on: '*', agg: 'count', as: 'n' }],
       filter: relevant({ threshold: 0.5 }),
@@ -187,7 +187,7 @@ suite('relevance-as-filter — aggregate() live dealbrain (ADR-0024 §A / Amendm
   });
 
   it('R3 citation: match_count + DECISION BOUNDARY straddle the exact cutoff (boundary ON-REQUEST)', async () => {
-    const res = await service.aggregate(
+    const res = await service.measure(
       'observations',
       {
         group_by: ['type'],
@@ -233,7 +233,7 @@ suite('relevance-as-filter — aggregate() live dealbrain (ADR-0024 §A / Amendm
   });
 
   it('R4 citation EXEMPLARS WITH SIMILARITY: exemplars(id,sim) == SQL top-N by sim (scores to 6dp)', async () => {
-    const res = await service.aggregate('observations', {
+    const res = await service.measure('observations', {
       group_by: ['type'],
       measures: [{ on: '*', agg: 'count', as: 'n' }],
       filter: relevant({ threshold: 0.6 }),
@@ -254,7 +254,7 @@ suite('relevance-as-filter — aggregate() live dealbrain (ADR-0024 §A / Amendm
   // ── 2. TOP_K DUAL-MODE ─────────────────────────────────────────────────────────────────────
   it('R5 top_k GLOBAL (no group_by/per → k rows total, ruling a) == ORDER BY emb<=>q.e LIMIT k', async () => {
     const k = 10;
-    const res = await service.aggregate('observations', {
+    const res = await service.measure('observations', {
       measures: [{ on: '*', agg: 'count', as: 'n' }],
       filter: relevant({ top_k: k }),
     });
@@ -278,7 +278,7 @@ suite('relevance-as-filter — aggregate() live dealbrain (ADR-0024 §A / Amendm
 
   it('R6 top_k PER-GROUP (explicit per) == row_number() PARTITION top-k per key', async () => {
     const k = 3;
-    const res = await service.aggregate('observations', {
+    const res = await service.measure('observations', {
       group_by: ['account_id'],
       measures: [{ on: '*', agg: 'count', as: 'n' }],
       filter: relevant({ top_k: k, per: 'account_id' }),
@@ -327,7 +327,7 @@ suite('relevance-as-filter — aggregate() live dealbrain (ADR-0024 §A / Amendm
     // the group_by key — so each account gets its own top-k (NOT a single global k split across
     // accounts). Witness: total members == per-account top-k sum, NOT k.
     const k = 10;
-    const res = await service.aggregate('observations', {
+    const res = await service.measure('observations', {
       group_by: ['account_id'],
       measures: [{ on: '*', agg: 'count', as: 'n' }],
       filter: relevant({ top_k: k }),
@@ -351,13 +351,13 @@ suite('relevance-as-filter — aggregate() live dealbrain (ADR-0024 §A / Amendm
 
   it('R8 XOR: a relevant leaf with NEITHER threshold nor top_k is rejected; BOTH is rejected', async () => {
     await expect(
-      service.aggregate('observations', {
+      service.measure('observations', {
         measures: [{ on: '*', agg: 'count', as: 'n' }],
         filter: relevant({}), // neither
       }),
     ).rejects.toThrow(/EXACTLY ONE of "threshold" or "top_k".*neither/i);
     await expect(
-      service.aggregate('observations', {
+      service.measure('observations', {
         measures: [{ on: '*', agg: 'count', as: 'n' }],
         filter: relevant({ threshold: 0.6, top_k: 10 }), // both
       }),
@@ -375,7 +375,7 @@ suite('relevance-as-filter — aggregate() live dealbrain (ADR-0024 §A / Amendm
     // measure-level `where`; a true cross-grain cohort uses a DOTTED leaf that semijoins on EVERY
     // source (proven separately by R6/R7's grouped cross-grain cohorts).
     await expect(
-      service.aggregate('observations', {
+      service.measure('observations', {
         measures: [
           { on: '*', agg: 'count', as: 'obs' },
           { source: 'opportunities', on: '*', agg: 'count', as: 'opp' },
@@ -385,7 +385,7 @@ suite('relevance-as-filter — aggregate() live dealbrain (ADR-0024 §A / Amendm
     ).rejects.toThrow(/not queryable on opportunities|not conformed|embedding/i);
     // SAME reject in threshold mode (sim_gte is a boolean leaf, still must conform on every source).
     await expect(
-      service.aggregate('observations', {
+      service.measure('observations', {
         measures: [
           { on: '*', agg: 'count', as: 'obs' },
           { source: 'opportunities', on: '*', agg: 'count', as: 'opp' },
@@ -401,7 +401,7 @@ suite('relevance-as-filter — aggregate() live dealbrain (ADR-0024 §A / Amendm
     // observations consumed as a same-grain membership on the obs measure AND a has_many SEMIJOIN
     // on the opp measure (opportunities→observations). It conforms on BOTH → applied uniformly.
     const k = 10;
-    const res = await service.aggregate(
+    const res = await service.measure(
       'accounts',
       {
         measures: [
@@ -465,7 +465,7 @@ suite('relevance-as-filter — aggregate() live dealbrain (ADR-0024 §A / Amendm
     // exactly k members → the ungrouped count is k. A fanning join would multiply by the join's
     // non-unique cardinality (here observations→opportunities has_many would inflate well past k).
     const k = 25;
-    const res = await service.aggregate(
+    const res = await service.measure(
       'observations',
       {
         measures: [{ on: '*', agg: 'count', as: 'n' }],
@@ -510,7 +510,7 @@ suite('relevance-as-filter — aggregate() live dealbrain (ADR-0024 §A / Amendm
           : ({ on: 'id', op: 'is_not_null' } as FilterExpression),
     });
     await expect(
-      scopedService.aggregate('observations', {
+      scopedService.measure('observations', {
         measures: [{ on: '*', agg: 'count', as: 'n' }],
         filter: relevant({ top_k: 10 }),
       }),
@@ -534,7 +534,7 @@ suite('relevance-as-filter — aggregate() live dealbrain (ADR-0024 §A / Amendm
           : ({ on: 'id', op: 'is_not_null' } as FilterExpression),
     });
     const k = 10;
-    const res = await scopedService.aggregate('observations', {
+    const res = await scopedService.measure('observations', {
       measures: [{ on: '*', agg: 'count', as: 'n' }],
       filter: relevant({ top_k: k }),
     });

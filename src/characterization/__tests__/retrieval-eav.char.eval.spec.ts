@@ -59,7 +59,7 @@ suite('retrieval — EAV (Shape A typed-columns) — characterization', () => {
         where fv.value_number > 0`,
     ).then((r) => r as Array<{ n: number }>);
 
-    const res = await h.service.query('opportunities', {
+    const res = await h.service.select('opportunities', {
       filter: { on: 'Amount', op: 'gt', value: 0 },
       page: { limit: 500 },
     });
@@ -71,7 +71,7 @@ suite('retrieval — EAV (Shape A typed-columns) — characterization', () => {
   });
 
   it('EAV filter emits a field_values LEFT JOIN (the resolution seam)', async () => {
-    const res = await h.service.query('opportunities', {
+    const res = await h.service.select('opportunities', {
       filter: { on: 'Amount', op: 'gt', value: 0 },
       page: { limit: 1 },
       include_sql: true,
@@ -88,7 +88,7 @@ suite('retrieval — EAV (Shape A typed-columns) — characterization', () => {
            and fv.field_definition_id=${defId('Amount')}
         where fv.value_number is not null and fv.value_number >= 0`,
     )) as Array<{ n: number }>;
-    const res = await h.service.query('opportunities', {
+    const res = await h.service.select('opportunities', {
       filter: { on: 'Amount', op: 'gte', value: 0 },
       page: { limit: 500 },
     });
@@ -107,7 +107,7 @@ suite('retrieval — EAV (Shape A typed-columns) — characterization', () => {
            and fv.field_definition_id=${defId('Probability')}
         where fv.value_number >= 50`,
     )) as Array<{ n: number }>;
-    const res = await h.service.query('opportunities', {
+    const res = await h.service.select('opportunities', {
       filter: { on: 'Probability', op: 'gte', value: 50 },
       page: { limit: 500 },
     });
@@ -134,7 +134,7 @@ suite('retrieval — EAV (Shape A typed-columns) — characterization', () => {
         order by fv.value_number desc, o.id asc limit 1`,
     )) as Array<{ id: string; amount: string }>;
 
-    const res = await h.service.query('opportunities', {
+    const res = await h.service.select('opportunities', {
       // NB: Sort uses `field`, not `on` (types.ts Sort).
       sort: [{ field: 'Amount', dir: 'desc' }],
       page: { limit: 1 },
@@ -151,7 +151,7 @@ suite('retrieval — EAV (Shape A typed-columns) — characterization', () => {
   // --- PROJECT an EAV field (preview) ------------------------------------------
 
   it('projects EAV keys into preview rows, keyed by the requested key', async () => {
-    const res = await h.service.query('opportunities', {
+    const res = await h.service.select('opportunities', {
       filter: { on: 'Amount', op: 'gt', value: 0 },
       page: { limit: 3 },
       preview: true,
@@ -169,7 +169,7 @@ suite('retrieval — EAV (Shape A typed-columns) — characterization', () => {
     // (a JS string), e.g. Amount = "293000", while fetch() hydration decodes the
     // same field to a JS number 293000 (see hydrateEavRows / extractTypedValue).
     // Two EAV read paths, two output types for the same field. Pinned as-is. — revisit
-    const res = await h.service.query('opportunities', {
+    const res = await h.service.select('opportunities', {
       sort: [{ field: 'Amount', dir: 'desc' }],
       page: { limit: 1 },
       preview: true,
@@ -236,7 +236,7 @@ suite('retrieval — EAV (Shape A typed-columns) — characterization', () => {
     )) as Array<{ mx: number }>;
     expect(mx).toBe(1); // the storage invariant the engine relies on
 
-    const res = await h.service.query('opportunities', {
+    const res = await h.service.select('opportunities', {
       filter: { on: 'Amount', op: 'gte', value: 0 },
       page: { limit: 500 },
     });
@@ -255,7 +255,7 @@ suite('retrieval — EAV (Shape A typed-columns) — characterization', () => {
     // must NOT emit a field_values join. (In Bean Maxx every opportunity carries a
     // non-null native status, so the is_null predicate genuinely matches ZERO rows;
     // the assertion under test is the native-resolution seam, not the count.)
-    const res = await h.service.query('opportunities', {
+    const res = await h.service.select('opportunities', {
       filter: { on: 'state_of_deal_status', op: 'is_null' },
       page: { limit: 1 },
       include_sql: true,
@@ -315,7 +315,7 @@ suite('retrieval — EAV (Shape A typed-columns) — characterization', () => {
     expect(nonexistent).toBe(0);
 
     await expect(
-      h.service.query('opportunities', {
+      h.service.select('opportunities', {
         filter: { on: 'hs_projected_amount', op: 'gt', value: 0 },
         page: { limit: 1 },
       }),

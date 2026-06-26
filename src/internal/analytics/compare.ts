@@ -265,7 +265,7 @@ function orderStitched(
  * Orchestrate a compare: run each variant as a base aggregate (with its filter ANDed in,
  * and per-variant top-N pushed down when requested), then stitch or deliver separately.
  * `runVariant` MUST be the tenancy-scoped aggregate (the service passes
- * `(agg) => this.aggregate(entity, agg)`), so every variant inherits fan-safety +
+ * `(agg) => this.measure(entity, agg)`), so every variant inherits fan-safety +
  * FAIL-CLOSED per-source scope. Do NOT inject an unscoped runner — that would drop the
  * tenancy contract. Kept injected for unit-testability.
  */
