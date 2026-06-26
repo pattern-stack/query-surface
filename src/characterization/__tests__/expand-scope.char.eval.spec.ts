@@ -66,18 +66,23 @@ suite('expand scope — tenancy folds through fetch() expand (characterization)'
     await Promise.all(toClose.map((h) => h.close()));
   });
 
-  // accounts scope keyed to a name; everything else unscoped-but-covered (returns a
-  // tautology-free predicate only for accounts, undefined elsewhere — fine because the
-  // only TRAVERSED entity in these tests is the expand target).
-  const accountsScopedTo =
-    (name: string): ScopeResolver =>
-    (entity: EntityName) =>
-      entity === 'accounts'
-        ? ({ on: 'name', op: 'eq', value: name } as FilterExpression)
-        : undefined;
+  // Scope BOTH the fetched root AND the traversed expand target — every touched entity
+  // must be covered now that scope is fail-closed at the ROOT too (invariant #3, total):
+  // an uncovered (non-TENANT_GLOBAL) root would REFUSE, not read unscoped. `opp` scopes
+  // opportunities (id eq); `acctName` scopes accounts (name eq); undefined when not given.
+  const scopeBoth =
+    (opp?: string, acctName?: string): ScopeResolver =>
+    (entity: EntityName) => {
+      if (entity === 'opportunities' && opp)
+        return { on: 'id', op: 'eq', value: opp } as FilterExpression;
+      if (entity === 'accounts' && acctName)
+        return { on: 'name', op: 'eq', value: acctName } as FilterExpression;
+      return undefined;
+    };
 
   it('belongs_to expand: an IN-SCOPE parent hydrates', async () => {
-    const svc = scoped(accountsScopedTo(A.accountName));
+    // Root (opportunities) AND expand target (accounts) both in-scope → the parent hydrates.
+    const svc = scoped(scopeBoth(A.oppId, A.accountName));
     const res = await svc.fetch('opportunities', [A.oppId], { expand: ['account'] });
     const acct = res.rows[0]?.account as Record<string, unknown> | null;
     expect(acct).not.toBeNull();
@@ -85,22 +90,18 @@ suite('expand scope — tenancy folds through fetch() expand (characterization)'
   });
 
   it('belongs_to expand: an OUT-OF-SCOPE parent is filtered to null (the leak, closed)', async () => {
-    // Scope accounts to a DIFFERENT account → A's opportunity keeps its account_id,
-    // but the expand read excludes that account, so the relation resolves to null.
-    // Before the fix this returned the full account row regardless of scope.
-    const svc = scoped(accountsScopedTo(B.accountName));
+    // Root opportunity in-scope, but accounts scoped to a DIFFERENT account → A's opp keeps
+    // its account_id, yet the expand read excludes that account, so the relation resolves to
+    // null. Before the fix this returned the full account row regardless of scope.
+    const svc = scoped(scopeBoth(A.oppId, B.accountName));
     const res = await svc.fetch('opportunities', [A.oppId], { expand: ['account'] });
     expect(res.rows[0]?.account ?? null).toBeNull();
   });
 
   it('has_many expand: only IN-SCOPE children are attached', async () => {
-    // Scope opportunities to exactly A's opp → expanding an account's opportunities
-    // returns only that one, never the account's other (out-of-scope) opps.
-    const svc = scoped((entity) =>
-      entity === 'opportunities'
-        ? ({ on: 'id', op: 'eq', value: A.oppId } as FilterExpression)
-        : undefined,
-    );
+    // Root (accounts) in-scope; opportunities scoped to exactly A's opp → expanding an
+    // account's opportunities returns only that one, never the account's other (out-of-scope) opps.
+    const svc = scoped(scopeBoth(A.oppId, A.accountName));
     const res = await svc.fetch('accounts', [A.accountId], { expand: ['opportunities'] });
     const opps = (res.rows[0]?.opportunities ?? []) as Array<Record<string, unknown>>;
     expect(opps.map((o) => String(o.id))).toEqual([A.oppId]);

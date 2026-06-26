@@ -42,7 +42,7 @@ import {
   observationsExtRelations,
 } from '../../../../characterization/harness';
 import type { FilterExpression } from '../../../../internal/language/types';
-import { QueryApplicationService } from '../../../../query.application-service';
+import { QueryApplicationService, UNSCOPED } from '../../../../query.application-service';
 import { loadDealbrainModel } from '../../../reference/model.dealbrain';
 import { type DrizzleDb, makeDb } from '../drizzle-db';
 
@@ -105,6 +105,7 @@ suite('relevance-as-filter — aggregate() live dealbrain (ADR-0024 §A / Amendm
     };
 
     service = new QueryApplicationService(db, {
+      scope: UNSCOPED,
       actorUserId: POC_ACTOR_USER_ID,
       actorOrganizationId: DEALBRAIN_ORG,
       aggregateModel: () => loadDealbrainModel(db),

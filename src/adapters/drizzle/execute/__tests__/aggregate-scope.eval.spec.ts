@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { TENANT_GLOBAL } from '../../../../internal/analytics/types';
 import type { ScopeFor } from '../../../../internal/analytics/types';
-import { QueryApplicationService } from '../../../../query.application-service';
+import { QueryApplicationService, UNSCOPED } from '../../../../query.application-service';
 import { type AggregateModel, loadDealbrainModel } from '../../../reference/model.dealbrain';
 import { type DrizzleDb, makeDb } from '../drizzle-db';
 import { aggregate, runAggregateDrizzle } from '../run-drizzle';
@@ -186,7 +186,7 @@ suite('aggregate scope — pre-aggregation, per-source, non-bypassable (live dea
   });
 
   it('S6b service path: aggregate() without aggregateModel fails loud', async () => {
-    const svc = new QueryApplicationService(db, {});
+    const svc = new QueryApplicationService(db, { scope: UNSCOPED });
     expect(
       svc.measure('observations' as never, { measures: [{ on: '*', agg: 'count', as: 'n' }] }),
     ).rejects.toThrow(/aggregateModel is required/);
