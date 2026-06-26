@@ -117,8 +117,8 @@ export class QuerySurfaceService implements OnModuleInit {
 
   /** Find IDs (+ preview rows) matching a filter. Scope is AND-injected.
    *  `asUser` (a resolved user id) narrows to that user's owned rows. */
-  query(entity: string, opts: QueryOptions = {}, asUser?: string) {
-    return this.engine(asUser).query(entity as never, opts);
+  select(entity: string, opts: QueryOptions = {}, asUser?: string) {
+    return this.engine(asUser).select(entity as never, opts);
   }
 
   /** Hydrate IDs into full rows, with optional relational expand. Scope-checked. */
@@ -126,15 +126,15 @@ export class QuerySurfaceService implements OnModuleInit {
     return this.engine(asUser).fetch(entity as never, ids, opts);
   }
 
-  /** Collapse an entity into grouped aggregate rows. Scope is folded PER SOURCE
-   *  into each CTE pre-aggregation; `asUser` narrows the same way query/fetch do. */
-  aggregate(
+  /** Collapse an entity into grouped measure rows. Scope is folded PER SOURCE
+   *  into each CTE pre-aggregation; `asUser` narrows the same way select/fetch do. */
+  measure(
     entity: string,
     q: AggregateRequest,
     opts: { include_sql?: boolean } = {},
     asUser?: string,
   ) {
-    return this.engine(asUser).aggregate(entity as never, q, opts);
+    return this.engine(asUser).measure(entity as never, q, opts);
   }
 
   /** Compare a base aggregate across N labeled variants (aligned + derived, or

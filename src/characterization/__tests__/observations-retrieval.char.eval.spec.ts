@@ -49,7 +49,7 @@ suite('observations retrieval surface — characterization', () => {
   });
 
   it('semantic rank_by over normalized_text surfaces the pricing cluster with provenance', async () => {
-    const res = await h.service.query('observations', {
+    const res = await h.service.select('observations', {
       filter: { opportunity_id: DEAL_001 } as unknown as FilterExpression,
       rank_by: { on: 'normalized_text', method: 'semantic', query: 'office-active tier', limit: 6 },
       columns: ['type', 'normalized_text', 'source_refs'],

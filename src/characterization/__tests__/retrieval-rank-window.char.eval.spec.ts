@@ -52,7 +52,7 @@ suite('retrieval rank_by + window — characterization', () => {
   // ---------------------------------------------------------------------------
   it('lexical rank_by: _rank is the ts_rank_cd score, descending; _snippet headlines the match', async () => {
     const PHRASE = 'minimum commitment';
-    const res = await h.service.query('observations', {
+    const res = await h.service.select('observations', {
       rank_by: { method: 'lexical', on: 'normalized_text', query: PHRASE, limit: 8 },
       preview: true,
       columns: ['type'],
@@ -112,7 +112,7 @@ suite('retrieval rank_by + window — characterization', () => {
     );
     expect(Number(c04)).toBe(4);
 
-    const res = await h.service.query('observations', {
+    const res = await h.service.select('observations', {
       rank_by: {
         method: 'lexical',
         on: 'normalized_text',
@@ -137,7 +137,7 @@ suite('retrieval rank_by + window — characterization', () => {
       `select count(*) as c from observations where normalized_text is not null and ${RANK(PHRASE)} >= 0.5`,
     );
     expect(Number(c05)).toBe(0);
-    const res2 = await h.service.query('observations', {
+    const res2 = await h.service.select('observations', {
       rank_by: {
         method: 'lexical',
         on: 'normalized_text',
@@ -151,7 +151,7 @@ suite('retrieval rank_by + window — characterization', () => {
   });
 
   it('lexical rank_by ignores any sort, with a warning that rank_by owns ordering', async () => {
-    const res = await h.service.query('observations', {
+    const res = await h.service.select('observations', {
       rank_by: { method: 'lexical', on: 'normalized_text', query: 'minimum commitment', limit: 5 },
       sort: [{ field: 'occurred_at', dir: 'asc' }],
       preview: true,
@@ -165,7 +165,7 @@ suite('retrieval rank_by + window — characterization', () => {
   // ---------------------------------------------------------------------------
   it('partition_by: per-group top-K keeps K rows per non-null group; null-partition rows dropped; total = group count', async () => {
     const K = 2;
-    const res = await h.service.query('observations', {
+    const res = await h.service.select('observations', {
       rank_by: {
         method: 'lexical',
         on: 'normalized_text',
@@ -242,7 +242,7 @@ suite('retrieval rank_by + window — characterization', () => {
       `select id from observations where embedding is not null and normalized_text is not null and normalized_text ilike '%${PHRASE}%' order by id limit 1`,
     );
 
-    const res = await h.service.query('observations', {
+    const res = await h.service.select('observations', {
       rank_by: { method: 'semantic', query: PHRASE, limit: 3 },
       preview: true,
     });
@@ -268,7 +268,7 @@ suite('retrieval rank_by + window — characterization', () => {
   });
 
   it('semantic rank_by min_score: cosine cutoff is calibrated (NO uncalibrated warning)', async () => {
-    const res = await h.service.query('observations', {
+    const res = await h.service.select('observations', {
       rank_by: {
         method: 'semantic',
         query: 'a minimum billing commitment',
@@ -292,7 +292,7 @@ suite('retrieval rank_by + window — characterization', () => {
     // Filter to one type so every returned row shares a partition; the window
     // total must equal that type's full population (the window FROM is the whole
     // table, not the page).
-    const res = await h.service.query('observations', {
+    const res = await h.service.select('observations', {
       window: [{ on: '*', agg: 'count', partition_by: ['type'], as: 'type_total' }],
       filter: { on: 'type', op: 'eq', value: 'discovery' },
       preview: true,
@@ -323,7 +323,7 @@ suite('retrieval rank_by + window — characterization', () => {
 
   it('window OVER (no partition_by): aggregates over the whole filtered set', async () => {
     // Empty partition_by → `count(*) over ()` = grand total of the filtered set.
-    const res = await h.service.query('observations', {
+    const res = await h.service.select('observations', {
       window: [{ on: '*', agg: 'count', partition_by: [], as: 'grand_total' }],
       filter: { on: 'type', op: 'eq', value: 'timeline' },
       preview: true,
@@ -343,7 +343,7 @@ suite('retrieval rank_by + window — characterization', () => {
   });
 
   it('window measures are PREVIEW-ONLY: omitted from the row when preview is false', async () => {
-    const res = await h.service.query('observations', {
+    const res = await h.service.select('observations', {
       window: [{ on: '*', agg: 'count', partition_by: ['type'], as: 'type_total' }],
       filter: { on: 'type', op: 'eq', value: 'discovery' },
       // no preview → ids only, no annotated rows
