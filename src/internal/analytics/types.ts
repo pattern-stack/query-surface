@@ -92,11 +92,11 @@ export interface Measure {
 }
 
 /** A composite output column computed by OUTER-SELECT arithmetic over already-collapsed
- *  measure-leg aliases — never a CTE join, so it adds no fan-out. The legs (`numerator`/
- *  `denominator`) are `$`-aliased Measures in `measures` (engine-generated, computed in
- *  their own source CTEs); the composite divides their collapsed values post-group/join.
- *  A ratio is non-additive by definition. (B5 adds a 'pop' kind.) */
-export interface CompositeColumn {
+ *  measure-leg aliases — never a CTE join, so it adds no fan-out. The legs are `$`-aliased
+ *  Measures in `measures` (engine-generated, computed in their own source CTEs); the
+ *  composite combines their collapsed values post-group/join. A composite is non-additive
+ *  by definition. (B5 adds a 'pop' kind.) */
+export interface RatioComposite {
   kind: 'ratio';
   as: string;
   numerator: string; // a leg measure's `as`
@@ -106,6 +106,29 @@ export interface CompositeColumn {
    *  but on avg/min/max stays NULL (undefined, not 0). */
   numeratorAgg: Agg;
 }
+
+/** A COMPILED derived expression: the same binary tree as the host-facing DerivedExpr, but
+ *  every `ref` has been REWRITTEN by normalize to a LEG ALIAS (an engine-generated `__cmp_`
+ *  Measure `as`), NOT a catalog measure name. The compiler lowers it to numeric-safe SQL
+ *  over the grouped subquery's leg columns. */
+export type CompiledDerivedExpr =
+  | { ref: string } // a leg alias on the grouped subquery
+  | { lit: number } // a numeric literal (a weight)
+  | { op: '+' | '-' | '*' | '/'; left: CompiledDerivedExpr; right: CompiledDerivedExpr };
+
+/** A derived metric: an arithmetic EXPRESSION (the closed 4-op binary tree) over atomic
+ *  measure legs (the ADR-0029 D2 subtractive/weighted gap, e.g. gross_profit = revenue -
+ *  cost). Computed as OUTER-SELECT arithmetic over the collapsed legs — never a CTE join,
+ *  so it adds no fan-out, exactly like ratio. `legs` carries each leg's agg for the per-leg
+ *  NULL-policy (zero-on-empty agg coalesces to 0; avg/min/max stays NULL). */
+export interface DerivedComposite {
+  kind: 'derived';
+  as: string;
+  expr: CompiledDerivedExpr; // refs = leg aliases
+  legs: { alias: string; agg: Agg }[];
+}
+
+export type CompositeColumn = RatioComposite | DerivedComposite;
 
 export interface Aggregate {
   entity: string; // the anchor / root entity

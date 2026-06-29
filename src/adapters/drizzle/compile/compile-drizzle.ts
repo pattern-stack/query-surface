@@ -21,6 +21,7 @@ import type {
   AggColType,
   Aggregate,
   AggregatePlan,
+  CompiledDerivedExpr,
   Measure,
   Predicate,
   ScopeFor,
@@ -55,6 +56,41 @@ const assertIdent = (n: string) => {
 // Aggs whose value over zero input rows is conventionally 0 (so an absent group's
 // leg coalesces to 0). avg/min/max over no rows are undefined → stay NULL.
 const ZERO_ON_EMPTY = new Set<Agg>(['sum', 'count', 'count_distinct']);
+
+// The closed 4-op set a derived composite may lower (invariant #1: operators are a fixed
+// keyword set via sql.raw, NEVER a caller string).
+const DERIVED_OP = new Set(['+', '-', '*', '/']);
+
+// Lower a COMPILED derived AST (refs already = leg aliases on the grouped `sub`) into a
+// numeric-safe Drizzle SQL fragment — OUTER-SELECT arithmetic over already-collapsed legs, so
+// it adds ZERO fan (invariant #2), exactly like the ratio division. `legAgg` gives each leg's
+// agg for the zero-on-empty NULL policy (sum/count/count_distinct coalesce an absent group to
+// 0; avg/min/max stay NULL). A '/' RIGHT operand is wrapped in nullif(...,0) → div-by-zero
+// impossible (mirrors the ratio denominator). ::numeric on each operand → integer legs don't
+// integer-truncate on '/'. Operators lower via sql.raw over the FIXED closed set ONLY
+// (invariant #1 — the same sanctioned fixed-keyword pattern as BINOP/in/asc-desc); refs lower
+// to `sub[alias]` column objects; literals are bound params. NEVER a caller SQL string.
+// biome-ignore lint/suspicious/noExplicitAny: `sub` is the dynamic grouped subquery (see makeGrouped's `.as('g')`); leg columns are keyed by alias exactly as the ratio path does.
+function walkDerived(node: CompiledDerivedExpr, legAgg: Map<string, Agg>, sub: any): SQL {
+  if ('lit' in node) return sql`${node.lit}`; // bound param
+  if ('ref' in node) {
+    const agg = legAgg.get(node.ref);
+    return agg && ZERO_ON_EMPTY.has(agg)
+      ? sql`coalesce(${sub[node.ref]}, 0)` // absent group → genuine 0
+      : sql`${sub[node.ref]}`; // avg/min/max → stay NULL
+  }
+  if (!DERIVED_OP.has(node.op)) {
+    throw new Error(`${ENGINE_ERROR.AGGREGATE} derived: unsupported operator "${node.op}"`);
+  }
+  // Cast each operand ::numeric BEFORE the nullif wrap, so a literal divisor resolves as
+  // nullif($1::numeric, 0) — otherwise Postgres types the bound param to integer from the bare
+  // `0` and a fractional divisor (e.g. `/ 2.5`) errors 22P02. (Casting a numeric expr again is a
+  // no-op.) Integer legs stay non-truncating on '/'.
+  const L = sql`${walkDerived(node.left, legAgg, sub)}::numeric`;
+  let R = sql`${walkDerived(node.right, legAgg, sub)}::numeric`;
+  if (node.op === '/') R = sql`nullif(${R}, 0)`; // guard the divisor → NULL, not div-by-zero
+  return sql`(${L} ${sql.raw(node.op)} ${R})`;
+}
 
 interface Resolved {
   expr: SQL;
@@ -886,7 +922,11 @@ function applyOrderLimit(builder: any, q: Aggregate, outputAliases: Set<string>)
 // orderable). The legal target set for order_by (so a ratio IS orderable, a leg is not).
 function outputAliasSet(q: Aggregate): Set<string> {
   const groupCols = q.group_by ?? [];
-  const legs = new Set((q.composites ?? []).flatMap((c) => [c.numerator, c.denominator]));
+  const legs = new Set(
+    (q.composites ?? []).flatMap((c) =>
+      c.kind === 'derived' ? c.legs.map((l) => l.alias) : [c.numerator, c.denominator],
+    ),
+  );
   const measures = q.measures.map((m) => m.as).filter((a) => !legs.has(a));
   const composites = (q.composites ?? []).map((c) => c.as);
   return new Set<string>([...groupCols, ...measures, ...composites]);
@@ -964,7 +1004,11 @@ export function compileGroupedDrizzle(
     // The internal composite legs (__cmp_…) are NOT part of the output/filter contract:
     // excluded from the projection AND refused in HAVING (order_by already excludes them
     // via outputAliasSet) — so the reserved namespace never leaks as a public handle.
-    const legs = new Set(composites.flatMap((c) => [c.numerator, c.denominator]));
+    const legs = new Set(
+      composites.flatMap((c) =>
+        c.kind === 'derived' ? c.legs.map((l) => l.alias) : [c.numerator, c.denominator],
+      ),
+    );
     // biome-ignore lint/suspicious/noExplicitAny: dynamic projection shape.
     let wrapped: any;
     if (composites.length) {
@@ -973,6 +1017,14 @@ export function compileGroupedDrizzle(
       for (const c of projectedGroupCols) shape[c] = sub[c];
       for (const m of q.measures) if (!legs.has(m.as)) shape[m.as] = sub[m.as];
       for (const comp of composites) {
+        // A derived composite is OUTER-SELECT arithmetic over the collapsed leg aliases —
+        // walk its AST into numeric-safe SQL (per-leg null policy + closed-op set via
+        // sql.raw). Short-circuits before the ratio code (which then narrows to RatioComposite).
+        if (comp.kind === 'derived') {
+          const legAgg = new Map(comp.legs.map((l) => [l.alias, l.agg]));
+          shape[comp.as] = walkDerived(comp.expr, legAgg, sub).as(comp.as);
+          continue;
+        }
         // NUMERATOR null-policy is agg-aware: a zero-on-empty agg (sum/count/count_distinct)
         // coalesces an absent group to 0 (genuinely 0); avg/min/max stay NULL (undefined,
         // not 0 → ratio NULL → counted into warnings). DENOMINATOR: absent OR genuine-zero

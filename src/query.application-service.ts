@@ -36,6 +36,7 @@ import type {
   CompareResponse,
   CompareSeparateResponse,
   ConformedDim,
+  DerivedExpr,
   RelevanceCitation,
   ScopeFor,
 } from './internal/analytics/index.ts';
@@ -195,6 +196,8 @@ export interface MetricCatalogEntry {
   /** cumulative: the accumulated atomic measure (+ optional partition) */
   measure?: string;
   partition_by?: string;
+  /** derived: the arithmetic expression over atomic measure legs */
+  expr?: DerivedExpr;
   /** human label, if the host supplied one */
   label?: string;
 }
@@ -359,6 +362,8 @@ export class QueryApplicationService {
         metrics.push({ name, layer: 'metric', kind: 'ratio', numerator: def.numerator, denominator: def.denominator, ...label });
       } else if (def.kind === 'cumulative') {
         metrics.push({ name, layer: 'metric', kind: 'cumulative', measure: def.measure, ...(def.partition_by ? { partition_by: def.partition_by } : {}), ...label });
+      } else if (def.kind === 'derived') {
+        metrics.push({ name, layer: 'metric', kind: 'derived', expr: def.expr, ...label });
       }
     }
     return metrics.sort((a, b) => a.name.localeCompare(b.name));

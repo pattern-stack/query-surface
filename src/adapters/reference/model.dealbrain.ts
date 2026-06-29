@@ -10,6 +10,7 @@ import {
   type AtomicMeasureDef,
   type MeasureCatalog,
   measuresFromRegistry,
+  validateDerivedDef,
   validateMeasureDef,
   validateRatioDef,
 } from '../../internal/analytics/measure-catalog';
@@ -286,6 +287,7 @@ export async function loadDealbrainModel(
   for (const [slug, def] of Object.entries(measureDefs)) {
     if (def.kind === 'atomic') continue;
     if (def.kind === 'ratio') validateRatioDef(catalog, slug, def);
+    if (def.kind === 'derived') validateDerivedDef(catalog, slug, def);
     catalog[slug] = def;
   }
   return { registry, analytics, tables, colByDbName, catalog };
