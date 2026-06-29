@@ -174,3 +174,39 @@ describe('conformedDimensions (the describe surface)', () => {
     expect(paths).toEqual(['id', 'name']);
   });
 });
+
+// ADR-0024 Amendment 4 — a BARE group dim owned by a to-one TARGET resolves to-one (the execute
+// path the eav-to-one work already advertises via conformedDimensions), with the unsafe directions
+// still refused. Group-role only; dimensions-only; physical-local names are gated at the adapter.
+describe('resolveJoinPlan — bare-name conformed group dim (Amendment 4)', () => {
+  it('bare dim owned by ONE to-one target resolves to-one', () => {
+    // state_of_deal_status is a dimension on opportunities; observations→opportunities is one to-one
+    // path; not on observations; accounts is a diamond (excluded) → unique owner = opportunities.
+    const plan = resolveJoinPlan(reg, 'observations', 'state_of_deal_status', 'group');
+    expect(plan.kind).toBe('to-one');
+    if (plan.kind === 'to-one') {
+      expect(plan.target).toBe('opportunities');
+      expect(plan.column).toBe('state_of_deal_status');
+    }
+  });
+
+  it('a bare name that IS a field on the source stays LOCAL (never searched)', () => {
+    expect(resolveJoinPlan(reg, 'observations', 'type', 'group')).toEqual({ kind: 'local', column: 'type' });
+    expect(resolveJoinPlan(reg, 'observations', 'account_id', 'group')).toEqual({ kind: 'local', column: 'account_id' });
+  });
+
+  it('a bare name that is a MEASURE on the target is NOT rerouted (dimensions-only) → local fallback', () => {
+    // weighted_amount is role:'measure' on opportunities → not a dimension candidate → 0 hits → local.
+    expect(resolveJoinPlan(reg, 'observations', 'weighted_amount', 'group')).toEqual({ kind: 'local', column: 'weighted_amount' });
+  });
+
+  it('a bare name owned only via a DIAMOND target is excluded → local fallback (fails loud downstream)', () => {
+    // `name` lives on accounts, reachable from observations by 2 paths (direct + via opportunities) →
+    // belongsToPaths length 2 → skipped → 0 hits → local (then unknown-column at lowering).
+    expect(resolveJoinPlan(reg, 'observations', 'name', 'group')).toEqual({ kind: 'local', column: 'name' });
+  });
+
+  it('the bare-name search is GROUP-ONLY — a filter-role bare name stays local (not rerouted)', () => {
+    expect(resolveJoinPlan(reg, 'observations', 'state_of_deal_status', 'filter')).toEqual({ kind: 'local', column: 'state_of_deal_status' });
+  });
+});

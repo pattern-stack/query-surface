@@ -712,6 +712,19 @@ function lowerGroupDim(
     const { valueCol, join } = eavValueJoin(model, source, eavField.eav, `fvg_${assertIdent(dim)}`);
     return { alias: dim, col: valueCol, expr: sql`${valueCol}`, joins: [join] };
   }
+  // ADR-0024 Amendment 4 — fail-loud guard for the bare-name to-one search. A bare dim that is a
+  // PHYSICAL column on THIS source is SOURCE-OWNED: it must NEVER be rerouted to a same-named dim
+  // on a to-one target (invariant #3 — a host column untagged in `analytics` must not silently
+  // resolve to a foreign entity's dimension). The interior resolveJoinPlan checks "local" against
+  // the role-tagged `analytics.fields` (a strict subset of physical columns), so it can't see an
+  // untagged physical column; gate HERE where `colByDbName` is authoritative. A registered local
+  // DIMENSION (also physical, e.g. `account_id`) passes through to resolveJoinPlan (→ local);
+  // a physical column that is NOT a registered dimension REJECTS (dimensions-only; never reroute).
+  if (!dim.includes('.') && model.colByDbName[source]?.[dim] && eavField?.role !== 'dimension') {
+    throw new Error(
+      `${ENGINE_ERROR.AGGREGATE} "${dim}" is a column on ${source} but not a groupable dimension (see describe) — group by a registered dimension, or aggregate it as a measure.`,
+    );
+  }
   const plan = resolveJoinPlan(model.analytics, source, dim, 'group');
   if (plan.kind === 'reject') throw new Error(`${ENGINE_ERROR.AGGREGATE} ${plan.reason}`);
   // GROUP-BY accepts DIMENSIONS only — describe() advertises exactly role:'dimension', so enforce
