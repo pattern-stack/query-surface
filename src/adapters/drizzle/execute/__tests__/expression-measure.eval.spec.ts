@@ -114,23 +114,36 @@ suite('expression measure — agg(f(col,col)) over local numeric cols (ADR-0029 
     }
   });
 
-  it('D4-2 LINEAR EQUIVALENCE: SUM(ExpectedRevenue − Amount) [row-level expr] == SUM(rev) − SUM(amount) over the co-present rows', async () => {
-    // The distributive identity SUM(a − b) == SUM(a) − SUM(b) holds over the row set where BOTH legs
-    // are present. A row-level expression naturally RESTRICTS to that set (a NULL operand → NULL →
-    // dropped from the SUM), so the meaningful comparison is against SUM(a) − SUM(b) computed over the
-    // SAME co-present rows (INNER joins on both EAV legs). Ground truth proves both forms coincide there.
+  it('D4-2 LINEAR EQUIVALENCE + MISSING→0: SUM(ExpectedRevenue − Amount) [row-level expr] == SUM(rev) − SUM(amount) over ALL rows (a missing operand is 0, not a dropped row)', async () => {
+    // A missing EAV operand is coalesced to 0 (the additive identity), so the row STAYS — the
+    // expression form therefore coincides with the post-aggregate derived form over ALL rows, not
+    // just the co-present subset. Ground truth mirrors that with coalesce(...,0) + LEFT joins: a deal
+    // with revenue but no amount contributes revenue−0, never dropping out of the total.
     const expected = await truth<{ stage: string | null; spread: string; distrib: string }>(
       `select s.v as stage,
-              sum(e.v - a.v)      as spread,
-              sum(e.v) - sum(a.v) as distrib
+              sum(coalesce(e.v,0) - coalesce(a.v,0))      as spread,
+              sum(coalesce(e.v,0)) - sum(coalesce(a.v,0)) as distrib
+         from opportunities o
+         left join ${fvNum('ExpectedRevenue')} e on e.eid = o.id
+         left join ${fvNum('Amount')} a on a.eid = o.id
+         left join ${fv('StageName', 'value_text')} s on s.eid = o.id
+        group by s.v`,
+    );
+    // the distributive identity holds GLOBALLY now (missing→0): row-level == derived form.
+    for (const e of expected) expect(num(e.spread)).toBeCloseTo(num(e.distrib), 2);
+
+    // WITNESS that missing→0 actually does work here: the co-present-ONLY spread (INNER joins, the
+    // old row-dropping behavior) must DIFFER from the all-rows spread on >=1 stage — otherwise this
+    // fixture has no present/missing rows and the missing→0 semantics would be untested (vacuous).
+    const coPresent = await truth<{ stage: string | null; spread: string }>(
+      `select s.v as stage, sum(e.v - a.v) as spread
          from opportunities o
          join ${fvNum('ExpectedRevenue')} e on e.eid = o.id
          join ${fvNum('Amount')} a on a.eid = o.id
          left join ${fv('StageName', 'value_text')} s on s.eid = o.id
         group by s.v`,
     );
-    // the distributive identity itself, on the ground-truth side (row-level == derived form).
-    for (const e of expected) expect(num(e.spread)).toBeCloseTo(num(e.distrib), 2);
+    const coBy = new Map(coPresent.map((e) => [bucketKey(e.stage), num(e.spread)]));
 
     const expr = await h.service.measure('opportunities', {
       group_by: ['stage'],
@@ -141,7 +154,18 @@ suite('expression measure — agg(f(col,col)) over local numeric cols (ADR-0029 
     expect(expBy.size).toBeGreaterThan(0);
     // non-degeneracy: at least one group has a non-zero spread (else subtraction is vacuous).
     expect(expected.some((e) => num(e.spread) !== 0)).toBe(true);
-    for (const [k, v] of expBy) expect(exprBy.get(k)).toBeCloseTo(v, 2);
+    // the engine matches the ALL-ROWS (missing→0) form — and that form genuinely DIFFERS from the
+    // co-present-only form, so the engine provably did NOT drop a row missing one operand.
+    let diverges = false;
+    for (const [k, v] of expBy) {
+      expect(exprBy.get(k)).toBeCloseTo(v, 2);
+      if (Math.abs(v - (coBy.get(k) ?? v)) > 0.5) diverges = true;
+    }
+    expect(
+      diverges,
+      'fixture has no opp with exactly one of {ExpectedRevenue, Amount} present — cannot witness ' +
+        'missing→0 vs row-drop here (a real finding about fixture sparsity, not a pass).',
+    ).toBe(true);
   });
 
   it('D4-3 DISCRIMINATOR: SUM(Amount·Probability) ≠ SUM(Amount)·SUM(Probability) (row-level, not post-aggregate)', async () => {
