@@ -1,49 +1,18 @@
-# Handoff — 2026-06-21
+# Handoff — 2026-06-26
 
-**Branch:** `main` (`0ac73bb`). Shared working copy is co-driven — see Obstacles.
+**Branch:** `main` (query-surface `f3de55b`, == origin). Sibling **dealbrain-projection** `main` `72cd2b2` (LOCAL-only, no remote, by choice). ⚠️ Another agent is concurrently active in query-surface — coordinate git (read-only checks before pushing).
 
-**Last action:** Engine-reorg DESIGN session. Wrote **[ADR-0028](decisions/ADR-0028-engine-unification-and-query-backend.md)** —
-unify the two forked compilers onto one `normalize → plan → lower → execute` pipeline with `grain:'row'|'group'`
-as the single discriminator (`query()` = the degenerate row-grain case of `aggregate()`), extract a dialect-neutral
-**`QueryPlan` IR + `QueryBackend` driven port** so Snowflake/BigQuery become a new adapter folder. Built via an
-ultracode workflow (8 grounded probes → 3 adversarial reviews → synthesis). Gating decisions SETTLED: **§8/§A diamond
-addressing** (name-the-route edge grammar + host-canonical default + `describe()` per-leg surfacing + synthetic
-asymmetric fixture; union-closure deferred) and **§B scope-upgrade rollout** (ship the tightening WITH the cut).
-Shipped the one pre-req bug fix: **the `fetch()` expand scope leak** — fail-closed scope folded through every
-traversed relation (invariant #3) — **merged to main, PR #15 (`0ac73bb`)**, char-pinned (`expand-scope.char.eval.spec.ts`).
+**Last action:** Shipped + PROD-VERIFIED the cross-tenant tenancy fix. (1) query-surface ENGINE: `scope` is now MANDATORY + fail-closed — `ScopeResolver | UNSCOPED` (required field + runtime guard), root `scoped()` refuses an uncovered entity (invariant #3 made total), gate/falsifier `scope-mandatory.char.eval.spec.ts`. Merged to `main`, pushed (`b092f11`). (2) dealbrain-projection CONSUMER: `createSurface({ organizationId, userId?, unscoped? })` (required org-or-explicit-unscoped, per-entity org_id resolver, junction via semijoin), `mcp-serve` gated on `ORG_ID`/`UNSCOPED=1`, **C4 fix** (tenant-portable aggregate model), **SSL option** (self-signed prod), **EAV discovery** (overlay derived from each org's `field_definitions` by data_type — drops the hardcoded specs; prod org → 203 measures + 75 dims from 554 defs). Also this session: 5-verb rename LOCKED + applied (`describe/select/fetch/measure/compare`, ADR-0024 Amendment 3), ADR-0028 Step 0 (`AggregateModel` rename). Read-only prod leak-hunt: all checks green, 0 cross-tenant leak.
 
-**Next action:** The engine reorg is **DESIGNED, 0% BUILT** — nothing on `main` has changed except the expand fix.
-Execute ADR-0028's strangler sequence (each step PR-sized; several sessions):
-  - **Step 0** — `DealbrainModel → AggregateModel` rename (free, isolated, mechanical prep).
-  - **Step 1 (Gate 0)** — the relation-name→entity-prefix grammar normalizer + the **synthetic asymmetric-diamond fixture**.
-  - **Step 2** — HARDEN the char net BEFORE any lowering change: connective (AND/OR/NOT incl. has_many-EXISTS), pagination
-    (`offset`, `has_more===true`, page-union), `runSearchMulti` — all DB-gated, pin `compiler.ts`'s CURRENT behavior first.
-  - **Steps 3–8** — define `QueryPlan`+`QueryBackend`; make the aggregate adapter implement it; add `grain:'row'` lowering
-    (land `fetch()` first); port query-only capabilities (computed subqueries, EAV Shape-B jsonb, FTS lexical, text-magic,
-    projection/snippet/PK, EAV-inner semijoin); the gated cut (scope upgrade lands here); retire `compiler.ts`.
-Remaining ADR open items are tactical (recs in hand): **§D** value-type (numbers-as-numbers), **§E** error vocabulary,
-**§F** keep `compiler.ts` one release.
-**Also still PARKED:** the **surface rebrand = the "new 5 words"** (rename the 5 primitive verbs —
-`describe/query/fetch/aggregate/compare`). DECIDED this session: DON'T do it standalone — **fold it into the
-engine-reorg cut** (it's a breaking public-API change: REST routes + MCP tool names + agent prompts → bundle
-with the cut's already-breaking scope/value-type changes = one breaking release, one consumer migration).
-ACTION: Dug to supply the candidate 5 words → lock them (design-only, free) now → defer the code rename to ride
-Steps 6–8. (NB: the *codebase* hexagonal reorg is already SHIPPED — only the ENGINE reorg above remains.)
+**Next action:** The user wants to **explore the surface live via MCP** (see what we built) — boot the dealbrain-projection MCP locally: `cd dealbrain-projection && UNSCOPED=1 DBURL=postgres://postgres:password@localhost:54321/dealbrain bun run scripts/mcp-serve.ts` (single-tenant beanmaxx). After that, the ship-prep step proper: the **live char-net bench** (= ADR-0028 Step 2 — deep testing emitted as char specs).
 
 **Obstacles:**
-- **Co-driven working copy.** A parallel thread's uncommitted **`artifacts` WIP** lives in this shared checkout
-  (`schema.dealbrain.ts` adds the `artifacts` table + relations; `harness.ts` registers it). It's RED on 2 hard-coded
-  entity-count specs (`harness — smoke`, `describe-catalog` both assert exactly 3 entities; it adds a 4th). NOT ours —
-  left untouched. Check `git branch --show-current` + `git status` before any commit (memory: co-driven git gotcha).
-- **Pre-existing biome drift** in `src/adapters/reference/model.dealbrain.ts` (biome 1.9.4, around the `artifactId`
-  role tag) on `main` HEAD — unrelated to our work; may show a red biome step in CI repo-wide.
-- ADR-0028 + this handoff are uncommitted docs in the working tree (clobber risk under the co-driven copy until PR'd).
+- **ADR-0028 traversed-join residual** — query()'s to-one JOIN `ON` / cross-grain cohort don't fold scope (only `expand` + the root + aggregate-per-source do). Narrow (needs a cross-tenant FK; clean data lacks it). Being probed in `f3de55b`. Structurally closed only by the engine reorg.
+- **dealbrain-projection has no remote** — 4 local commits (`fc178c7`→`72cd2b2`). Not backed up.
+- **Prod catalog size** — that org surfaces 203 measures + 75 dims in `describe()`; accurate but large for an agent. Curation/allowlist is a future UX lever (the explicit `measureSpecs`/`dimensionSpecs` override path exists).
 
 ## Notes
-- The interior (`src/internal/`) is ALREADY dialect-free; the aggregate path is ALREADY plan→lower (`grain.ts`,
-  `join-plan.ts`, `doctor.ts`). The reorg is interface-extraction + retiring the legacy `compiler.ts` query path,
-  NOT a green-field rewrite. Risk is concentrated at Steps 6–8, fully gated by the char net.
-- Bean Maxx diamond is symmetric/redundant: `observations.account_id` agrees with `opportunity.account_id`
-  29039/29039 (0 disagree, 0 account-level obs) — so the asymmetric-diamond char fixture MUST be synthetic.
-- Eval gate (unchanged): `DBURL=postgres://postgres:password@localhost:54321/dealbrain bun test` (DB-gated specs skip
-  without DBURL). The 2 current fails are the other thread's artifacts WIP, not regressions.
+- The org-scoping bug the CANVAS thread flagged as a blocker (query-surface "OFF-LIMITS", route via `executeForOrganization`) is **FIXED** by the above — that guardrail can lift for org-scoped reads via `createSurface({ organizationId })`. Canvas agent owns updating its own `canvas-port-status`/`canvas-mvp-built` memory + `docs/handoff-port-to-dealbrain.md` §0.
+- ADR-0028 engine reorg is still DESIGNED, ~Step 0 built. Steps 1–8 (the strangler) remain; the rename's code already shipped (it did NOT wait for the cut — superseded the old "fold into the cut" plan, see ADR-0024 Amendment 3).
+- Eval gate: `DBURL=… bun test` → 341 pass (DB-gated specs skip without DBURL; ~12 fail only when `OPENAI_API_KEY` is unset = embedding specs, not regressions).
+- Memory: `tenancy-scope-contract`, `verb-naming-locked`, `query-surface-ship-context` all current.
