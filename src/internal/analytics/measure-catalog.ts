@@ -11,13 +11,15 @@
 
 import { ENGINE_ERROR } from '../language/error-messages';
 import { measureField } from './grain';
-import type { Additivity, Agg, AggRegistry, Aggregate, Measure, Predicate } from './types';
+import type { Additivity, Agg, AggRegistry, Aggregate, Measure, Predicate, RowExpr } from './types';
 
 /** A simple (single-column) measure: an aggregate over one field of one source. */
 export interface AtomicMeasureDef {
   kind: 'atomic';
-  /** field key (or 'relation.field') on `source`; EAV fields resolve as columns */
-  on: string;
+  /** field key (or 'relation.field') on `source`; EAV fields resolve as columns. OR a RowExpr for
+   *  an EXPRESSION measure (ADR-0029 D4) — a per-row arithmetic expression over LOCAL numeric cols,
+   *  aggregated ONCE: agg(f(col1,col2,…)). */
+  on: string | RowExpr;
   agg: Agg;
   /** the entity the field lives on */
   source: string;
@@ -108,6 +110,75 @@ export function validateMeasureDef(
   name: string,
   def: AtomicMeasureDef,
 ): void {
+  // EXPRESSION measure (D4): validate every leaf is a LOCAL registered NUMERIC field on `source`,
+  // the ops are the closed 4-set, and at least one col is referenced. Additivity is HOST-DECLARED
+  // (there is no single field to compare), so the no-loosening rule below does NOT apply — RETURN
+  // before measureField (which throws on an object on) and the ADDITIVITY_RANK check.
+  if (typeof def.on === 'object') {
+    let colCount = 0;
+    const walk = (node: RowExpr): void => {
+      if (node == null || typeof node !== 'object') {
+        throw new Error(`${ENGINE_ERROR.AGGREGATE} measure "${name}": malformed expression node`);
+      }
+      if ('lit' in node) {
+        if (typeof node.lit !== 'number' || !Number.isFinite(node.lit)) {
+          throw new Error(
+            `${ENGINE_ERROR.AGGREGATE} measure "${name}": literal must be a finite number`,
+          );
+        }
+        return;
+      }
+      if ('col' in node) {
+        colCount++;
+        if (typeof node.col !== 'string' || node.col.length === 0) {
+          throw new Error(
+            `${ENGINE_ERROR.AGGREGATE} measure "${name}": col must be a non-empty field key`,
+          );
+        }
+        if (node.col.includes('.')) {
+          throw new Error(
+            `${ENGINE_ERROR.AGGREGATE} measure "${name}": col "${node.col}" is a dotted/relation reach — v1 expression measures are LOCAL-only (a future wave composes a to-one lower)`,
+          );
+        }
+        const exprField = analytics[def.source]?.fields[node.col];
+        if (!exprField) {
+          throw new Error(
+            `${ENGINE_ERROR.AGGREGATE} measure "${name}": col "${node.col}" is not registered on "${def.source}"`,
+          );
+        }
+        if (exprField.type !== 'number') {
+          throw new Error(
+            `${ENGINE_ERROR.AGGREGATE} measure "${name}": col "${node.col}" is type "${exprField.type}", not numeric — arithmetic requires a numeric field`,
+          );
+        }
+        return;
+      }
+      if ('op' in node) {
+        if (!DERIVED_OPS.has(node.op)) {
+          throw new Error(
+            `${ENGINE_ERROR.AGGREGATE} measure "${name}": unsupported operator "${node.op}" (allowed: + - * /)`,
+          );
+        }
+        if (!node.left || !node.right) {
+          throw new Error(
+            `${ENGINE_ERROR.AGGREGATE} measure "${name}": operator "${node.op}" requires both left and right operands`,
+          );
+        }
+        walk(node.left);
+        walk(node.right);
+        return;
+      }
+      throw new Error(`${ENGINE_ERROR.AGGREGATE} measure "${name}": malformed expression node`);
+    };
+    walk(def.on);
+    if (colCount === 0) {
+      throw new Error(
+        `${ENGINE_ERROR.AGGREGATE} measure "${name}": expression references no column — a pure-literal measure is meaningless`,
+      );
+    }
+    return;
+  }
+
   const head = measureField(def);
   const field = analytics[def.source]?.fields[head];
   if (!field) {
