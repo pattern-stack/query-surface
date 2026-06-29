@@ -70,7 +70,10 @@ export async function runAggregateDrizzle(
           // BOTH grains conform: `local` (own-entity EAV field) AND `to-one` (an EAV dim on a
           // belongs_to target, e.g. observations filtered by opportunities.stage) — the to-one
           // case composes eavValueJoin THROUGH the belongs_to LEFT JOIN in lowerToOne.
-          if ((r.kind === 'local' || r.kind === 'to-one') && model.analytics[owner]?.fields[col]?.eav)
+          if (
+            (r.kind === 'local' || r.kind === 'to-one') &&
+            model.analytics[owner]?.fields[col]?.eav
+          )
             continue;
         } else if (r.code === 'ambiguous' || r.code === 'unsupported') {
           // a join diamond / multi-hop collection path on this source — informative reason.

@@ -11,7 +11,10 @@
 //     bun test src/adapters/drizzle/execute/__tests__/host-measure-def.eval.spec.ts
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
-import { type QuerySurfaceHarness, makeQuerySurface } from '../../../../characterization/harness.ts';
+import {
+  type QuerySurfaceHarness,
+  makeQuerySurface,
+} from '../../../../characterization/harness.ts';
 import { loadDealbrainModel } from '../../../reference/model.dealbrain';
 
 const DBURL = process.env.DBURL;
@@ -116,7 +119,12 @@ suite('host measure defs — call a measure by its stable slug ({ref})', () => {
     const h2 = makeQuerySurface(DBURL!, {
       dimensionSpecs: DIMENSION_SPECS,
       measureDefs: {
-        win_share: { kind: 'ratio', numerator: 'ExpectedRevenue.sum', denominator: 'Amount.sum', label: 'Win Share' },
+        win_share: {
+          kind: 'ratio',
+          numerator: 'ExpectedRevenue.sum',
+          denominator: 'Amount.sum',
+          label: 'Win Share',
+        },
       },
     });
     try {
@@ -143,8 +151,20 @@ suite('host measure defs — call a measure by its stable slug ({ref})', () => {
     const h2 = makeQuerySurface(DBURL!, {
       dimensionSpecs: DIMENSION_SPECS,
       measureDefs: {
-        total_revenue: { kind: 'atomic', on: 'ExpectedRevenue', agg: 'sum', source: 'opportunities', additivity: 'additive', label: 'Total Revenue' },
-        win_share: { kind: 'ratio', numerator: 'ExpectedRevenue.sum', denominator: 'Amount.sum', label: 'Win Share' },
+        total_revenue: {
+          kind: 'atomic',
+          on: 'ExpectedRevenue',
+          agg: 'sum',
+          source: 'opportunities',
+          additivity: 'additive',
+          label: 'Total Revenue',
+        },
+        win_share: {
+          kind: 'ratio',
+          numerator: 'ExpectedRevenue.sum',
+          denominator: 'Amount.sum',
+          label: 'Win Share',
+        },
       },
     });
     try {
