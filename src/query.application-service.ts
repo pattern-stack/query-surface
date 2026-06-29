@@ -172,11 +172,31 @@ export type AggregateRequest = Omit<AggregateInput, 'entity'>;
 export interface MeasureCatalogEntry {
   /** the catalog ref + discovery handle, e.g. `Amount.sum` */
   name: string;
+  /** the LAYER (ADR-0029): a measure is one aggregation pass; always `'measure'` here. */
+  layer: 'measure';
   /** the field aggregated, preserved as-is, e.g. `Amount` */
   on: string;
   agg: Agg;
   /** summable-ness of the underlying field (a `non` field refuses SUM) */
   additivity: Additivity;
+}
+
+/** One advertised METRIC (ADR-0029): a POST-aggregate composition over collapsed measure legs —
+ *  not entity-scoped (its legs may span entities). `name` is the catalog `{ref}`. */
+export interface MetricCatalogEntry {
+  /** the catalog ref + discovery handle, e.g. `win_rate` */
+  name: string;
+  layer: 'metric';
+  /** the composition shape — `ratio` ships; `cumulative` is type-enumerable (routed to query({window})). */
+  kind: 'ratio' | 'cumulative' | 'derived';
+  /** ratio: the two atomic leg refs */
+  numerator?: string;
+  denominator?: string;
+  /** cumulative: the accumulated atomic measure (+ optional partition) */
+  measure?: string;
+  partition_by?: string;
+  /** human label, if the host supplied one */
+  label?: string;
 }
 
 export class QueryApplicationService {
@@ -314,11 +334,34 @@ export class QueryApplicationService {
     }
     const measures: MeasureCatalogEntry[] = [];
     for (const [name, def] of Object.entries(model.catalog ?? {})) {
-      // Only atomic measures are entity-sourced; ratios/cumulatives compose them (advertised later).
+      // Only atomic measures are entity-sourced; metrics (ratio/cumulative/derived) compose them
+      // across entities and are advertised by describeMetrics() (ADR-0029, not entity-scoped).
       if (def.kind !== 'atomic' || def.source !== (entity as string)) continue;
-      measures.push({ name, on: def.on, agg: def.agg, additivity: def.additivity });
+      measures.push({ name, layer: 'measure', on: def.on, agg: def.agg, additivity: def.additivity });
     }
     return measures.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /**
+   * The METRIC layer (ADR-0029): every non-atomic catalog entry — post-aggregate compositions
+   * (`ratio` now; `cumulative` is type-enumerable but routed to `query({ window })`; `derived` is
+   * the planned subtractive/weighted kind). NOT entity-scoped — a metric's legs may span entities,
+   * so unlike describeMeasures() this takes no entity. Surfaced so an agent/UI can group the
+   * catalog by layer (measure vs metric) and call a metric by its `{ref}`.
+   */
+  async describeMetrics(): Promise<MetricCatalogEntry[]> {
+    const model = await this.aggregateModel();
+    const metrics: MetricCatalogEntry[] = [];
+    for (const [name, def] of Object.entries(model.catalog ?? {})) {
+      if (def.kind === 'atomic') continue;
+      const label = 'label' in def && def.label ? { label: def.label } : {};
+      if (def.kind === 'ratio') {
+        metrics.push({ name, layer: 'metric', kind: 'ratio', numerator: def.numerator, denominator: def.denominator, ...label });
+      } else if (def.kind === 'cumulative') {
+        metrics.push({ name, layer: 'metric', kind: 'cumulative', measure: def.measure, ...(def.partition_by ? { partition_by: def.partition_by } : {}), ...label });
+      }
+    }
+    return metrics.sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /** Find IDs (+ optional preview rows) matching a filter. */

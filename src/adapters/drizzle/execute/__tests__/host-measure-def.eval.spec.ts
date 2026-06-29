@@ -139,6 +139,36 @@ suite('host measure defs — call a measure by its stable slug ({ref})', () => {
     }
   });
 
+  it('E2d describe surfaces the LAYER — atomics in describeMeasures (layer:measure), metrics in describeMetrics', async () => {
+    const h2 = makeQuerySurface(DBURL!, {
+      dimensionSpecs: DIMENSION_SPECS,
+      measureDefs: {
+        total_revenue: { kind: 'atomic', on: 'ExpectedRevenue', agg: 'sum', source: 'opportunities', additivity: 'additive', label: 'Total Revenue' },
+        win_share: { kind: 'ratio', numerator: 'ExpectedRevenue.sum', denominator: 'Amount.sum', label: 'Win Share' },
+      },
+    });
+    try {
+      const measures = await h2.service.describeMeasures('opportunities');
+      expect(measures.length).toBeGreaterThan(0);
+      expect(measures.every((m) => m.layer === 'measure')).toBe(true);
+      expect(measures.find((m) => m.name === 'total_revenue')).toBeDefined();
+      // a ratio is a METRIC — NOT entity-sourced, so it must NOT appear in describeMeasures
+      expect(measures.find((m) => m.name === 'win_share')).toBeUndefined();
+
+      const metrics = await h2.service.describeMetrics();
+      const ws = metrics.find((m) => m.name === 'win_share');
+      expect(ws).toBeDefined();
+      expect(ws?.layer).toBe('metric');
+      expect(ws?.kind).toBe('ratio');
+      expect(ws?.numerator).toBe('ExpectedRevenue.sum');
+      expect(ws?.denominator).toBe('Amount.sum');
+      // an atomic is NOT a metric
+      expect(metrics.find((m) => m.name === 'total_revenue')).toBeUndefined();
+    } finally {
+      await h2.close();
+    }
+  });
+
   it('E3 a slug that shadows an auto-derived catalog key is refused at model load', async () => {
     await expect(
       loadDealbrainModel(h.db, undefined, DIMENSION_SPECS, {
