@@ -115,7 +115,6 @@ export function normalizeAggregate(catalog: MeasureCatalog, input: AggregateInpu
           return { op: node.op, left: rewrite(node.left), right: rewrite(node.right) };
         }
         if ('ref' in node) {
-          // biome-ignore lint/style/noNonNullAssertion: every ref was collected above.
           return { ref: legByRef.get(node.ref)!.alias };
         }
         return { lit: node.lit };

@@ -20,13 +20,13 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
-import { conformedDimensions } from '../../../../internal/analytics/join-plan';
-import { TENANT_GLOBAL } from '../../../../internal/analytics/types';
 import {
   DEALBRAIN_ORG,
   type QuerySurfaceHarness,
   makeQuerySurface,
 } from '../../../../characterization/harness.ts';
+import { conformedDimensions } from '../../../../internal/analytics/join-plan';
+import { TENANT_GLOBAL } from '../../../../internal/analytics/types';
 import { type AggregateModel, loadDealbrainModel } from '../../../reference/model.dealbrain';
 import { runAggregateDrizzle } from '../run-drizzle';
 
@@ -224,7 +224,10 @@ suite('EAV dimension via to-one (describe/execute parity — the over-promise bu
       group_by: ['opportunities.stage'],
       measures: [{ on: '*', agg: 'count', as: 'obs' }],
       variants: [
-        { label: 'ent', filter: { on: 'opportunities.deal_size_band', op: 'eq', value: 'enterprise' } },
+        {
+          label: 'ent',
+          filter: { on: 'opportunities.deal_size_band', op: 'eq', value: 'enterprise' },
+        },
         { label: 'mid', filter: { on: 'opportunities.deal_size_band', op: 'eq', value: 'mid' } },
       ],
       delivery: 'separate',
@@ -255,7 +258,9 @@ suite('EAV dimension via to-one (describe/execute parity — the over-promise bu
       { include_sql: true },
     );
     const key = (v: unknown) => (v == null ? '<null>' : String(v));
-    const got = new Map(res.rows.map((r) => [key(r['opportunities.state_of_deal_status']), num(r.obs)]));
+    const got = new Map(
+      res.rows.map((r) => [key(r['opportunities.state_of_deal_status']), num(r.obs)]),
+    );
     expect(res.rows.length).toBe(expected.length);
     for (const e of expected) expect(got.get(key(e.status))).toBe(num(e.obs));
     // The native path is untouched: a real belongs_to LEFT JOIN, NO field_values / fvt_ alias.
@@ -359,7 +364,11 @@ suite('EAV dimension via to-one (describe/execute parity — the over-promise bu
   it('E13 group_by a SNAKE-keyed EAV MEASURE hits the ROLE GATE with the clear reason (own-entity + to-one)', async () => {
     // snake keys pass the identifier guard, so they reach lowerGroupDim's role gate — THIS is the
     // case the new gate exists for (a measure the lowering COULD resolve but must not group).
-    const m = await loadDealbrainModel(h.db, [{ key: 'age_days', aggs: ['avg', 'max'], additivity: 'non' }], DIMENSION_SPECS);
+    const m = await loadDealbrainModel(
+      h.db,
+      [{ key: 'age_days', aggs: ['avg', 'max'], additivity: 'non' }],
+      DIMENSION_SPECS,
+    );
     // own-entity: group opportunities by the raw age_days measure
     expect(
       runAggregateDrizzle(h.db, m, {

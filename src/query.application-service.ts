@@ -228,7 +228,8 @@ export class QueryApplicationService {
   // (non-UNSCOPED) resolver; everything else fails closed.
   private _tenantGlobals?: Set<string>;
   private get tenantGlobals(): Set<string> {
-    return (this._tenantGlobals ??= new Set<string>(this.options.tenantGlobalEntities ?? []));
+    this._tenantGlobals ??= new Set<string>(this.options.tenantGlobalEntities ?? []);
+    return this._tenantGlobals;
   }
 
   // The aggregate analytics model, lazy-built once on first aggregate() call.
@@ -277,8 +278,7 @@ export class QueryApplicationService {
     if (s) return filter ? { and: [s, filter] } : s;
     if (this.tenantGlobals.has(entity)) return filter; // declared no-tenancy → read unscoped, by decision
     throw new Error(
-      `${ENGINE_ERROR.SCOPE}: entity "${entity}" has no tenancy scope and was not declared ` +
-        'TENANT_GLOBAL — refusing to read it unscoped (scope coverage gap)',
+      `${ENGINE_ERROR.SCOPE}: entity "${entity}" has no tenancy scope and was not declared TENANT_GLOBAL — refusing to read it unscoped (scope coverage gap)`,
     );
   }
 
@@ -370,9 +370,23 @@ export class QueryApplicationService {
       if (def.kind === 'atomic') continue;
       const label = 'label' in def && def.label ? { label: def.label } : {};
       if (def.kind === 'ratio') {
-        metrics.push({ name, layer: 'metric', kind: 'ratio', numerator: def.numerator, denominator: def.denominator, ...label });
+        metrics.push({
+          name,
+          layer: 'metric',
+          kind: 'ratio',
+          numerator: def.numerator,
+          denominator: def.denominator,
+          ...label,
+        });
       } else if (def.kind === 'cumulative') {
-        metrics.push({ name, layer: 'metric', kind: 'cumulative', measure: def.measure, ...(def.partition_by ? { partition_by: def.partition_by } : {}), ...label });
+        metrics.push({
+          name,
+          layer: 'metric',
+          kind: 'cumulative',
+          measure: def.measure,
+          ...(def.partition_by ? { partition_by: def.partition_by } : {}),
+          ...label,
+        });
       } else if (def.kind === 'derived') {
         metrics.push({ name, layer: 'metric', kind: 'derived', expr: def.expr, ...label });
       }
