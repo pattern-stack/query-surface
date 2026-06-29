@@ -538,7 +538,7 @@
           opts.forEach(([v, l]) => g.appendChild(el("option", { value: v, selected: v === defineForm.kind }, l)));
           kindSel.appendChild(g);
         };
-        mkGroup("Measure (one aggregation pass)", [["count", "entity count — count(id)"], ["field", "field aggregate"]]);
+        mkGroup("Measure (one aggregation pass)", [["count", "entity count — count(id)"], ["field", "field aggregate"], ["expression", "expression — agg(A · B) (row-level product)"]]);
         mkGroup("Metric (post-aggregate)", [["ratio", "ratio — A / B"], ["derived", "derived — A ± B (subtractive / weighted)"]]);
         kindSel.onchange = () => { defineForm.kind = kindSel.value; render(); };
         f.appendChild(mkRow("kind", kindSel));
@@ -609,6 +609,41 @@
             f.appendChild(mkRow("right", mkAtomicSel(defineForm.right, (v) => { defineForm.right = v; }, "— atomic measure —")));
           }
           f.appendChild(mkRow("", el("span", { className: "muted", style: "font-size:12px" }, "→ left <op> right over ATOMIC legs (each pre-aggregates in its own CTE → fan-safe; the op is OUTER-SELECT arithmetic, adds no fan). Always non-additive. e.g. ExpectedRevenue.sum - Amount.sum = gross profit.")));
+        } else if (defineForm.kind === "expression") {
+          // ROW-LEVEL expression measure (ADR-0029 D4): agg(leftField <op> right), evaluated PER ROW
+          // BEFORE the agg → still ONE aggregation pass, still a MEASURE (SUM(a·b) ≠ SUM(a)·SUM(b)).
+          // v1 builder = leftField <op> right, right being another numeric FIELD OR a numeric literal.
+          const fields = info.eligibleFields?.opportunities || [];
+          const mkFieldSel = (cur, onpick, ph) => {
+            const s = el("select"); s.style.minWidth = "240px";
+            s.appendChild(el("option", { value: "" }, ph));
+            fields.forEach((fl) => s.appendChild(el("option", { value: fl.key, selected: fl.key === cur }, `${fl.key}${fl.label ? "  ·  " + fl.label : ""}`)));
+            s.onchange = () => onpick(s.value);
+            return s;
+          };
+          const aggSel = el("select");
+          ["sum", "avg", "min", "max"].forEach((a) => aggSel.appendChild(el("option", { value: a, selected: a === defineForm.agg }, a)));
+          aggSel.onchange = () => { defineForm.agg = aggSel.value; };
+          f.appendChild(mkRow("agg", aggSel));
+          f.appendChild(mkRow("left", mkFieldSel(defineForm.left, (v) => { defineForm.left = v; }, "— numeric field —")));
+          const opSel = el("select");
+          ["+", "-", "*", "/"].forEach((o) => opSel.appendChild(el("option", { value: o, selected: o === defineForm.op }, o)));
+          opSel.onchange = () => { defineForm.op = opSel.value; };
+          f.appendChild(mkRow("op", opSel));
+          const rTypeSel = el("select");
+          [["field", "numeric field"], ["lit", "numeric literal"]].forEach(([v, l]) =>
+            rTypeSel.appendChild(el("option", { value: v, selected: (v === "lit") === !!defineForm.rightIsLit }, l)));
+          rTypeSel.onchange = () => { defineForm.rightIsLit = rTypeSel.value === "lit"; defineForm.right = ""; render(); };
+          f.appendChild(mkRow("right is", rTypeSel));
+          if (defineForm.rightIsLit) {
+            const litIn = el("input", { value: defineForm.right, placeholder: "e.g. 0.5" });
+            litIn.style.minWidth = "240px";
+            litIn.oninput = () => { defineForm.right = litIn.value; };
+            f.appendChild(mkRow("right", litIn));
+          } else {
+            f.appendChild(mkRow("right", mkFieldSel(defineForm.right, (v) => { defineForm.right = v; }, "— numeric field —")));
+          }
+          f.appendChild(mkRow("", el("span", { className: "muted", style: "font-size:12px" }, "→ agg(left <op> right) computed PER ROW then aggregated ONCE — a row-level MEASURE, not a metric (SUM(a·b) ≠ SUM(a)·SUM(b)). Both cols are LOCAL on opportunities; the two EAV joins are each 1:1 → no fan. e.g. SUM(Amount · Probability) = weighted pipeline.")));
         } else {
           const fields = info.eligibleFields?.opportunities || [];
           const fieldSel = el("select");

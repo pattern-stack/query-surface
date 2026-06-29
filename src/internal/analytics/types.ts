@@ -80,9 +80,28 @@ export const TENANT_GLOBAL = Symbol('tenant-global');
  *  the engine runs unscoped (trusted/standalone mode — e.g. evals, demos). */
 export type ScopeFor = (sourceEntity: string) => Predicate | typeof TENANT_GLOBAL | undefined;
 
+/** A ROW-LEVEL expression (ADR-0029 D4) — the value a measure aggregates over, computed PER ROW
+ *  BEFORE the single aggregation pass: `agg(f(col1,col2,…))`. This is still ONE pass → still a
+ *  MEASURE (below the aggregation boundary), NEVER a metric: SUM(a·b) ≠ SUM(a)·SUM(b), so the
+ *  multiply must happen per-row, before SUM. Leaves are a LOCAL native/EAV numeric col on the
+ *  measure's OWN source (v1 — a dotted relation reach is rejected at registration) or a numeric
+ *  literal. The op set is the closed 4 (matches the compiler's DERIVED_OP; invariant #1). */
+export type RowExpr =
+  | { col: string } // a LOCAL native/EAV numeric field key on the measure's source
+  | { lit: number } // a numeric literal
+  | { op: '+' | '-' | '*' | '/'; left: RowExpr; right: RowExpr };
+
+/** The distinct column leaves of a RowExpr (for coverage checks in the doctor). */
+export function rowExprCols(e: RowExpr): string[] {
+  if ('col' in e) return [e.col];
+  if ('lit' in e) return [];
+  return [...rowExprCols(e.left), ...rowExprCols(e.right)];
+}
+
 export interface Measure {
-  /** '*' | fieldKey | 'relation.fieldKey' */
-  on: string;
+  /** '*' | fieldKey | 'relation.fieldKey' | a RowExpr (an expression measure, ADR-0029 D4 — a
+   *  per-row expression aggregated ONCE) */
+  on: string | RowExpr;
   agg: Agg;
   /** optional source-entity override (else inferred from `on` / root) */
   source?: string;

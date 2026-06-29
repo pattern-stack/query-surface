@@ -24,6 +24,7 @@ import type {
   CompiledDerivedExpr,
   Measure,
   Predicate,
+  RowExpr,
   ScopeFor,
 } from '../../../internal/analytics/types';
 import { ENGINE_ERROR } from '../../../internal/language/error-messages';
@@ -289,6 +290,49 @@ function eavValueJoin(
   };
 }
 
+// Lower a ROW-LEVEL expression (ADR-0029 D4) into a numeric-safe Drizzle SQL fragment over RAW
+// source columns — PRE-aggregation (the opposite of walkDerived, which combines already-collapsed
+// leg aliases). aggCore then wraps the WHOLE expr ONCE: sum(<expr>)/avg(<expr>)/… → still ONE pass,
+// still a MEASURE (SUM(a·b) ≠ SUM(a)·SUM(b)). Each { col } leaf resolves to a NATIVE column object
+// (nativeColSql) or pushes its OWN 1:1 EAV value join; { lit } is a BOUND param; { op } lowers via
+// sql.raw over the FIXED closed 4-set ONLY (invariant #1) with ::numeric casts + a nullif('/'
+// divisor) guard. The MULTI-EAV wrinkle: an expr can name >=2 EAV cols (Amount·Probability, both
+// EAV) — each leaf gets a DISTINCT alias fv_<as>_<i> (the threaded `counter`) so two EAV joins don't
+// collide; each is 1:1 (entity_id + field_definition_id), so N compose to 1:1 → NO fan (invariant #2).
+function lowerRowExpr(
+  model: AggregateModel,
+  source: string,
+  node: RowExpr,
+  measureAs: string,
+  joins: Array<{ table: PgTable; on: SQL }>,
+  counter: { n: number },
+): SQL {
+  if ('lit' in node) return sql`${node.lit}`; // bound param — never sql.raw of caller data
+  if ('col' in node) {
+    const field = model.analytics[source]?.fields[node.col];
+    if (field?.eav) {
+      const { valueCol, join } = eavValueJoin(
+        model,
+        source,
+        field.eav,
+        `fv_${measureAs}_${counter.n++}`, // DISTINCT alias per EAV leaf — no multi-EAV collision
+      );
+      joins.push(join);
+      return sql`${valueCol}`; // column OBJECT — Drizzle qualifies/escapes
+    }
+    return nativeColSql(model, source, node.col).expr; // native column object (throws on unknown)
+  }
+  if (!DERIVED_OP.has(node.op)) {
+    throw new Error(
+      `${ENGINE_ERROR.AGGREGATE} expression measure: unsupported operator "${node.op}"`,
+    );
+  }
+  const L = sql`${lowerRowExpr(model, source, node.left, measureAs, joins, counter)}::numeric`;
+  let R = sql`${lowerRowExpr(model, source, node.right, measureAs, joins, counter)}::numeric`;
+  if (node.op === '/') R = sql`nullif(${R}, 0)`; // guard divisor → NULL, not div-by-zero
+  return sql`(${L} ${sql.raw(node.op)} ${R})`; // op via sql.raw over the FIXED 4-set ONLY
+}
+
 // The value expression a measure aggregates over, plus any EAV join it needs.
 function measureValue(
   model: AggregateModel,
@@ -297,6 +341,15 @@ function measureValue(
   joins: Array<{ table: PgTable; on: SQL }>,
 ): { valExpr: SQL; isStar: boolean } {
   if (m.on === '*') return { valExpr: sql``, isStar: true };
+  // EXPRESSION measure (D4): an object `on` is a RowExpr → walk it into a composed pre-agg valExpr
+  // (aggCore wraps it unchanged). Must win BEFORE measureField (which throws on an object).
+  if (typeof m.on === 'object') {
+    const counter = { n: 0 };
+    return {
+      valExpr: lowerRowExpr(model, source, m.on, assertIdent(m.as), joins, counter),
+      isStar: false,
+    };
+  }
   const head = measureField(m); // field relative to source — strips the relation prefix of a dotted `on`
   const field = model.analytics[source]?.fields[head];
   if (field?.eav) {
@@ -1115,11 +1168,17 @@ export function compileNaiveDrizzle(db: Db, model: AggregateModel, q: Aggregate)
     if (m.on === '*') {
       isStar = true;
       valExpr = sql``;
+    } else if (typeof m.on === 'object') {
+      // EXPRESSION measure (D4) — reuse the same RowExpr walker so the eval-only naive path can
+      // never silently miscompute a stringified object (won't occur in practice, but fail-safe).
+      const counter = { n: 0 };
+      valExpr = lowerRowExpr(model, src, m.on, assertIdent(m.as), joins, counter);
     } else {
       const head = measureField(m); // field relative to source — strips a dotted `on`'s relation prefix
       const field = model.analytics[src]?.fields[head];
       if (field?.eav) {
-        const { valueCol, join } = eavValueJoin(model, src, field.eav, `fv_${assertIdent(m.as)}`);
+        // `_0` suffix so the string-path EAV alias can never collide with an object-path leaf alias.
+        const { valueCol, join } = eavValueJoin(model, src, field.eav, `fv_${assertIdent(m.as)}_0`);
         joins.push(join);
         valExpr = sql`${valueCol}`;
       } else valExpr = nativeColSql(model, src, head).expr;

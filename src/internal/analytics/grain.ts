@@ -4,7 +4,7 @@
 // NOT the query root (the bug the adversarial panel caught: a root-relative
 // has_many check is blind to grain inversion). Here it's computed grain-relative.
 
-import type { AggRegistry, Aggregate, AggregatePlan, Measure } from './types';
+import type { AggRegistry, Aggregate, AggregatePlan, Measure, RowExpr } from './types';
 
 /** Coarse→fine rank: longest belongs_to chain from this entity upward.
  *  accounts=0, opportunities=1 (belongs_to accounts), observations=2. */
@@ -47,6 +47,9 @@ export function groupGrain(reg: AggRegistry, q: Aggregate): string {
 
 export function measureSource(q: Aggregate, m: Measure): string {
   if (m.source) return m.source;
+  // An expression measure (object `on`) ALWAYS carries `source` (host-registered), so the first
+  // line returns; this is the defensive fallback (an object has no dot to split → the root).
+  if (typeof m.on === 'object') return q.entity;
   if (m.on.includes('.')) return m.on.split('.')[0]!;
   return q.entity;
 }
@@ -57,7 +60,15 @@ export function measureSource(q: Aggregate, m: Measure): string {
  *  the field; `*` passes through. Mirrors group_by's dim handling (post-dot segment) so a measure and
  *  a group_by parse the SAME dotted syntax the same way — `on:"observations.id"` and
  *  `source:"observations", on:"id"` resolve identically. */
-export function measureField(m: { on: string }): string {
+export function measureField(m: { on: string | RowExpr }): string {
+  // An expression measure has no single field name — the expr path (measureValue / doctor /
+  // naive) MUST branch on typeof m.on BEFORE calling this. Fail loud so a missed caller surfaces
+  // in tests rather than silently emitting `[object Object]` SQL.
+  if (typeof m.on === 'object') {
+    throw new Error(
+      'measureField called on an expression measure — branch on typeof m.on before resolving a single field',
+    );
+  }
   if (m.on === '*') return '*';
   return m.on.includes('.') ? m.on.split('.').slice(1).join('.') : m.on;
 }
