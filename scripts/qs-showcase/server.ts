@@ -341,10 +341,11 @@ async function measureEligibleFields(entity: string): Promise<{ key: string; typ
 
 async function apiMeasuresInfo() {
   const t0 = performance.now();
-  const [oppCat, obsCat, oppFields] = await Promise.all([
+  const [oppCat, obsCat, oppFields, metrics] = await Promise.all([
     h.service.describeMeasures('opportunities' as any),
     h.service.describeMeasures('observations' as any),
     measureEligibleFields('opportunities'),
+    h.service.describeMetrics(),
   ]);
   // The atomic measures available as ratio legs — describeMeasures returns ONLY atomics (it skips
   // composites), across entities, deduped. This is exactly the set a ratio numerator/denominator
@@ -352,6 +353,7 @@ async function apiMeasuresInfo() {
   const atomics = [...new Set([...oppCat, ...obsCat].map((m: any) => m.name))].sort();
   return {
     engineCatalog: { opportunities: oppCat, observations: obsCat },
+    engineMetrics: metrics, // the metric LAYER (ADR-0029) — ratios etc., not entity-scoped
     eligibleFields: { opportunities: oppFields },
     atomics,
     book: BOOK.map((m) => ({ ...m, alias: aliasFor(m), ...resolveBookMeasure(m) })),
