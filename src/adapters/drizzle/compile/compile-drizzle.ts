@@ -322,6 +322,36 @@ function lowerToOne(
     if (scope) on = and(on, scope)!;
     joins.push({ table: model.tables[hop.to]!, on });
   }
+  // EAV-DIM-VIA-TO-ONE (the resolved semantic layer reached THROUGH a belongs_to chain): the
+  // target's dim is an EAV field (e.g. opportunities.stage→StageName), NOT a native column.
+  // Compose the SAME shared 1:1 field_values join (eavValueJoin) AFTER the belongs_to LEFT
+  // JOIN(s) — both joins are 1:1 (FK→PK ∘ entity_id=pk+field_definition_id=defId), so the
+  // composite stays non-fanning + grain-safe (1:1∘1:1=1:1; no `rels` edge added, so the grain
+  // oracle/doctor see the same topology). NB: the EAV leg's 1:1-ness rests on the SINGLE-VALUED-EAV
+  // convention (≤1 field_values row per entity_id+field_definition_id) — the SAME assumption the
+  // own-entity EAV dim/measure paths already make; it is NOT enforced by a DB UNIQUE (field_values
+  // PK is just `id`). A multi-valued EAV field tagged role:'dimension' would fan here exactly as it
+  // would on its own entity — an engine-wide hardening concern (guard single-valued at registration),
+  // not specific to the to-one composition. Sits AFTER the scope-folded hop loop on purpose: the
+  // final hop already folded the TARGET's scope into its belongs_to ON, so an uncovered
+  // (non-TENANT_GLOBAL) target throws the coverage-gap at scopeSqlFor BEFORE we resolve the
+  // value column. field_values is never tenant-bearing — its tenancy is inherited via
+  // entity_id = the already-scoped target pk; an out-of-scope target → NULL pk → NULL dim
+  // value (never a leak, never a dropped in-scope child). The alias is fvt_<target>_<column>
+  // (unique per target+column, distinct from the own-entity fv_/fvg_/fvf_ prefixes) so ≥2
+  // EAV-to-one dims in one statement get distinct field_values aliases. toIdentifier (sanitize)
+  // NOT assertIdent: an EAV/host key may be PascalCase ('StageName'); the alias is internal.
+  const targetField = model.analytics[target]?.fields[column];
+  if (targetField?.eav) {
+    const { valueCol, join } = eavValueJoin(
+      model,
+      target,
+      targetField.eav,
+      `fvt_${toIdentifier(target)}_${toIdentifier(column)}`,
+    );
+    joins.push(join);
+    return { joins, col: valueCol, expr: sql`${valueCol}`, type: targetField.type ?? 'string' };
+  }
   const { expr, type } = nativeColSql(model, target, column);
   // The raw column object (plain column, no json path) so a group projection over it
   // CTE-qualifies in the multi-source outer join; null for a json subpath (expr only).
@@ -638,12 +668,29 @@ function lowerGroupDim(
   // group by + project the value column under the dim's safe canonical name. Checked BEFORE
   // resolveJoinPlan (which only knows native columns + relation hops, and would reject the dim).
   const eavField = model.analytics[source]?.fields[dim];
-  if (eavField?.eav && eavField.role === 'dimension') {
+  if (eavField?.eav) {
+    if (eavField.role !== 'dimension')
+      throw new Error(
+        `${ENGINE_ERROR.AGGREGATE} "${dim}" is a ${eavField.role ?? 'non-dimension'} field, not a groupable dimension — group by a dimension (see describe), or aggregate it as a measure.`,
+      );
     const { valueCol, join } = eavValueJoin(model, source, eavField.eav, `fvg_${assertIdent(dim)}`);
     return { alias: dim, col: valueCol, expr: sql`${valueCol}`, joins: [join] };
   }
   const plan = resolveJoinPlan(model.analytics, source, dim, 'group');
   if (plan.kind === 'reject') throw new Error(`${ENGINE_ERROR.AGGREGATE} ${plan.reason}`);
+  // GROUP-BY accepts DIMENSIONS only — describe() advertises exactly role:'dimension', so enforce
+  // the same contract here (native + EAV, local + to-one): grouping by a MEASURE's raw value is a
+  // footgun (one group per distinct value) — band it via a dimension, or aggregate it. The
+  // own-entity EAV path above already gates on role:'dimension'; this covers the resolveJoinPlan
+  // (local-native + to-one) paths so describe is authoritative both directions. NB: group-ONLY —
+  // filtering on a measure (e.g. Amount > 100000) stays legal (that path never reaches here).
+  const dimOwner = plan.kind === 'to-one' ? plan.target : source;
+  const dimField = model.analytics[dimOwner]?.fields[plan.column];
+  if (dimField && dimField.role !== 'dimension') {
+    throw new Error(
+      `${ENGINE_ERROR.AGGREGATE} "${dim}" is a ${dimField.role ?? 'non-dimension'} field, not a groupable dimension — group by a dimension (see describe), or aggregate it as a measure.`,
+    );
+  }
   const outAlias = dim;
   if (plan.kind === 'local') {
     const col = plan.column.includes('.') ? null : colObj(model, source, plan.column);
