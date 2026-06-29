@@ -17,7 +17,10 @@
 //     bun test src/adapters/drizzle/execute/__tests__/derived-metric.eval.spec.ts
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
-import { type QuerySurfaceHarness, makeQuerySurface } from '../../../../characterization/harness.ts';
+import {
+  type QuerySurfaceHarness,
+  makeQuerySurface,
+} from '../../../../characterization/harness.ts';
 import { loadDealbrainModel } from '../../../reference/model.dealbrain';
 
 const DBURL = process.env.DBURL;
@@ -66,7 +69,11 @@ const MEASURE_DEFS = {
   },
   zero_spread: {
     kind: 'derived' as const,
-    expr: { op: '-' as const, left: { ref: 'ExpectedRevenue.sum' }, right: { ref: 'ExpectedRevenue.sum' } },
+    expr: {
+      op: '-' as const,
+      left: { ref: 'ExpectedRevenue.sum' },
+      right: { ref: 'ExpectedRevenue.sum' },
+    },
   },
   // CROSS-SOURCE: an opportunities measure minus a to-many child (observations) measure. The fan
   // hazard a single-join impl would hit: rev inflated ×(obs per opp). Per-source-CTE design = no fan.
@@ -102,9 +109,7 @@ suite('derived composite metric — arithmetic over atomic measure legs (ADR-002
     const expected = new Map(
       legs.rows.map((r) => [String(r.stage), Number(r.rev) - Number(r.cost)]),
     );
-    const got = new Map(
-      derived.rows.map((r) => [String(r.stage), Number(r.gross_profit)]),
-    );
+    const got = new Map(derived.rows.map((r) => [String(r.stage), Number(r.gross_profit)]));
     expect(got.size).toBeGreaterThan(0);
     expect(got.size).toBe(expected.size);
     for (const [k, v] of got) expect(v).toBeCloseTo(expected.get(k)!, 6);
@@ -194,8 +199,8 @@ suite('derived composite metric — arithmetic over atomic measure legs (ADR-002
     // Group by account_id — a NATIVE dimension on BOTH opportunities and observations — so each leg
     // resolves the group key in its OWN source. The fan hazard a single-join impl hits: rev × (obs
     // per account). The per-source-CTE design (each leg pre-aggregates alone, outer-joined on the key)
-    // = no fan. (Grouping a cross-source child leg by a PARENT'S EAV dim like `stage` is a SEPARATE,
-    // currently-unsupported multi-source-conformance path — D3c pins that it fails loud, not silently.)
+    // = no fan. (Grouping a cross-source child leg by a PARENT'S EAV dim like `stage` now CONFORMS at
+    // every leg via the to-one path — D3c pins that it computes the right cross-grain number.)
     const derived = await h.service.measure('opportunities', {
       group_by: ['account_id'],
       measures: [{ ref: 'rev_minus_obs', as: 'rev_minus_obs' } as never],
@@ -220,16 +225,43 @@ suite('derived composite metric — arithmetic over atomic measure legs (ADR-002
     }
   });
 
-  it('D3c a cross-source leg grouped by a PARENT EAV dim fails LOUD (not silently mis-grained)', async () => {
-    // The to-one EAV conformance (observations→opportunities.stage) is not applied to a NON-ROOT
-    // measure source today — so this REFUSES rather than emitting a wrong number. Pins the boundary;
-    // lifting it is a separate multi-source group-dim conformance increment (orthogonal to D2).
-    await expect(
-      h.service.measure('opportunities', {
-        group_by: ['stage'],
-        measures: [{ ref: 'rev_minus_obs', as: 'rev_minus_obs' } as never],
-      }),
-    ).rejects.toThrow();
+  it('D3c CROSS-SOURCE derived grouped by a PARENT EAV dim (stage) now conforms via to-one (Amendment 4)', async () => {
+    // The to-one EAV conformance (observations→opportunities.stage) now resolves at the NON-ROOT
+    // observations leg too: `stage` is an EAV dim on opportunities, observations belongs_to
+    // opportunities (to-one), so it is conformed at the observations grain. Each leg pre-aggregates
+    // 1:1 and the derived arithmetic is exact per stage.
+    const derived = await h.service.measure('opportunities', {
+      group_by: ['stage'],
+      measures: [{ ref: 'rev_minus_obs', as: 'rev_minus_obs' } as never],
+    });
+    // independent ground truth: each leg aggregated ALONE, reaching stage the conformed way per grain.
+    const rev = await h.service.measure('opportunities', {
+      group_by: ['stage'],
+      measures: [{ on: 'ExpectedRevenue', agg: 'sum', as: 'rev' }],
+    });
+    const obs = await h.service.measure('observations', {
+      group_by: ['opportunities.stage'],
+      measures: [{ on: 'id', agg: 'count', as: 'obs' } as never],
+    });
+    // bucket-SUM by stage (null-sentinel): the full-outer-join NULL bucket arrives as two
+    // leg-disjoint rows (NULL≠NULL) — summing them recovers the per-leg truth; non-null is 1:1.
+    const bucket = (rows: Record<string, unknown>[], kf: string, vf: string) => {
+      const m = new Map<string, number>();
+      for (const r of rows) {
+        const raw = r[kf];
+        const k = raw == null ? '<null>' : String(raw);
+        m.set(k, (m.get(k) ?? 0) + Number(r[vf] ?? 0));
+      }
+      return m;
+    };
+    const revBy = bucket(rev.rows as Record<string, unknown>[], 'stage', 'rev');
+    const obsBy = bucket(obs.rows as Record<string, unknown>[], 'opportunities.stage', 'obs');
+    const got = bucket(derived.rows as Record<string, unknown>[], 'stage', 'rev_minus_obs');
+    expect(got.size).toBeGreaterThan(0);
+    expect([...obsBy.entries()].some(([k, v]) => k !== '<null>' && v > 0)).toBe(true); // else 'no fan' is vacuous
+    const keys = new Set([...revBy.keys(), ...obsBy.keys()]);
+    for (const k of keys)
+      expect(got.get(k) ?? 0).toBeCloseTo((revBy.get(k) ?? 0) - (obsBy.get(k) ?? 0), 4);
   });
 
   it('D4 describeMetrics advertises the derived metric as kind:"derived" with its expr', async () => {
