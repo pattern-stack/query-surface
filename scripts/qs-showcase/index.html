@@ -504,7 +504,7 @@
       }
 
       // ── measures workbench ──────────────────────────────────────────────────────────────────
-      const defineForm = { kind: "count", name: "", entity: "opportunities", field: "", agg: "sum", additivity: "additive" };
+      const defineForm = { kind: "count", name: "", entity: "opportunities", field: "", agg: "sum", additivity: "additive", numerator: "", denominator: "" };
 
       async function viewMeasures(main) {
         main.appendChild(el("p", { className: "blurb" },
@@ -512,7 +512,8 @@
           '<code>measureSpec</code> — the engine then auto-catalogs <code>Field.agg</code> and you call it by ' +
           '<code>{ ref }</code>. A <b>count</b> registers <code>count(id)</code> over the entity’s primary key ' +
           '(<code>id</code> is a real field → a first-class catalog measure; <code>count(id) ≡ count(*)</code>). ' +
-          'Either way: define one → the surface rebuilds → the agent calls it by its slug. ' +
+          'A <b>ratio</b> divides two atomic measures (each pre-aggregates in its own CTE → fan-safe). ' +
+          'Any kind: define one → the surface rebuilds → the agent calls it by its slug. ' +
           'Definitions persist to <code>measures.json</code>.'));
         const out = el("div");
         main.appendChild(out);
@@ -531,7 +532,7 @@
           return r;
         };
         const kindSel = el("select");
-        [["count", "count(id) — entity count"], ["field", "field aggregate"]].forEach(([v, l]) =>
+        [["count", "count(id) — entity count"], ["field", "field aggregate"], ["ratio", "ratio — A / B"]].forEach(([v, l]) =>
           kindSel.appendChild(el("option", { value: v, selected: v === defineForm.kind }, l)));
         kindSel.onchange = () => { defineForm.kind = kindSel.value; render(); };
         f.appendChild(mkRow("kind", kindSel));
@@ -558,6 +559,18 @@
           entSel.onchange = () => { defineForm.entity = entSel.value; };
           f.appendChild(mkRow("entity", entSel));
           f.appendChild(mkRow("", el("span", { className: "muted", style: "font-size:12px" }, "→ count(id) of this entity (≡ count(*)); registers as a first-class catalog measure callable by {ref:slug}.")));
+        } else if (defineForm.kind === "ratio") {
+          const atomics = info.atomics || [];
+          const mkAtomicSel = (cur, onpick, ph) => {
+            const s = el("select"); s.style.minWidth = "240px";
+            s.appendChild(el("option", { value: "" }, ph));
+            atomics.forEach((a) => s.appendChild(el("option", { value: a, selected: a === cur }, a)));
+            s.onchange = () => onpick(s.value);
+            return s;
+          };
+          f.appendChild(mkRow("numerator", mkAtomicSel(defineForm.numerator, (v) => { defineForm.numerator = v; }, "— atomic measure —")));
+          f.appendChild(mkRow("denominator", mkAtomicSel(defineForm.denominator, (v) => { defineForm.denominator = v; }, "— atomic measure —")));
+          f.appendChild(mkRow("", el("span", { className: "muted", style: "font-size:12px" }, "→ numerator / denominator over two ATOMIC measures (each pre-aggregates in its own CTE → fan-safe). Always non-additive. e.g. won_count / opportunity_count = win rate.")));
         } else {
           const fields = info.eligibleFields?.opportunities || [];
           const fieldSel = el("select");
@@ -581,7 +594,7 @@
           defMsg.innerHTML = '<span class="loading">defining…</span>';
           const res = await post("/api/measures/define", defineForm);
           if (res.error) { defMsg.innerHTML = ""; defMsg.appendChild(errCard(res.error)); return; }
-          defineForm.name = ""; defineForm.field = ""; defineForm.slug = "";
+          defineForm.name = ""; defineForm.field = ""; defineForm.slug = ""; defineForm.numerator = ""; defineForm.denominator = "";
           render();
         };
         const br = el("div", { className: "row" }); br.appendChild(defBtn); br.appendChild(defMsg);

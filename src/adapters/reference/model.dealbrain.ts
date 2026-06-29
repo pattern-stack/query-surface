@@ -267,17 +267,25 @@ export async function loadDealbrainModel(
   // The measure catalog is DERIVED from the analytics tags (B2) — for dealbrain that's the
   // field.agg combos: Amount.{sum,avg,min,max}, ExpectedRevenue.{…}, Probability.{avg,min,max}.
   const catalog = measuresFromRegistry(analytics);
-  // Merge host-named measure defs onto the auto-derived catalog. Validate each (atomic: field
-  // registered + additivity not looser; ratio: legs are atomic catalog entries) and refuse a slug
-  // that shadows an existing auto-derived key — the slug is the agent-facing contract.
-  for (const [slug, def] of Object.entries(measureDefs)) {
+  // Merge host-named measure defs onto the auto-derived catalog. A slug may never shadow an existing
+  // key (auto-derived OR another host def). TWO passes so a ratio can name a host atomic slug
+  // regardless of object key order: (1) atomics — validate (field registered + additivity not looser)
+  // + add; (2) ratios — validate (legs are atomic catalog entries, now all present) + add.
+  for (const slug of Object.keys(measureDefs)) {
     if (catalog[slug]) {
       throw new Error(
-        `loadDealbrainModel: measure slug "${slug}" collides with an auto-derived catalog measure`,
+        `loadDealbrainModel: measure slug "${slug}" collides with an existing catalog measure`,
       );
     }
-    if (def.kind === 'atomic') validateMeasureDef(analytics, slug, def as AtomicMeasureDef);
-    else if (def.kind === 'ratio') validateRatioDef(catalog, slug, def);
+  }
+  for (const [slug, def] of Object.entries(measureDefs)) {
+    if (def.kind !== 'atomic') continue;
+    validateMeasureDef(analytics, slug, def as AtomicMeasureDef);
+    catalog[slug] = def;
+  }
+  for (const [slug, def] of Object.entries(measureDefs)) {
+    if (def.kind === 'atomic') continue;
+    if (def.kind === 'ratio') validateRatioDef(catalog, slug, def);
     catalog[slug] = def;
   }
   return { registry, analytics, tables, colByDbName, catalog };

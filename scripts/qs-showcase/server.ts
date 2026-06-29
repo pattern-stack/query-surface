@@ -77,7 +77,10 @@ type FieldMeasure = {
   additivity: 'additive' | 'semi' | 'non';
 };
 type CountMeasure = { slug: string; kind: 'count'; name: string; entity: string };
-type BookMeasure = FieldMeasure | CountMeasure;
+// A ratio names two ATOMIC catalog measures (by slug — auto-derived `Field.agg` or a host atomic):
+// e.g. win_rate = won_count / opportunity_count. Fan-safe (each leg pre-aggregates in its own CTE).
+type RatioMeasure = { slug: string; kind: 'ratio'; name: string; numerator: string; denominator: string };
+type BookMeasure = FieldMeasure | CountMeasure | RatioMeasure;
 
 function toIdentifier(s: string): string {
   return s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'm';
@@ -137,8 +140,10 @@ function defsFromBook(book: BookMeasure[]): Record<string, any> {
   for (const m of book) {
     if (m.kind === 'field') {
       defs[m.slug] = { kind: 'atomic', on: m.field, agg: m.agg, source: 'opportunities', additivity: m.additivity, label: m.name };
-    } else {
+    } else if (m.kind === 'count') {
       defs[m.slug] = { kind: 'atomic', on: pkOf(m.entity), agg: 'count', source: m.entity, additivity: 'additive', label: m.name };
+    } else {
+      defs[m.slug] = { kind: 'ratio', numerator: m.numerator, denominator: m.denominator, label: m.name };
     }
   }
   return defs;
@@ -315,9 +320,14 @@ async function apiCompare(body: { preset?: string }) {
 // ── MEASURES workbench ─────────────────────────────────────────────────────────────────────────
 // Resolve a book measure into the engine `measures[]` item (+ how it resolves, for the UI badge).
 function resolveBookMeasure(m: BookMeasure): { item: any; resolution: string } {
-  // Both kinds are now real engine catalog entries — the agent calls by the STABLE SLUG, no on/agg
-  // guessing. count → count(id) of the entity; field → agg(field).
-  const formula = m.kind === 'count' ? `count(${m.entity}.${pkOf(m.entity)})` : `${m.field} ${m.agg}`;
+  // Every kind is a real engine catalog entry — the agent calls by the STABLE SLUG, no guessing.
+  // count → count(pk); field → agg(field); ratio → numerator / denominator (fan-safe legs).
+  const formula =
+    m.kind === 'count'
+      ? `count(${m.entity}.${pkOf(m.entity)})`
+      : m.kind === 'field'
+        ? `${m.field} ${m.agg}`
+        : `${m.numerator} / ${m.denominator}`;
   return { item: { ref: m.slug }, resolution: `engine catalog · {ref:"${m.slug}"}  (= ${formula})` };
 }
 
@@ -336,9 +346,14 @@ async function apiMeasuresInfo() {
     h.service.describeMeasures('observations' as any),
     measureEligibleFields('opportunities'),
   ]);
+  // The atomic measures available as ratio legs — describeMeasures returns ONLY atomics (it skips
+  // composites), across entities, deduped. This is exactly the set a ratio numerator/denominator
+  // may name (auto-derived `Field.agg` + every host atomic field/count slug).
+  const atomics = [...new Set([...oppCat, ...obsCat].map((m: any) => m.name))].sort();
   return {
     engineCatalog: { opportunities: oppCat, observations: obsCat },
     eligibleFields: { opportunities: oppFields },
+    atomics,
     book: BOOK.map((m) => ({ ...m, alias: aliasFor(m), ...resolveBookMeasure(m) })),
     ms: ms(t0),
   };
@@ -364,8 +379,14 @@ async function apiMeasuresDefine(body: any): Promise<unknown> {
     const additivity = (body.additivity ?? (agg === 'sum' ? 'additive' : 'non')) as FieldMeasure['additivity'];
     if (!field) throw new Error('define: a field-aggregate measure needs a `field`');
     m = { slug, kind: 'field', name, entity: 'opportunities', field, agg, additivity };
+  } else if (body.kind === 'ratio') {
+    const numerator = String(body.numerator ?? '');
+    const denominator = String(body.denominator ?? '');
+    if (!numerator || !denominator) throw new Error('define: a ratio needs a `numerator` and `denominator` (atomic measure slugs)');
+    if (numerator === denominator) throw new Error('define: a ratio numerator and denominator must differ');
+    m = { slug, kind: 'ratio', name, numerator, denominator };
   } else {
-    throw new Error(`define: unknown kind "${body.kind}" (expected 'count' | 'field')`);
+    throw new Error(`define: unknown kind "${body.kind}" (expected 'count' | 'field' | 'ratio')`);
   }
 
   // Optimistic apply: add to the book, rebuild if it changes the engine catalog, then PROVE it
