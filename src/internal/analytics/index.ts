@@ -19,11 +19,14 @@ export {
 } from './grain.ts';
 export {
   measuresFromRegistry,
+  validateDerivedDef,
   validateMeasureDef,
   validateRatioDef,
   type AggregateInput,
   type AtomicMeasureDef,
   type CumulativeMeasureDef,
+  type DerivedExpr,
+  type DerivedMeasureDef,
   type MeasureCatalog,
   type MeasureDef,
   type MeasureRef,

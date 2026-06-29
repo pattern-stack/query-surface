@@ -80,7 +80,20 @@ type CountMeasure = { slug: string; kind: 'count'; name: string; entity: string 
 // A ratio names two ATOMIC catalog measures (by slug — auto-derived `Field.agg` or a host atomic):
 // e.g. win_rate = won_count / opportunity_count. Fan-safe (each leg pre-aggregates in its own CTE).
 type RatioMeasure = { slug: string; kind: 'ratio'; name: string; numerator: string; denominator: string };
-type BookMeasure = FieldMeasure | CountMeasure | RatioMeasure;
+// A derived (ADR-0029 D2) metric: an arithmetic EXPRESSION over atomic legs — the subtractive/
+// weighted gap ratio can't express (gross_profit = revenue - cost). v1 builder = a two-term form:
+// `left <op> right`, where `right` is another atomic slug OR a numeric literal (a weight). Fan-safe
+// (each atomic leg pre-aggregates in its own CTE; the op is OUTER-SELECT arithmetic).
+type DerivedMeasure = {
+  slug: string;
+  kind: 'derived';
+  name: string;
+  op: '+' | '-' | '*' | '/';
+  left: string; // an atomic measure slug
+  right: string; // an atomic measure slug, OR (when rightIsLit) a numeric literal
+  rightIsLit?: boolean;
+};
+type BookMeasure = FieldMeasure | CountMeasure | RatioMeasure | DerivedMeasure;
 
 function toIdentifier(s: string): string {
   return s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'm';
@@ -142,8 +155,11 @@ function defsFromBook(book: BookMeasure[]): Record<string, any> {
       defs[m.slug] = { kind: 'atomic', on: m.field, agg: m.agg, source: 'opportunities', additivity: m.additivity, label: m.name };
     } else if (m.kind === 'count') {
       defs[m.slug] = { kind: 'atomic', on: pkOf(m.entity), agg: 'count', source: m.entity, additivity: 'additive', label: m.name };
-    } else {
+    } else if (m.kind === 'ratio') {
       defs[m.slug] = { kind: 'ratio', numerator: m.numerator, denominator: m.denominator, label: m.name };
+    } else {
+      const right = m.rightIsLit ? { lit: Number(m.right) } : { ref: m.right };
+      defs[m.slug] = { kind: 'derived', expr: { op: m.op, left: { ref: m.left }, right }, label: m.name };
     }
   }
   return defs;
@@ -327,7 +343,9 @@ function resolveBookMeasure(m: BookMeasure): { item: any; resolution: string } {
       ? `count(${m.entity}.${pkOf(m.entity)})`
       : m.kind === 'field'
         ? `${m.field} ${m.agg}`
-        : `${m.numerator} / ${m.denominator}`;
+        : m.kind === 'ratio'
+          ? `${m.numerator} / ${m.denominator}`
+          : `${m.left} ${m.op} ${m.right}`;
   return { item: { ref: m.slug }, resolution: `engine catalog · {ref:"${m.slug}"}  (= ${formula})` };
 }
 
@@ -388,8 +406,18 @@ async function apiMeasuresDefine(body: any): Promise<unknown> {
     if (!numerator || !denominator) throw new Error('define: a ratio needs a `numerator` and `denominator` (atomic measure slugs)');
     if (numerator === denominator) throw new Error('define: a ratio numerator and denominator must differ');
     m = { slug, kind: 'ratio', name, numerator, denominator };
+  } else if (body.kind === 'derived') {
+    const op = String(body.op ?? '') as DerivedMeasure['op'];
+    if (!['+', '-', '*', '/'].includes(op)) throw new Error("define: a derived metric needs an `op` (one of + - * /)");
+    const left = String(body.left ?? '');
+    if (!left) throw new Error('define: a derived metric needs a `left` atomic measure slug');
+    const rightIsLit = Boolean(body.rightIsLit);
+    const right = String(body.right ?? '');
+    if (!right) throw new Error('define: a derived metric needs a `right` (atomic measure slug or numeric literal)');
+    if (rightIsLit && !Number.isFinite(Number(right))) throw new Error('define: a literal `right` must be a finite number');
+    m = { slug, kind: 'derived', name, op, left, right, ...(rightIsLit ? { rightIsLit } : {}) };
   } else {
-    throw new Error(`define: unknown kind "${body.kind}" (expected 'count' | 'field' | 'ratio')`);
+    throw new Error(`define: unknown kind "${body.kind}" (expected 'count' | 'field' | 'ratio' | 'derived')`);
   }
 
   // Optimistic apply: add to the book, rebuild if it changes the engine catalog, then PROVE it
