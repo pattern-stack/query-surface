@@ -12,7 +12,7 @@ import {
   stitchCompare,
 } from '../../../../internal/analytics/compare';
 import type { AggregateInput } from '../../../../internal/analytics/measure-catalog';
-import { QueryApplicationService } from '../../../../query.application-service';
+import { QueryApplicationService, UNSCOPED } from '../../../../query.application-service';
 import { type AggregateModel, loadDealbrainModel } from '../../../reference/model.dealbrain';
 import { type DrizzleDb, makeDb } from '../drizzle-db';
 import { runAggregateDrizzle } from '../run-drizzle';
@@ -410,6 +410,7 @@ suite('compare() — live dealbrain (variant-vs-variant on observation type)', (
     expect(num(res.rows[0]!.obs__risk)).toBe(rk);
     // and an UNSCOPED service returns many accounts — proving the scope genuinely narrowed.
     const unscoped = new QueryApplicationService(db, {
+      scope: UNSCOPED,
       aggregateModel: () => loadDealbrainModel(db),
     });
     const all = await unscoped.compare('observations' as never, req);

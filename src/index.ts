@@ -88,9 +88,10 @@ export type {
   QueryOptions,
   QueryServiceOptions,
   ScopeResolver,
+  Unscoped,
   ViewingScope,
 } from './query.application-service.ts';
-export { QueryApplicationService } from './query.application-service.ts';
+export { QueryApplicationService, UNSCOPED } from './query.application-service.ts';
 export type {
   ComputedFieldSpec,
   ComputedFilterLeaf,
