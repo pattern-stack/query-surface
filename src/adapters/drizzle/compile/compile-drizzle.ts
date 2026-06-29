@@ -310,6 +310,12 @@ function lowerRowExpr(
   if ('lit' in node) return sql`${node.lit}`; // bound param — never sql.raw of caller data
   if ('col' in node) {
     const field = model.analytics[source]?.fields[node.col];
+    // MISSING → 0 (the arithmetic identity), NEVER a dropped row. A NULL operand makes a per-row
+    // expression NULL, and SUM silently SKIPS it — so `profit = sales_price − item_cost` over a deal
+    // with no recorded cost would VANISH from the total instead of yielding sales_price. Coalescing
+    // each leaf to 0 keeps the row and treats an absent measurement as zero; it also makes the
+    // expression form coincide with the derived-metric form over ALL rows (SUM(a−b) ≡ SUM(a)−SUM(b)),
+    // not just co-present ones. A host that wants "exclude rows missing X" uses a measure-level `where`.
     if (field?.eav) {
       const { valueCol, join } = eavValueJoin(
         model,
@@ -318,9 +324,9 @@ function lowerRowExpr(
         `fv_${measureAs}_${counter.n++}`, // DISTINCT alias per EAV leaf — no multi-EAV collision
       );
       joins.push(join);
-      return sql`${valueCol}`; // column OBJECT — Drizzle qualifies/escapes
+      return sql`coalesce(${valueCol}, 0)`; // column OBJECT (Drizzle escapes) → missing EAV value = 0
     }
-    return nativeColSql(model, source, node.col).expr; // native column object (throws on unknown)
+    return sql`coalesce(${nativeColSql(model, source, node.col).expr}, 0)`; // native; missing cell = 0
   }
   if (!DERIVED_OP.has(node.op)) {
     throw new Error(
