@@ -668,12 +668,29 @@ function lowerGroupDim(
   // group by + project the value column under the dim's safe canonical name. Checked BEFORE
   // resolveJoinPlan (which only knows native columns + relation hops, and would reject the dim).
   const eavField = model.analytics[source]?.fields[dim];
-  if (eavField?.eav && eavField.role === 'dimension') {
+  if (eavField?.eav) {
+    if (eavField.role !== 'dimension')
+      throw new Error(
+        `${ENGINE_ERROR.AGGREGATE} "${dim}" is a ${eavField.role ?? 'non-dimension'} field, not a groupable dimension — group by a dimension (see describe), or aggregate it as a measure.`,
+      );
     const { valueCol, join } = eavValueJoin(model, source, eavField.eav, `fvg_${assertIdent(dim)}`);
     return { alias: dim, col: valueCol, expr: sql`${valueCol}`, joins: [join] };
   }
   const plan = resolveJoinPlan(model.analytics, source, dim, 'group');
   if (plan.kind === 'reject') throw new Error(`${ENGINE_ERROR.AGGREGATE} ${plan.reason}`);
+  // GROUP-BY accepts DIMENSIONS only — describe() advertises exactly role:'dimension', so enforce
+  // the same contract here (native + EAV, local + to-one): grouping by a MEASURE's raw value is a
+  // footgun (one group per distinct value) — band it via a dimension, or aggregate it. The
+  // own-entity EAV path above already gates on role:'dimension'; this covers the resolveJoinPlan
+  // (local-native + to-one) paths so describe is authoritative both directions. NB: group-ONLY —
+  // filtering on a measure (e.g. Amount > 100000) stays legal (that path never reaches here).
+  const dimOwner = plan.kind === 'to-one' ? plan.target : source;
+  const dimField = model.analytics[dimOwner]?.fields[plan.column];
+  if (dimField && dimField.role !== 'dimension') {
+    throw new Error(
+      `${ENGINE_ERROR.AGGREGATE} "${dim}" is a ${dimField.role ?? 'non-dimension'} field, not a groupable dimension — group by a dimension (see describe), or aggregate it as a measure.`,
+    );
+  }
   const outAlias = dim;
   if (plan.kind === 'local') {
     const col = plan.column.includes('.') ? null : colObj(model, source, plan.column);
