@@ -181,9 +181,10 @@ suite('scope mandatory + fail-closed (characterization)', () => {
     expect(total).toBe(aObs); // sum across groups == A's population, no B rows folded in
   });
 
-  // HONEST LIMIT: the traversed-JOIN gap (ADR-0028 invariant-#3 residual on query()'s to-one
-  // join ON / cross-grain cohort) cannot be falsified here — beanmaxx's FKs are account-coherent
+  // SCOPE NOTE: the traversed-JOIN gap (ADR-0028 invariant-#3 residual on the to-one conformed-dim
+  // JOIN ON / cross-grain cohort) cannot be falsified HERE — beanmaxx's FKs are account-coherent
   // (an A-account observation's opportunity is an A opportunity), so no cross-tenant link exists to
-  // leak. Structurally closing + testing that path needs a SYNTHETIC cross-tenant-FK row (the same
-  // asymmetric-fixture theme as ADR-0028). Documented, not silently skipped.
+  // leak. That path is now falsified by a SYNTHETIC cross-tenant-FK row in the sibling spec
+  // `scope-cross-tenant-fk.char.eval.spec.ts` (one A-owned observation pointing at a B-owned
+  // opportunity; mutation-proven — removing the lowerToOne ON-fold makes it leak). Not skipped.
 });
