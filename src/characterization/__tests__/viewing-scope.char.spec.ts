@@ -7,11 +7,12 @@
 // Pure over options (the getter never touches the DB), so it runs WITHOUT DBURL.
 
 import { describe, expect, it } from 'bun:test';
-import { QueryApplicationService, type ViewingScope } from '../../query.application-service.ts';
+import { QueryApplicationService, UNSCOPED, type ViewingScope } from '../../query.application-service.ts';
 
 // The getter reads only options.viewingScope; the db handle is never touched.
 const svc = (viewingScope?: ViewingScope | string) =>
   new QueryApplicationService({} as never, {
+    scope: UNSCOPED,
     actorUserId: 'u1',
     ...(viewingScope ? { viewingScope: viewingScope as ViewingScope } : {}),
   });

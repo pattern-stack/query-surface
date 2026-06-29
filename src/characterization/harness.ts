@@ -45,7 +45,11 @@ import {
   opportunitiesRelations,
 } from '../adapters/reference/schema.dealbrain.ts';
 import type { EntityName } from '../internal/language/types.ts';
-import { QueryApplicationService, type ScopeResolver } from '../query.application-service.ts';
+import {
+  QueryApplicationService,
+  type ScopeResolver,
+  UNSCOPED,
+} from '../query.application-service.ts';
 
 // Back-compat aliases: the observations retrieval surface is now CANONICAL in
 // schema.dealbrain (normalized_text + embedding + provenance/scope columns), so
@@ -141,8 +145,9 @@ export function makeQuerySurface(
     // Default: the deterministic ILIKE stub (specs are hermetic). A caller (e.g. the demo) may
     // inject a REAL embed provider to exercise true free-text concepts against the stored vectors.
     embed: opts?.embed ?? embed,
-    // Optional per-entity tenancy scope (e.g. the expand-scope char spec). Omitted → unscoped.
-    ...(opts?.scope ? { scope: opts.scope } : {}),
+    // Per-entity tenancy scope (e.g. the expand-scope char spec). A test that doesn't
+    // exercise scoping runs against the single-tenant beanmaxx fixture → explicit UNSCOPED.
+    scope: opts?.scope ?? UNSCOPED,
     ...(opts?.tenantGlobalEntities ? { tenantGlobalEntities: opts.tenantGlobalEntities } : {}),
   });
 

@@ -1,6 +1,6 @@
 import type { AggregateModel } from '../../adapters/drizzle/registry/model.ts';
 import type { RegisterSchemaOptions } from '../../adapters/drizzle/registry/schema-registry.ts';
-import type { ScopeResolver, ViewingScope } from '../../query.application-service.ts';
+import type { ScopeResolver, Unscoped, ViewingScope } from '../../query.application-service.ts';
 
 /**
  * The identity a query runs as. Shape-compatible with the host's ambient
@@ -64,9 +64,14 @@ export interface QuerySurfaceModuleOptions {
    *  aggregate-over-relationship fields surfaced as first-class columns. */
   computed?: RegisterSchemaOptions['computed'];
   /** Non-bypassable per-entity tenancy scope for a requester — AND-ed into
-   *  every query/fetch. `opts.asUser` (a resolved user id) narrows to one
-   *  user's owned rows, composed AFTER the org anchor. */
-  scopeFor: (requester: QuerySurfaceRequester, opts?: { asUser?: string }) => ScopeResolver;
+   *  every select/fetch. `opts.asUser` (a resolved user id) narrows to one
+   *  user's owned rows, composed AFTER the org anchor. Return the `UNSCOPED`
+   *  sentinel for a deliberately unscoped surface (e.g. a company-BI REST host);
+   *  it must be an explicit choice, never reachable by omission. */
+  scopeFor: (
+    requester: QuerySurfaceRequester,
+    opts?: { asUser?: string },
+  ) => ScopeResolver | Unscoped;
   /**
    * Read-time ATTRIBUTION grain for the requester (ADR-0027 W1) — distinct from
    * `scopeFor` (tenancy). Resolves the viewing connection's scope: `personal`

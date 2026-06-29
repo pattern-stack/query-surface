@@ -63,6 +63,19 @@ import type {
 export type ScopeResolver = (entity: EntityName) => FilterExpression | undefined;
 
 /**
+ * Explicit opt-out of tenancy scoping — a FIRST-CLASS mode, not an escape hatch.
+ * Legitimate for single-tenant databases, company-wide BI / analytics, admin
+ * tools, and the eval fixture, where reading across all rows is the intent.
+ *
+ * It exists so that unscoped is always a DELIBERATE, greppable choice: `scope` is
+ * a REQUIRED construction field with no default, so a surface can never become
+ * cross-tenant by forgetting to pass a resolver — it must either pass a
+ * `ScopeResolver` (tenant-scoped) or `UNSCOPED` (read everything, on purpose).
+ */
+export const UNSCOPED = 'query-surface:UNSCOPED' as const;
+export type Unscoped = typeof UNSCOPED;
+
+/**
  * Read-time ATTRIBUTION grain for interaction-sourced queries (the behavioral
  * attribution fork — ADR-0027). NOT a tenancy filter (that is `ScopeResolver`);
  * this selects *whose activity an observation counts toward*:
@@ -88,10 +101,14 @@ export interface QueryServiceOptions {
   /** When set, field definitions load by org ownership (org-owned defs carry
    *  user_id NULL) instead of per-user ownership. */
   actorOrganizationId?: string;
-  /** Per-entity tenancy scope, AND-ed into every query/fetch — and folded PER
-   *  SOURCE into each CTE of aggregate() (a cross-entity measure is scoped to its
-   *  OWN entity, not the query root). */
-  scope?: ScopeResolver;
+  /** Per-entity tenancy scope, AND-ed into every select/fetch — and folded PER
+   *  SOURCE into each CTE of measure() (a cross-entity measure is scoped to its
+   *  OWN entity, not the query root). REQUIRED — no default: pass a `ScopeResolver`
+   *  to scope reads to a tenant (user/org), or the explicit `UNSCOPED` sentinel for
+   *  single-tenant / BI / admin reads. A real resolver that returns undefined for a
+   *  touched entity not declared `tenantGlobalEntities` is a coverage gap → REFUSE
+   *  (fail-closed, invariant #3) — never a silent cross-tenant read. */
+  scope: ScopeResolver | Unscoped;
   /** Read-time attribution grain for interaction-sourced queries (ADR-0027 W1).
    *  Host-resolved from the viewing connection. Omit ⇒ `personal` (fail-closed).
    *  W1 only THREADS this — the grain-switch dispatch that consumes it is W3, so
@@ -166,8 +183,26 @@ export class QueryApplicationService {
   constructor(
     // biome-ignore lint/suspicious/noExplicitAny: engine is schema-agnostic; Drizzle's DB type is generic over the host schema, unknown at the package level
     private readonly db: NodePgDatabase<any>,
-    private readonly options: QueryServiceOptions = {},
-  ) {}
+    private readonly options: QueryServiceOptions,
+  ) {
+    // Defense-in-depth for JS callers (TS already requires `scope`): refuse to
+    // build a surface with NO scope decision — never default to cross-tenant reads.
+    if ((this.options as { scope?: unknown }).scope === undefined) {
+      throw new Error(
+        'QueryApplicationService: `scope` is required — pass a ScopeResolver to scope reads to a ' +
+          'tenant (user/org), or the explicit UNSCOPED sentinel for single-tenant / BI / admin ' +
+          'reads. Refusing to default to unscoped (cross-tenant) reads.',
+      );
+    }
+  }
+
+  // Entities the host declared as carrying NO tenancy (reference/lookup tables) —
+  // memoized; construction-fixed. The ONLY per-entity unscoped read inside a real
+  // (non-UNSCOPED) resolver; everything else fails closed.
+  private _tenantGlobals?: Set<string>;
+  private get tenantGlobals(): Set<string> {
+    return (this._tenantGlobals ??= new Set<string>(this.options.tenantGlobalEntities ?? []));
+  }
 
   // The aggregate analytics model, lazy-built once on first aggregate() call.
   // The builder may hit the DB (EAV field-map), so it's async + memoized — same
@@ -205,10 +240,19 @@ export class QueryApplicationService {
 
   // AND the entity's tenancy scope into the caller's filter. Scope is
   // non-bypassable: it always applies; the caller's filter can only narrow it.
+  // FAIL-CLOSED (invariant #3): a real resolver that returns undefined for the
+  // ROOT entity — not declared tenant-global — is a coverage gap → REFUSE, never
+  // read it unscoped. Only the explicit UNSCOPED mode (or a declared tenant-global
+  // entity) reads without a predicate.
   private scoped(entity: EntityName, filter?: FilterExpression): FilterExpression | undefined {
-    const s = this.options.scope?.(entity);
-    if (s && filter) return { and: [s, filter] };
-    return s ?? filter;
+    if (this.options.scope === UNSCOPED) return filter; // deliberate unscoped (BI / admin / single-tenant)
+    const s = this.options.scope(entity);
+    if (s) return filter ? { and: [s, filter] } : s;
+    if (this.tenantGlobals.has(entity)) return filter; // declared no-tenancy → read unscoped, by decision
+    throw new Error(
+      `${ENGINE_ERROR.SCOPE}: entity "${entity}" has no tenancy scope and was not declared ` +
+        'TENANT_GLOBAL — refusing to read it unscoped (scope coverage gap)',
+    );
   }
 
   /**
@@ -504,8 +548,8 @@ export class QueryApplicationService {
    */
   private expandScopeResolver(): ExpandScopeResolver | undefined {
     const scope = this.options.scope;
-    if (!scope) return undefined;
-    const globals = new Set<string>(this.options.tenantGlobalEntities ?? []);
+    if (scope === UNSCOPED) return undefined; // deliberate unscoped — expand reads unscoped, by decision
+    const globals = this.tenantGlobals;
     return (entity: EntityName) => {
       const pred = scope(entity);
       if (pred) return pred;
@@ -554,11 +598,13 @@ export class QueryApplicationService {
     // Per-SOURCE scope (not this.scoped(), which folds ROOT scope onto every CTE
     // and would mis-grain a child source on a different entity). FAIL-CLOSED: a
     // source `scope` doesn't cover and isn't declared tenant-global resolves to
-    // `undefined`, which the engine REFUSES — never silently unscoped.
-    const globals = new Set<string>(this.options.tenantGlobalEntities ?? []);
-    const scopeFor: ScopeFor | undefined = scope
-      ? (src) => scope(src as EntityName) ?? (globals.has(src) ? TENANT_GLOBAL : undefined)
-      : undefined;
+    // `undefined`, which the engine REFUSES — never silently unscoped. UNSCOPED →
+    // no per-source scope, by deliberate decision (BI / admin / single-tenant).
+    const globals = this.tenantGlobals;
+    const scopeFor: ScopeFor | undefined =
+      scope === UNSCOPED
+        ? undefined
+        : (src) => scope(src as EntityName) ?? (globals.has(src) ? TENANT_GLOBAL : undefined);
     // Defuzzify any `op:'relevant'` leaf in the global filter (net-new embed on this path).
     // Idempotent: a leaf already carrying a vector (compare → per-variant delegation) is skipped,
     // so this never re-embeds a filter compare() already resolved.
@@ -653,11 +699,10 @@ export class QueryApplicationService {
     // never read it unscoped (mirrors compile-drizzle's scopeSqlFor; the citation must not leak
     // rows the cohort number was computed without).
     const scope = this.options.scope;
-    let scopeForEntity: ReturnType<NonNullable<typeof scope>> | undefined;
-    if (scope) {
-      const globals = new Set<string>(this.options.tenantGlobalEntities ?? []);
+    let scopeForEntity: FilterExpression | undefined;
+    if (scope !== UNSCOPED) {
       const decision =
-        scope(targetEntity) ?? (globals.has(targetEntity) ? TENANT_GLOBAL : undefined);
+        scope(targetEntity) ?? (this.tenantGlobals.has(targetEntity) ? TENANT_GLOBAL : undefined);
       if (decision === undefined) {
         throw new Error(
           `${ENGINE_ERROR.AGGREGATE} relevance citation: source "${targetEntity}" has no tenancy scope and was not declared TENANT_GLOBAL — refusing to read it unscoped (scope coverage gap)`,
