@@ -342,4 +342,49 @@ suite('EAV dimension via to-one (describe/execute parity — the over-promise bu
       }),
     ).rejects.toThrow(/to-many|fan out|not conformed/i);
   });
+
+  it('E12 group_by a MEASURE is REJECTED — the footgun is blocked (PascalCase: caught upstream)', async () => {
+    // Grouping by a measure's raw value (one group per distinct value) is never allowed. A
+    // PascalCase key like Amount is caught by the pre-existing identifier guard; either way the
+    // request fails loud rather than silently grouping by a measure. (Filtering on Amount stays legal.)
+    expect(
+      runAggregateDrizzle(h.db, model, {
+        entity: 'observations',
+        group_by: ['opportunities.Amount'],
+        measures: [{ on: '*', agg: 'count', as: 'cnt' }],
+      }),
+    ).rejects.toThrow(/unsafe identifier|not a groupable dimension/i);
+  });
+
+  it('E13 group_by a SNAKE-keyed EAV MEASURE hits the ROLE GATE with the clear reason (own-entity + to-one)', async () => {
+    // snake keys pass the identifier guard, so they reach lowerGroupDim's role gate — THIS is the
+    // case the new gate exists for (a measure the lowering COULD resolve but must not group).
+    const m = await loadDealbrainModel(h.db, [{ key: 'age_days', aggs: ['avg', 'max'], additivity: 'non' }], DIMENSION_SPECS);
+    // own-entity: group opportunities by the raw age_days measure
+    expect(
+      runAggregateDrizzle(h.db, m, {
+        entity: 'opportunities',
+        group_by: ['age_days'],
+        measures: [{ on: '*', agg: 'count', as: 'cnt' }],
+      }),
+    ).rejects.toThrow(/is a measure.*not a groupable dimension/i);
+    // to-one: group observations by opportunities.age_days (the resolveJoinPlan→to-one gate)
+    expect(
+      runAggregateDrizzle(h.db, m, {
+        entity: 'observations',
+        group_by: ['opportunities.age_days'],
+        measures: [{ on: '*', agg: 'count', as: 'cnt' }],
+      }),
+    ).rejects.toThrow(/is a measure.*not a groupable dimension/i);
+  });
+
+  it('E14 FILTER on a measure stays LEGAL (the group-only gate must not block measure filters)', async () => {
+    // Amount > 100000 as a filter is valid (you filter on measures); only GROUP-BY is dim-only.
+    const res = await runAggregateDrizzle(h.db, model, {
+      entity: 'opportunities',
+      filter: { on: 'Amount', op: 'gt', value: 100000 },
+      measures: [{ on: '*', agg: 'count', as: 'cnt' }],
+    });
+    expect(Number(res.rows[0]!.cnt)).toBeGreaterThan(0);
+  });
 });
