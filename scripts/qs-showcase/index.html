@@ -648,13 +648,21 @@
         }
         out.appendChild(bcard.c);
 
-        // ── engine catalog (read-only, auto-derived) ─────────────────────────────────────────
+        // ── engine catalog: the MEASURE layer (read-only, auto-derived) ──────────────────────
         ["opportunities", "observations"].forEach((ent) => {
-          const ec = card(`engine catalog · ${ent}  ·  auto-derived from role:'measure' fields`);
-          const rows = (info.engineCatalog[ent] || []).map((m) => ({ ref: m.name, on: m.on, agg: m.agg, additivity: m.additivity }));
+          const ec = card(`engine catalog · MEASURE layer · ${ent}  ·  auto-derived from role:'measure' fields`);
+          const rows = (info.engineCatalog[ent] || []).map((m) => ({ ref: m.name, layer: m.layer, on: m.on, agg: m.agg, additivity: m.additivity }));
           ec.body.appendChild(rows.length ? rowsTable(rows) : el("div", { className: "muted" }, "— none —"));
           out.appendChild(ec.c);
         });
+        // ── the METRIC layer (ADR-0029) — post-aggregate compositions, not entity-scoped ─────
+        const mc = card(`engine catalog · METRIC layer  ·  post-aggregate compositions (not entity-scoped)`);
+        const mrows = (info.engineMetrics || []).map((m) => ({
+          ref: m.name, layer: m.layer, kind: m.kind,
+          composition: m.kind === "ratio" ? `${m.numerator} / ${m.denominator}` : m.kind === "cumulative" ? `cumulative(${m.measure})` : (m.label || ""),
+        }));
+        mc.body.appendChild(mrows.length ? rowsTable(mrows) : el("div", { className: "muted" }, "— none defined — a ratio appears here once you define one —"));
+        out.appendChild(mc.c);
       }
 
       async function render() {
