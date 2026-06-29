@@ -184,8 +184,10 @@ export function resolveJoinPlan(
 
 /** A dimension legal at `sourceEntity` grain: its own dimension fields ∪ the dimension
  *  fields of every entity reachable by an UNAMBIGUOUS to-one path. The graph-derived
- *  conformed set `describe` advertises per metric. Native (registry-tagged) dims only —
- *  EAV dimension tags are a later wave. */
+ *  conformed set `describe` advertises per metric. Covers BOTH native (registry-tagged)
+ *  and EAV (field-map-tagged) dims: an EAV dim on a to-one target is executable — the
+ *  lowering composes the 1:1 field_values join THROUGH the belongs_to LEFT JOIN
+ *  (compile-drizzle lowerToOne), so describe/execute parity holds for it. */
 export interface ConformedDim {
   /** what the caller passes in group_by/filter: `col` (own) | `entity.col` (to-one). */
   path: string;
