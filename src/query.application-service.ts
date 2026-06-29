@@ -38,6 +38,7 @@ import type {
   ConformedDim,
   DerivedExpr,
   RelevanceCitation,
+  RowExpr,
   ScopeFor,
 } from './internal/analytics/index.ts';
 import { crispifyRelevant } from './internal/analytics/normalize.ts';
@@ -175,8 +176,11 @@ export interface MeasureCatalogEntry {
   name: string;
   /** the LAYER (ADR-0029): a measure is one aggregation pass; always `'measure'` here. */
   layer: 'measure';
-  /** the field aggregated, preserved as-is, e.g. `Amount` */
-  on: string;
+  /** the field aggregated, preserved as-is, e.g. `Amount`; ABSENT for an expression measure. */
+  on?: string;
+  /** the row-level expression (ADR-0029 D4) — present iff this is an EXPRESSION measure
+   *  (agg(f(col1,col2,…)) over local numeric cols); `on` is absent in that case. */
+  expr?: RowExpr;
   agg: Agg;
   /** summable-ness of the underlying field (a `non` field refuses SUM) */
   additivity: Additivity;
@@ -340,7 +344,14 @@ export class QueryApplicationService {
       // Only atomic measures are entity-sourced; metrics (ratio/cumulative/derived) compose them
       // across entities and are advertised by describeMetrics() (ADR-0029, not entity-scoped).
       if (def.kind !== 'atomic' || def.source !== (entity as string)) continue;
-      measures.push({ name, layer: 'measure', on: def.on, agg: def.agg, additivity: def.additivity });
+      // An EXPRESSION measure (D4) carries an object `on` (a RowExpr) — surface it as `expr` (like
+      // describeMetrics carries the derived expr) and omit the single-field `on`. A string atomic
+      // keeps emitting `on:string` unchanged.
+      const entry: MeasureCatalogEntry =
+        typeof def.on === 'object'
+          ? { name, layer: 'measure', agg: def.agg, additivity: def.additivity, expr: def.on }
+          : { name, layer: 'measure', on: def.on, agg: def.agg, additivity: def.additivity };
+      measures.push(entry);
     }
     return measures.sort((a, b) => a.name.localeCompare(b.name));
   }

@@ -3,7 +3,7 @@
 
 import { ENGINE_ERROR } from '../language/error-messages';
 import { groupGrain, measureField, measureSource } from './grain';
-import type { AggRegistry, Aggregate } from './types';
+import { type AggRegistry, type Aggregate, rowExprCols } from './types';
 
 export type AggFindingCode =
   | 'SUM_NON_ADDITIVE'
@@ -29,6 +29,22 @@ export function diagnoseAggregate(reg: AggRegistry, q: Aggregate): AggFinding[] 
     if (m.on === '*') continue;
     const src = measureSource(q, m);
     const ent = reg[src];
+    // EXPRESSION measure (D4): validate per-leaf coverage (each {col} is a registered field on the
+    // source) but BYPASS the per-field SUM-on-'non' refusal below — a row-level product of an
+    // additive amount × a non-additive ratio (SUM(Amount·Probability)) is itself summable, and
+    // additivity is HOST-DECLARED on the def. Never call measureField on an object (it throws).
+    if (typeof m.on === 'object') {
+      for (const col of rowExprCols(m.on)) {
+        if (!ent?.fields[col]) {
+          findings.push({
+            code: 'UNKNOWN_FIELD',
+            severity: 'error',
+            message: `expression measure leg "${col}" is not a registered field on ${src}`,
+          });
+        }
+      }
+      continue;
+    }
     const head = measureField(m);
     const field = ent?.fields[head];
     if (!field) {

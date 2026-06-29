@@ -93,7 +93,28 @@ type DerivedMeasure = {
   right: string; // an atomic measure slug, OR (when rightIsLit) a numeric literal
   rightIsLit?: boolean;
 };
-type BookMeasure = FieldMeasure | CountMeasure | RatioMeasure | DerivedMeasure;
+// An EXPRESSION measure (ADR-0029 D4): a ROW-LEVEL product/expression aggregated ONCE —
+// agg(leftField <op> right), evaluated PER ROW BEFORE the agg. The headline is
+// weighted_pipeline = SUM(Amount · Probability). Unlike a derived metric, the op happens per-row
+// (SUM(a·b) ≠ SUM(a)·SUM(b)), so it stays BELOW the aggregation boundary → a MEASURE, not a metric.
+// v1 builder = `leftField <op> right`, where `right` is another numeric FIELD OR a numeric literal.
+type ExpressionMeasure = {
+  slug: string;
+  kind: 'expression';
+  name: string;
+  agg: 'sum' | 'avg' | 'min' | 'max';
+  op: '+' | '-' | '*' | '/';
+  left: string; // a numeric field key on opportunities (e.g. Amount)
+  right: string; // a numeric field key, OR (when rightIsLit) a numeric literal
+  rightIsLit?: boolean;
+  additivity: 'additive' | 'semi' | 'non';
+};
+type BookMeasure =
+  | FieldMeasure
+  | CountMeasure
+  | RatioMeasure
+  | DerivedMeasure
+  | ExpressionMeasure;
 
 function toIdentifier(s: string): string {
   return s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'm';
@@ -157,6 +178,18 @@ function defsFromBook(book: BookMeasure[]): Record<string, any> {
       defs[m.slug] = { kind: 'atomic', on: pkOf(m.entity), agg: 'count', source: m.entity, additivity: 'additive', label: m.name };
     } else if (m.kind === 'ratio') {
       defs[m.slug] = { kind: 'ratio', numerator: m.numerator, denominator: m.denominator, label: m.name };
+    } else if (m.kind === 'expression') {
+      // ROW-LEVEL expression (D4): an atomic def whose `on` is a RowExpr over LOCAL numeric cols,
+      // aggregated ONCE. right is a sibling col OR a numeric literal.
+      const right = m.rightIsLit ? { lit: Number(m.right) } : { col: m.right };
+      defs[m.slug] = {
+        kind: 'atomic',
+        on: { op: m.op, left: { col: m.left }, right },
+        agg: m.agg,
+        source: 'opportunities',
+        additivity: m.additivity,
+        label: m.name,
+      };
     } else {
       const right = m.rightIsLit ? { lit: Number(m.right) } : { ref: m.right };
       defs[m.slug] = { kind: 'derived', expr: { op: m.op, left: { ref: m.left }, right }, label: m.name };
@@ -345,7 +378,9 @@ function resolveBookMeasure(m: BookMeasure): { item: any; resolution: string } {
         ? `${m.field} ${m.agg}`
         : m.kind === 'ratio'
           ? `${m.numerator} / ${m.denominator}`
-          : `${m.left} ${m.op} ${m.right}`;
+          : m.kind === 'expression'
+            ? `${m.agg}(${m.left} ${m.op} ${m.right})`
+            : `${m.left} ${m.op} ${m.right}`;
   return { item: { ref: m.slug }, resolution: `engine catalog · {ref:"${m.slug}"}  (= ${formula})` };
 }
 
@@ -416,8 +451,23 @@ async function apiMeasuresDefine(body: any): Promise<unknown> {
     if (!right) throw new Error('define: a derived metric needs a `right` (atomic measure slug or numeric literal)');
     if (rightIsLit && !Number.isFinite(Number(right))) throw new Error('define: a literal `right` must be a finite number');
     m = { slug, kind: 'derived', name, op, left, right, ...(rightIsLit ? { rightIsLit } : {}) };
+  } else if (body.kind === 'expression') {
+    // ROW-LEVEL expression measure (D4): agg(leftField <op> right), per-row before the agg.
+    const op = String(body.op ?? '') as ExpressionMeasure['op'];
+    if (!['+', '-', '*', '/'].includes(op)) throw new Error("define: an expression measure needs an `op` (one of + - * /)");
+    const agg = String(body.agg ?? 'sum') as ExpressionMeasure['agg'];
+    if (!['sum', 'avg', 'min', 'max'].includes(agg)) throw new Error("define: an expression measure needs an `agg` (one of sum/avg/min/max)");
+    const left = String(body.left ?? '');
+    if (!left) throw new Error('define: an expression measure needs a `left` numeric field key');
+    const rightIsLit = Boolean(body.rightIsLit);
+    const right = String(body.right ?? '');
+    if (!right) throw new Error('define: an expression measure needs a `right` (numeric field key or numeric literal)');
+    if (rightIsLit && !Number.isFinite(Number(right))) throw new Error('define: a literal `right` must be a finite number');
+    // sum of a row-level product is host-declared additive (an additive amount × a ratio is summable).
+    const additivity = (body.additivity ?? (agg === 'sum' ? 'additive' : 'non')) as ExpressionMeasure['additivity'];
+    m = { slug, kind: 'expression', name, agg, op, left, right, additivity, ...(rightIsLit ? { rightIsLit } : {}) };
   } else {
-    throw new Error(`define: unknown kind "${body.kind}" (expected 'count' | 'field' | 'ratio' | 'derived')`);
+    throw new Error(`define: unknown kind "${body.kind}" (expected 'count' | 'field' | 'ratio' | 'derived' | 'expression')`);
   }
 
   // Optimistic apply: add to the book, rebuild if it changes the engine catalog, then PROVE it
