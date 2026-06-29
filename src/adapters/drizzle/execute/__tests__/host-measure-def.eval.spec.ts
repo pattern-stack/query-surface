@@ -110,6 +110,35 @@ suite('host measure defs — call a measure by its stable slug ({ref})', () => {
     }
   });
 
+  it('E2c a ratio def (host slug) resolves to numerator/denominator over two atomic legs', async () => {
+    // win_share = ExpectedRevenue.sum / Amount.sum — two auto-derived atomics as legs; the ratio is a
+    // host slug callable by {ref}. Assert it equals the two legs computed independently.
+    const h2 = makeQuerySurface(DBURL!, {
+      dimensionSpecs: DIMENSION_SPECS,
+      measureDefs: {
+        win_share: { kind: 'ratio', numerator: 'ExpectedRevenue.sum', denominator: 'Amount.sum', label: 'Win Share' },
+      },
+    });
+    try {
+      const ratio = await h2.service.measure('opportunities', {
+        measures: [{ ref: 'win_share', as: 'win_share' } as never],
+      });
+      const legs = await h2.service.measure('opportunities', {
+        measures: [
+          { on: 'ExpectedRevenue', agg: 'sum', as: 'num' },
+          { on: 'Amount', agg: 'sum', as: 'den' },
+        ],
+      });
+      const got = Number((ratio.rows[0] as Record<string, unknown>).win_share);
+      const num = Number((legs.rows[0] as Record<string, unknown>).num);
+      const den = Number((legs.rows[0] as Record<string, unknown>).den);
+      expect(den).toBeGreaterThan(0);
+      expect(got).toBeCloseTo(num / den, 6);
+    } finally {
+      await h2.close();
+    }
+  });
+
   it('E3 a slug that shadows an auto-derived catalog key is refused at model load', async () => {
     await expect(
       loadDealbrainModel(h.db, undefined, DIMENSION_SPECS, {
