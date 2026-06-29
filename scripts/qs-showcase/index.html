@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>query-surface · showcase</title>
+    <style>
+      :root {
+        --bg: #0c0f14;
+        --panel: #141922;
+        --panel-2: #1b2230;
+        --line: #26303f;
+        --text: #e7ecf3;
+        --muted: #8a98ac;
+        --accent: #7cc4ff;
+        --accent-2: #9af2c6;
+        --warn: #ffcf7a;
+        --err: #ff8a8a;
+        --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+        --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: radial-gradient(1200px 600px at 70% -10%, #16202e 0%, var(--bg) 60%);
+        color: var(--text);
+        font-family: var(--sans);
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      header {
+        padding: 22px 28px 16px;
+        border-bottom: 1px solid var(--line);
+      }
+      header h1 {
+        margin: 0;
+        font-size: 19px;
+        font-weight: 650;
+        letter-spacing: -0.01em;
+      }
+      header h1 .pkg { color: var(--accent); }
+      header .sub {
+        color: var(--muted);
+        margin-top: 4px;
+        font-size: 13px;
+      }
+      header .meta {
+        margin-top: 10px;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .badge {
+        font-family: var(--mono);
+        font-size: 11.5px;
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        color: var(--muted);
+        padding: 3px 9px;
+        border-radius: 999px;
+      }
+      .badge b { color: var(--accent-2); font-weight: 600; }
+      .layout { display: flex; min-height: calc(100vh - 92px); }
+      nav {
+        width: 230px;
+        flex: 0 0 230px;
+        border-right: 1px solid var(--line);
+        padding: 16px 12px;
+      }
+      .verb {
+        display: block;
+        width: 100%;
+        text-align: left;
+        background: transparent;
+        border: 1px solid transparent;
+        color: var(--text);
+        padding: 10px 12px;
+        border-radius: 9px;
+        cursor: pointer;
+        margin-bottom: 4px;
+        font-family: var(--mono);
+        font-size: 13.5px;
+      }
+      .verb:hover { background: var(--panel); }
+      .verb.active {
+        background: var(--panel-2);
+        border-color: var(--line);
+        color: var(--accent);
+      }
+      .verb .vd {
+        display: block;
+        font-family: var(--sans);
+        font-size: 11.5px;
+        color: var(--muted);
+        margin-top: 2px;
+      }
+      main { flex: 1; padding: 22px 28px; min-width: 0; }
+      .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+      .chip {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        color: var(--text);
+        padding: 7px 12px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 12.5px;
+      }
+      .chip:hover { border-color: var(--accent); }
+      .chip.active { background: var(--panel-2); border-color: var(--accent); color: var(--accent); }
+      .blurb {
+        color: var(--muted);
+        font-size: 13px;
+        margin: 0 0 14px;
+        max-width: 80ch;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        margin-bottom: 16px;
+        overflow: hidden;
+      }
+      .card > h3 {
+        margin: 0;
+        padding: 11px 16px;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .card .body { padding: 14px 16px; }
+      pre {
+        margin: 0;
+        font-family: var(--mono);
+        font-size: 12.5px;
+        white-space: pre-wrap;
+        word-break: break-word;
+        color: #cfe0f2;
+      }
+      pre.sql { color: #b9d6ff; }
+      table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+      th, td {
+        text-align: left;
+        padding: 6px 10px;
+        border-bottom: 1px solid var(--line);
+        font-family: var(--mono);
+        vertical-align: top;
+        max-width: 520px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--panel); }
+      td.num { text-align: right; color: var(--accent-2); }
+      .scroll { max-height: 460px; overflow: auto; }
+      .timing { font-family: var(--mono); font-size: 11px; color: var(--muted); font-weight: 400; }
+      .err {
+        background: #2a1418;
+        border: 1px solid #5a2730;
+        color: var(--err);
+        padding: 14px 16px;
+        border-radius: 10px;
+        font-family: var(--mono);
+        font-size: 12.5px;
+        white-space: pre-wrap;
+      }
+      .err b { color: var(--warn); }
+      .citation { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 12.5px; }
+      .citation .k { color: var(--muted); font-family: var(--mono); }
+      .citation .v { font-family: var(--mono); color: var(--accent-2); }
+      .param { font-family: var(--mono); font-size: 12px; padding: 2px 0; }
+      .param .vec { color: var(--accent); }
+      .param .i { color: var(--muted); display: inline-block; width: 26px; }
+      .pill { font-family: var(--mono); font-size: 11px; padding: 1px 7px; border-radius: 5px; background: var(--panel-2); border: 1px solid var(--line); }
+      .pill.to-one { color: var(--accent-2); }
+      .pill.local { color: var(--accent); }
+      select, input {
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        color: var(--text);
+        padding: 6px 10px;
+        border-radius: 7px;
+        font-family: var(--mono);
+        font-size: 12.5px;
+      }
+      .row { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+      .muted { color: var(--muted); }
+      .loading { color: var(--muted); font-style: italic; }
+      button.run {
+        background: var(--accent);
+        color: #06101c;
+        border: none;
+        padding: 6px 14px;
+        border-radius: 7px;
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 12.5px;
+      }
+      a { color: var(--accent); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1><span class="pkg">@pattern-stack/query-surface</span> · showcase</h1>
+      <div class="sub">
+        The governed query + aggregation surface — five primitives over a host data model. Headline:
+        evidence metrics grouped by an <b>EAV dimension reached through a to-one join</b> (ADR-0024).
+      </div>
+      <div class="meta" id="meta"></div>
+    </header>
+    <div class="layout">
+      <nav id="nav"></nav>
+      <main id="main"></main>
+    </div>
+
+    <script>
+      const VERBS = [
+        { id: "describe", label: "describe", desc: "typed catalog + conformed dims" },
+        { id: "select", label: "select", desc: "find rows at their grain" },
+        { id: "fetch", label: "fetch", desc: "hydrate IDs into rows" },
+        { id: "measure", label: "measure", desc: "collapse to grain-safe metrics" },
+        { id: "compare", label: "compare", desc: "N-variant aligned comparison" },
+        { id: "measures", label: "measures ✎", desc: "define named measures" },
+      ];
+      let INFO = null;
+      let active = "measure"; // open on the headline metric
+      let lastSelectIds = null; // harvested by select(), fed to fetch()
+      let lastSelectEntity = null;
+
+      const $ = (sel) => document.querySelector(sel);
+      const el = (tag, attrs = {}, html) => {
+        const n = document.createElement(tag);
+        Object.assign(n, attrs);
+        if (html != null) n.innerHTML = html;
+        return n;
+      };
+      const esc = (s) =>
+        String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+      const isNum = (v) => typeof v === "number" || (typeof v === "string" && v !== "" && !isNaN(v));
+
+      function renderNav() {
+        const nav = $("#nav");
+        nav.innerHTML = "";
+        VERBS.forEach((v) => {
+          const b = el("button", { className: "verb" + (v.id === active ? " active" : "") });
+          b.innerHTML = `${v.label}<span class="vd">${v.desc}</span>`;
+          b.onclick = () => { active = v.id; render(); };
+          nav.appendChild(b);
+        });
+      }
+
+      function renderMeta() {
+        const m = $("#meta");
+        m.innerHTML = "";
+        if (!INFO) return;
+        m.appendChild(el("span", { className: "badge" }, `embed: <b>${esc(INFO.embedMode)}</b>`));
+        m.appendChild(el("span", { className: "badge" }, `entities: <b>${INFO.entities.join(" · ")}</b>`));
+        m.appendChild(
+          el("span", { className: "badge" }, `EAV dims: <b>${INFO.dimensions.map((d) => d.name).join(", ")}</b>`)
+        );
+        m.appendChild(el("span", { className: "badge" }, `fixture: <b>Bean Maxx</b>`));
+      }
+
+      // ── reusable renderers ──────────────────────────────────────────────────────────────────
+      function card(title, timing) {
+        const c = el("div", { className: "card" });
+        const h = el("h3", {}, esc(title));
+        if (timing != null) h.appendChild(el("span", { className: "timing" }, `${timing} ms`));
+        c.appendChild(h);
+        const body = el("div", { className: "body" });
+        c.appendChild(body);
+        return { c, body };
+      }
+      function rowsTable(rows) {
+        if (!rows || !rows.length) return el("div", { className: "muted" }, "— no rows —");
+        const cols = [...new Set(rows.flatMap((r) => Object.keys(r)))];
+        const wrap = el("div", { className: "scroll" });
+        const t = el("table");
+        const thead = el("thead");
+        const htr = el("tr");
+        cols.forEach((c) => htr.appendChild(el("th", {}, esc(c))));
+        thead.appendChild(htr);
+        t.appendChild(thead);
+        const tb = el("tbody");
+        rows.forEach((r) => {
+          const tr = el("tr");
+          cols.forEach((c) => {
+            const v = r[c];
+            const td = el("td", { className: isNum(v) ? "num" : "" });
+            td.title = v == null ? "" : String(v);
+            td.textContent = v == null ? "" : isNum(v) ? Number(v).toLocaleString() : String(v);
+            tr.appendChild(td);
+          });
+          tb.appendChild(tr);
+        });
+        t.appendChild(tb);
+        wrap.appendChild(t);
+        return wrap;
+      }
+      function sqlCard(sql, params) {
+        const { c, body } = card("compiled SQL  ·  builder-only, bound params");
+        body.appendChild(el("pre", { className: "sql" }, esc(sql || "—")));
+        if (params && params.length) {
+          body.appendChild(el("div", { style: "margin-top:12px" }, '<div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">bound params</div>'));
+          params.forEach((p) => {
+            const d = el("div", { className: "param" });
+            d.innerHTML = `<span class="i">$${p.i}</span><span class="${p.kind === "vector" ? "vec" : ""}">${esc(p.value)}</span>`;
+            body.appendChild(d);
+          });
+        }
+        return c;
+      }
+      function citationCard(cit) {
+        if (!cit) return null;
+        const { c, body } = card("relevance citation  ·  what defined the cohort (trust this)");
+        const grid = el("div", { className: "citation" });
+        const add = (k, v) => {
+          grid.appendChild(el("div", { className: "k" }, esc(k)));
+          grid.appendChild(el("div", { className: "v" }, esc(v)));
+        };
+        if (cit.column != null) add("column", cit.column);
+        if (cit.method != null) add("method", cit.method);
+        if (cit.threshold != null) add("threshold", cit.threshold);
+        if (cit.top_k != null) add("top_k", cit.top_k);
+        if (cit.cutoff != null) add("cutoff similarity", cit.cutoff);
+        if (cit.match_count != null) add("matched rows", cit.match_count);
+        body.appendChild(grid);
+        if (cit.exemplars && cit.exemplars.length) {
+          body.appendChild(el("div", { className: "muted", style: "margin:12px 0 6px;font-size:11px;text-transform:uppercase;letter-spacing:.08em" }, "matched exemplars"));
+          body.appendChild(rowsTable(cit.exemplars.slice(0, 5)));
+        }
+        return c;
+      }
+      function errCard(msg) {
+        const c = el("div", { className: "err" });
+        c.innerHTML = `<b>engine refusal —</b> ${esc(msg)}`;
+        return c;
+      }
+      function requestCard(req) {
+        const { c, body } = card("request");
+        body.appendChild(el("pre", {}, esc(JSON.stringify(req, null, 2))));
+        return c;
+      }
+
+      async function post(path, body) {
+        const r = await fetch(path, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        return r.json();
+      }
+
+      // ── chip preset bar ─────────────────────────────────────────────────────────────────────
+      function chipBar(presets, current, onPick) {
+        const bar = el("div", { className: "chips" });
+        presets.forEach((p) => {
+          const ch = el("button", { className: "chip" + (p.key === current ? " active" : "") }, esc(p.title));
+          ch.onclick = () => onPick(p.key);
+          bar.appendChild(ch);
+        });
+        return bar;
+      }
+
+      // ── per-verb views ──────────────────────────────────────────────────────────────────────
+      const verbState = { measure: "obs_by_stage", select: "won_opps", compare: "won_vs_lost", describe: "observations" };
+
+      async function viewMeasure(main) {
+        main.appendChild(chipBar(INFO.presets.measure, verbState.measure, (k) => { verbState.measure = k; render(); }));
+        const out = el("div");
+        main.appendChild(out);
+        out.appendChild(el("div", { className: "loading" }, "running measure()…"));
+        const res = await post("/api/measure", { preset: verbState.measure });
+        out.innerHTML = "";
+        if (res.error) { out.appendChild(requestCard(MEASURE_REQ_CACHE)); out.appendChild(errCard(res.error)); return; }
+        out.appendChild(el("p", { className: "blurb" }, esc(res.preset.blurb)));
+        const { c, body } = card(`measure("${res.preset.entity}", …)  →  ${res.rows.length} group(s)`, res.ms);
+        body.appendChild(rowsTable(res.rows));
+        out.appendChild(c);
+        out.appendChild(requestCard(res.preset.request));
+        const cit = citationCard(res.citation); if (cit) out.appendChild(cit);
+        out.appendChild(sqlCard(res.sql, res.params));
+      }
+      // note: when an error happens the request is in res-less scope; re-run shows it. (kept simple)
+      let MEASURE_REQ_CACHE = {};
+
+      async function viewSelect(main) {
+        main.appendChild(chipBar(INFO.presets.select, verbState.select, (k) => { verbState.select = k; render(); }));
+        const out = el("div");
+        main.appendChild(out);
+        out.appendChild(el("div", { className: "loading" }, "running select()…"));
+        const res = await post("/api/select", { preset: verbState.select });
+        out.innerHTML = "";
+        if (res.error) { out.appendChild(errCard(res.error)); return; }
+        lastSelectIds = res.ids || null;
+        lastSelectEntity = res.preset.entity;
+        out.appendChild(el("p", { className: "blurb" }, esc(res.preset.blurb)));
+        const { c, body } = card(`select("${res.preset.entity}", …)  →  total ${res.total ?? "?"}, preview ${res.rows.length}`, res.ms);
+        if (res.ids && res.ids.length) {
+          const note = el("div", { className: "muted", style: "margin-bottom:10px;font-size:12px" });
+          note.innerHTML = `harvested <b style="color:var(--accent-2)">${res.ids.length}</b> id(s) → the <b style="color:var(--accent)">fetch</b> tab will hydrate them`;
+          body.appendChild(note);
+        }
+        body.appendChild(rowsTable(res.rows));
+        out.appendChild(c);
+        out.appendChild(requestCard(res.preset.request));
+        out.appendChild(sqlCard(res.sql, res.params));
+      }
+
+      async function viewFetch(main) {
+        const out = el("div");
+        main.appendChild(out);
+        if (!lastSelectIds || !lastSelectIds.length) {
+          out.appendChild(el("p", { className: "blurb" }, "fetch() hydrates IDs into full rows. Run a <b>select</b> preset first — its harvested IDs feed this tab."));
+          return;
+        }
+        out.appendChild(el("p", { className: "blurb" }, `Hydrating ${lastSelectIds.length} id(s) harvested from the last <b>select("${esc(lastSelectEntity)}")</b> into full rows.`));
+        out.appendChild(el("div", { className: "loading" }, "running fetch()…"));
+        const res = await post("/api/fetch", { entity: lastSelectEntity, ids: lastSelectIds });
+        out.querySelector(".loading")?.remove();
+        if (res.error) { out.appendChild(errCard(res.error)); return; }
+        const { c, body } = card(`fetch("${res.entity}", [${res.requested} ids])  →  ${res.rows.length} row(s)`, res.ms);
+        body.appendChild(rowsTable(res.rows));
+        out.appendChild(c);
+        out.appendChild(sqlCard(res.sql, res.params));
+      }
+
+      async function viewCompare(main) {
+        main.appendChild(chipBar(INFO.presets.compare, verbState.compare, (k) => { verbState.compare = k; render(); }));
+        const out = el("div");
+        main.appendChild(out);
+        out.appendChild(el("div", { className: "loading" }, "running compare()…"));
+        const res = await post("/api/compare", { preset: verbState.compare });
+        out.innerHTML = "";
+        if (res.error) { out.appendChild(errCard(res.error)); return; }
+        out.appendChild(el("p", { className: "blurb" }, esc(res.preset.blurb)));
+        // compare result: try to render its rows; shape is { rows / variants / ... }
+        const r = res.result || {};
+        const rows = r.rows || r.aligned || (Array.isArray(r) ? r : null);
+        const { c, body } = card(`compare("${res.preset.entity}", …)`, res.ms);
+        if (rows) body.appendChild(rowsTable(rows));
+        else body.appendChild(el("pre", {}, esc(JSON.stringify(r, null, 2))));
+        out.appendChild(c);
+        out.appendChild(requestCard(res.preset.request));
+      }
+
+      async function viewDescribe(main) {
+        const bar = el("div", { className: "row" });
+        bar.appendChild(el("span", { className: "muted" }, "entity:"));
+        const sel = el("select");
+        INFO.entities.forEach((e) => sel.appendChild(el("option", { value: e, selected: e === verbState.describe }, e)));
+        sel.onchange = () => { verbState.describe = sel.value; render(); };
+        bar.appendChild(sel);
+        main.appendChild(bar);
+        const out = el("div");
+        main.appendChild(out);
+        out.appendChild(el("div", { className: "loading" }, "running describe()…"));
+        const res = await fetch(`/api/describe?entity=${encodeURIComponent(verbState.describe)}`).then((r) => r.json());
+        out.innerHTML = "";
+        if (res.error) { out.appendChild(errCard(res.error)); return; }
+
+        // conformed dimensions — the headline catalog: which dims are legal to group_by here.
+        const cd = card(`conformed dimensions for "${res.entity}"  ·  legal group_by axes`, res.ms);
+        const cdRows = (res.conformed || []).map((d) => ({
+          dimension: d.path ?? d.name,
+          owner: d.owner ?? "",
+          via: d.via ?? "local",
+        }));
+        if (cdRows.length) {
+          const t = el("table");
+          const thead = el("thead"); const htr = el("tr");
+          ["dimension", "owner", "via"].forEach((c) => htr.appendChild(el("th", {}, c)));
+          thead.appendChild(htr); t.appendChild(thead);
+          const tb = el("tbody");
+          cdRows.forEach((d) => {
+            const tr = el("tr");
+            tr.appendChild(el("td", {}, esc(d.dimension)));
+            tr.appendChild(el("td", { className: "muted" }, esc(d.owner)));
+            const via = el("td");
+            via.innerHTML = `<span class="pill ${d.via === "to-one" ? "to-one" : "local"}">${esc(d.via)}</span>`;
+            tr.appendChild(via);
+            tb.appendChild(tr);
+          });
+          t.appendChild(tb);
+          cd.body.appendChild(t);
+        } else cd.body.appendChild(el("div", { className: "muted" }, "— none —"));
+        out.appendChild(cd.c);
+
+        // measures
+        const mc = card(`measures sourced on "${res.entity}"`, null);
+        mc.body.appendChild(rowsTable((res.measures || []).map((m) => ({ name: m.name, on: m.on, agg: m.agg, additivity: m.additivity }))));
+        out.appendChild(mc.c);
+
+        // field catalog
+        const fc = card(`field catalog  ·  native ⊕ EAV`, null);
+        const fields = (res.catalog?.fields || []).map((f) => ({
+          field: f.key, type: f.type, source: f.eav ? "eav" : "native", searchable: f.searchable, label: f.label ?? "",
+        }));
+        fc.body.appendChild(rowsTable(fields));
+        out.appendChild(fc.c);
+      }
+
+      // ── measures workbench ──────────────────────────────────────────────────────────────────
+      const defineForm = { kind: "count", name: "", entity: "opportunities", field: "", agg: "sum", additivity: "additive" };
+
+      async function viewMeasures(main) {
+        main.appendChild(el("p", { className: "blurb" },
+          'Named measures are <b>catalog-by-code, instances-by-data</b>. A <b>field aggregate</b> registers a ' +
+          '<code>measureSpec</code> — the engine then auto-catalogs <code>Field.agg</code> and you call it by ' +
+          '<code>{ ref }</code>. A <b>count</b> registers <code>count(id)</code> over the entity’s primary key ' +
+          '(<code>id</code> is a real field → a first-class catalog measure; <code>count(id) ≡ count(*)</code>). ' +
+          'Either way: define one → the surface rebuilds → the agent calls it by its slug. ' +
+          'Definitions persist to <code>measures.json</code>.'));
+        const out = el("div");
+        main.appendChild(out);
+        out.appendChild(el("div", { className: "loading" }, "loading catalog…"));
+        const info = await fetch("/api/measures").then((r) => r.json());
+        out.innerHTML = "";
+        if (info.error) { out.appendChild(errCard(info.error)); return; }
+
+        // ── DEFINE form ─────────────────────────────────────────────────────────────────────
+        const fcard = card("define a measure");
+        const f = fcard.body;
+        const mkRow = (label, node) => {
+          const r = el("div", { className: "row", style: "margin-bottom:10px" });
+          r.appendChild(el("span", { className: "muted", style: "width:90px" }, label));
+          r.appendChild(node);
+          return r;
+        };
+        const kindSel = el("select");
+        [["count", "count(id) — entity count"], ["field", "field aggregate"]].forEach(([v, l]) =>
+          kindSel.appendChild(el("option", { value: v, selected: v === defineForm.kind }, l)));
+        kindSel.onchange = () => { defineForm.kind = kindSel.value; render(); };
+        f.appendChild(mkRow("kind", kindSel));
+
+        const slugify = (s) => (s || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+        const nameIn = el("input", { value: defineForm.name, placeholder: "e.g. Opportunity Count" });
+        nameIn.style.minWidth = "260px";
+        const slugIn = el("input", { value: defineForm.slug || "", placeholder: "auto from name" });
+        slugIn.style.minWidth = "260px";
+        const slugHint = el("span", { className: "muted", style: "font-size:11.5px;margin-left:8px" });
+        const refreshSlug = () => {
+          const eff = defineForm.slug?.trim() ? slugify(defineForm.slug) : slugify(defineForm.name);
+          slugHint.innerHTML = `agent calls <span style="color:var(--accent-2);font-family:var(--mono)">{ ref: "${esc(eff || "…")}" }</span>`;
+        };
+        nameIn.oninput = () => { defineForm.name = nameIn.value; refreshSlug(); };
+        slugIn.oninput = () => { defineForm.slug = slugIn.value; refreshSlug(); };
+        f.appendChild(mkRow("name", nameIn));
+        const slugRow = mkRow("slug", slugIn); slugRow.appendChild(slugHint); f.appendChild(slugRow);
+        refreshSlug();
+
+        if (defineForm.kind === "count") {
+          const entSel = el("select");
+          INFO.entities.forEach((e) => entSel.appendChild(el("option", { value: e, selected: e === defineForm.entity }, e)));
+          entSel.onchange = () => { defineForm.entity = entSel.value; };
+          f.appendChild(mkRow("entity", entSel));
+          f.appendChild(mkRow("", el("span", { className: "muted", style: "font-size:12px" }, "→ count(id) of this entity (≡ count(*)); registers as a first-class catalog measure callable by {ref:slug}.")));
+        } else {
+          const fields = info.eligibleFields?.opportunities || [];
+          const fieldSel = el("select");
+          fieldSel.appendChild(el("option", { value: "" }, "— pick a numeric field —"));
+          fields.forEach((fl) => fieldSel.appendChild(el("option", { value: fl.key, selected: fl.key === defineForm.field }, `${fl.key}${fl.label ? "  ·  " + fl.label : ""}`)));
+          fieldSel.onchange = () => { defineForm.field = fieldSel.value; };
+          f.appendChild(mkRow("field", fieldSel));
+          const aggSel = el("select");
+          ["sum", "avg", "min", "max"].forEach((a) => aggSel.appendChild(el("option", { value: a, selected: a === defineForm.agg }, a)));
+          aggSel.onchange = () => { defineForm.agg = aggSel.value; defineForm.additivity = aggSel.value === "sum" ? "additive" : "non"; };
+          f.appendChild(mkRow("agg", aggSel));
+          const addSel = el("select");
+          ["additive", "semi", "non"].forEach((a) => addSel.appendChild(el("option", { value: a, selected: a === defineForm.additivity }, a)));
+          addSel.onchange = () => { defineForm.additivity = addSel.value; };
+          f.appendChild(mkRow("additivity", addSel));
+          f.appendChild(mkRow("", el("span", { className: "muted", style: "font-size:12px" }, "entity: opportunities (EAV measureSpecs register on the opportunities overlay). additivity is host-declared and feeds the fan-safety doctor — declare it honestly (a percentage / ratio is non-additive).")));
+        }
+        const defBtn = el("button", { className: "run" }, "define + verify");
+        const defMsg = el("span", { style: "margin-left:12px" });
+        defBtn.onclick = async () => {
+          defMsg.innerHTML = '<span class="loading">defining…</span>';
+          const res = await post("/api/measures/define", defineForm);
+          if (res.error) { defMsg.innerHTML = ""; defMsg.appendChild(errCard(res.error)); return; }
+          defineForm.name = ""; defineForm.field = ""; defineForm.slug = "";
+          render();
+        };
+        const br = el("div", { className: "row" }); br.appendChild(defBtn); br.appendChild(defMsg);
+        f.appendChild(br);
+        out.appendChild(fcard.c);
+
+        // ── DEFINED book ────────────────────────────────────────────────────────────────────
+        const bcard = card(`defined measures  ·  the host book (${info.book.length})`);
+        if (!info.book.length) {
+          bcard.body.appendChild(el("div", { className: "muted" }, "— none yet — define one above —"));
+        } else {
+          info.book.forEach((m) => {
+            const row = el("div", { style: "display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--line)" });
+            const left = el("div", { style: "flex:1;min-width:0" });
+            left.innerHTML = `<span style="color:var(--accent-2)">${esc(m.name)}</span> ` +
+              `<span class="pill ${m.kind === "field" ? "to-one" : "local"}">${esc(m.kind)}</span> ` +
+              `<span style="font-family:var(--mono);font-size:11.5px">ref <span style="color:var(--accent)">${esc(m.slug)}</span></span><br>` +
+              `<span class="muted" style="font-family:var(--mono);font-size:11.5px">${esc(m.resolution)}</span>`;
+            row.appendChild(left);
+            const dimSel = el("select", { style: "font-size:11.5px" });
+            dimSel.appendChild(el("option", { value: "" }, "no group"));
+            (m.kind === "count" && m.entity === "observations"
+              ? ["opportunities.stage", "opportunities.deal_size_band"]
+              : ["stage", "deal_size_band"]
+            ).forEach((d) => dimSel.appendChild(el("option", { value: d }, "by " + d)));
+            row.appendChild(dimSel);
+            const testBtn = el("button", { className: "chip" }, "test ▸");
+            const delBtn = el("button", { className: "chip" }, "✕");
+            const result = el("div", { style: "flex-basis:100%" });
+            testBtn.onclick = async () => {
+              result.innerHTML = '<div class="loading">running measure()…</div>';
+              const res = await post("/api/measures/test", { slug: m.slug, dim: dimSel.value || undefined });
+              result.innerHTML = "";
+              if (res.error) { result.appendChild(errCard(res.error)); return; }
+              const { c, body } = card(`measure("${res.entity}", …)  →  call by name`, res.ms);
+              body.appendChild(rowsTable(res.rows));
+              result.appendChild(c);
+              result.appendChild(requestCard(res.request));
+              result.appendChild(sqlCard(res.sql, res.params));
+            };
+            delBtn.onclick = async () => { await post("/api/measures/delete", { slug: m.slug }); render(); };
+            row.appendChild(testBtn); row.appendChild(delBtn); row.appendChild(result);
+            bcard.body.appendChild(row);
+          });
+        }
+        out.appendChild(bcard.c);
+
+        // ── engine catalog (read-only, auto-derived) ─────────────────────────────────────────
+        ["opportunities", "observations"].forEach((ent) => {
+          const ec = card(`engine catalog · ${ent}  ·  auto-derived from role:'measure' fields`);
+          const rows = (info.engineCatalog[ent] || []).map((m) => ({ ref: m.name, on: m.on, agg: m.agg, additivity: m.additivity }));
+          ec.body.appendChild(rows.length ? rowsTable(rows) : el("div", { className: "muted" }, "— none —"));
+          out.appendChild(ec.c);
+        });
+      }
+
+      async function render() {
+        renderNav();
+        const main = $("#main");
+        main.innerHTML = "";
+        if (!INFO) { main.appendChild(el("div", { className: "loading" }, "booting…")); return; }
+        try {
+          if (active === "measure") await viewMeasure(main);
+          else if (active === "select") await viewSelect(main);
+          else if (active === "fetch") await viewFetch(main);
+          else if (active === "compare") await viewCompare(main);
+          else if (active === "describe") await viewDescribe(main);
+          else if (active === "measures") await viewMeasures(main);
+        } catch (e) {
+          main.appendChild(errCard(String(e)));
+        }
+      }
+
+      (async () => {
+        INFO = await fetch("/api/info").then((r) => r.json());
+        renderMeta();
+        render();
+      })();
+    </script>
+  </body>
+</html>

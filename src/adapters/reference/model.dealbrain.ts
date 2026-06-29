@@ -6,7 +6,13 @@
 
 import { getTableColumns, sql } from 'drizzle-orm';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
-import { measuresFromRegistry } from '../../internal/analytics/measure-catalog';
+import {
+  type AtomicMeasureDef,
+  type MeasureCatalog,
+  measuresFromRegistry,
+  validateMeasureDef,
+  validateRatioDef,
+} from '../../internal/analytics/measure-catalog';
 import type { AggFieldMeta } from '../../internal/analytics/types';
 import { valueColumnForDataType } from '../drizzle/eav/mapping';
 import type { DrizzleDb } from '../drizzle/execute/drizzle-db';
@@ -152,6 +158,13 @@ export async function loadDealbrainModel(
   db: DrizzleDb,
   measureSpecs: DealbrainMeasureSpec[] = DEFAULT_MEASURE_SPECS,
   dimensionSpecs: DealbrainDimensionSpec[] = [],
+  // Host-named measure definitions (instances-by-data) — merged onto the auto-derived `Field.agg`
+  // catalog AFTER it's built, so an agent can call a measure by a STABLE SLUG (e.g. {ref:'total_revenue'})
+  // instead of guessing on/agg. Each atomic def's underlying field must already be a registered
+  // measure (i.e. its key is in measureSpecs) so the EAV binding + role exist; a ratio's legs must
+  // name atomic catalog entries. Validated here — a bad def is a model-load error, not a query-time
+  // surprise. A slug that collides with an auto-derived key is refused (no silent shadowing).
+  measureDefs: MeasureCatalog = {},
 ): Promise<DealbrainModel> {
   // DATA-DRIVEN type taxonomy: SELECT DISTINCT type at model-load (the same
   // pattern the EAV field-defs use below), so observations.type.selectOptions
@@ -254,5 +267,18 @@ export async function loadDealbrainModel(
   // The measure catalog is DERIVED from the analytics tags (B2) — for dealbrain that's the
   // field.agg combos: Amount.{sum,avg,min,max}, ExpectedRevenue.{…}, Probability.{avg,min,max}.
   const catalog = measuresFromRegistry(analytics);
+  // Merge host-named measure defs onto the auto-derived catalog. Validate each (atomic: field
+  // registered + additivity not looser; ratio: legs are atomic catalog entries) and refuse a slug
+  // that shadows an existing auto-derived key — the slug is the agent-facing contract.
+  for (const [slug, def] of Object.entries(measureDefs)) {
+    if (catalog[slug]) {
+      throw new Error(
+        `loadDealbrainModel: measure slug "${slug}" collides with an auto-derived catalog measure`,
+      );
+    }
+    if (def.kind === 'atomic') validateMeasureDef(analytics, slug, def as AtomicMeasureDef);
+    else if (def.kind === 'ratio') validateRatioDef(catalog, slug, def);
+    catalog[slug] = def;
+  }
   return { registry, analytics, tables, colByDbName, catalog };
 }

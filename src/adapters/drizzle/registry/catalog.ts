@@ -86,6 +86,9 @@ export interface RelationshipInfo {
 
 export interface EntityCatalog {
   entity: EntityName;
+  /** The primary-key column (db name) — the identity field. Surfaced so a host/agent can address
+   *  the entity (e.g. a count(id) measure) without assuming a column name. */
+  primaryKey: string;
   summary?: string;
   /** Structural role — absent ⇒ 'entity'. 'junction' tables are traversable but
    *  not first-class query roots (the Explore picker hides them). */
@@ -363,6 +366,7 @@ export function buildEntityCatalog(entity: EntityName, fieldMap?: FieldMap): Ent
 
   return {
     entity,
+    primaryKey: desc.primaryKey,
     summary: desc.meta?.summary,
     kind: desc.meta?.kind,
     fields,

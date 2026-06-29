@@ -89,6 +89,9 @@ export function makeQuerySurface(
     measureSpecs?: import('../adapters/reference/model.dealbrain.ts').DealbrainMeasureSpec[];
     // Host-resolved EAV dimensions (groupable select/text fields). Omitted → none.
     dimensionSpecs?: import('../adapters/reference/model.dealbrain.ts').DealbrainDimensionSpec[];
+    // Host-named measure definitions (slug → MeasureDef), merged onto the auto-derived catalog so an
+    // agent can call a measure by a stable slug ({ref:'total_revenue'}) instead of guessing on/agg.
+    measureDefs?: import('../internal/analytics/measure-catalog.ts').MeasureCatalog;
     // Per-entity tenancy scope (fail-closed, folded per-source incl. through expand).
     // Omitted → unscoped trusted mode (the default the eval suite runs in).
     scope?: ScopeResolver;
@@ -140,7 +143,8 @@ export function makeQuerySurface(
     // POC constant is fine: dealbrain's defs are org-owned (user_id NULL).
     actorUserId: POC_ACTOR_USER_ID,
     actorOrganizationId: DEALBRAIN_ORG,
-    aggregateModel: () => loadDealbrainModel(db, opts?.measureSpecs, opts?.dimensionSpecs),
+    aggregateModel: () =>
+      loadDealbrainModel(db, opts?.measureSpecs, opts?.dimensionSpecs, opts?.measureDefs),
     semanticColumns: { observations: { normalized_text: 'embedding' } },
     // Default: the deterministic ILIKE stub (specs are hermetic). A caller (e.g. the demo) may
     // inject a REAL embed provider to exercise true free-text concepts against the stored vectors.
