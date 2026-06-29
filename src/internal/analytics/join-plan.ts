@@ -114,6 +114,50 @@ export function resolveJoinPlan(
     if (column.length === 0) {
       return { kind: 'reject', code: 'unsupported', reason: `"${dotted}" names no column` };
     }
+    // ADR-0024 Amendment 4 — a BARE group dim that is NOT a field on the source may be a
+    // dimension OWNED BY A TO-ONE TARGET (conformed at this grain by invariant #5): e.g.
+    // `stage` (an EAV dim on opportunities) at the `observations` grain. describe() already
+    // advertises it (conformedDimensions, via:'to-one'); resolve it exactly like the dotted
+    // `opportunities.stage` form so EVERY measure leg keys on the SAME bare alias. GROUP-ONLY:
+    // the FILTER path's cross-source conformance is enforced by the run-drizzle guard, which
+    // pins the bare-name reject (aggregate-eav-filter E4) — leave filter untouched. A name that
+    // IS a field on the source (native `account_id`; an own-entity EAV dim on its owner) stays
+    // LOCAL and is NEVER searched.
+    if (
+      role === 'group' &&
+      parts.length === 1 &&
+      head !== sourceEntity &&
+      !reg[sourceEntity]?.fields[head]
+    ) {
+      const hits: { target: string; hops: JoinHop[] }[] = [];
+      for (const t of Object.keys(reg)) {
+        if (t === sourceEntity) continue;
+        const paths = belongsToPaths(reg, sourceEntity, t);
+        if (paths.length !== 1) continue; // 0 = unreachable / not-to-one; >1 = diamond (excluded)
+        // T must own this name AS A DIMENSION (native OR EAV) — a bare group dim resolves only to a
+        // conformed DIMENSION on the target, never to a measure (group-by is dimensions-only).
+        if (reg[t]?.fields[head]?.role !== 'dimension') continue;
+        hits.push({ target: t, hops: paths[0]! });
+      }
+      if (hits.length === 1) {
+        const { target: tgt, hops } = hits[0]!;
+        return {
+          kind: 'to-one',
+          target: tgt,
+          column: head,
+          hops,
+          traversed: hops.map((h) => h.to),
+        };
+      }
+      if (hits.length > 1) {
+        return {
+          kind: 'reject',
+          code: 'ambiguous',
+          reason: `dimension "${dotted}" is a to-one dimension on ${hits.length} distinct targets from ${sourceEntity} (${hits.map((h) => h.target).join(', ')}) — ambiguous; qualify it as <entity>.${head}`,
+        };
+      }
+      // 0 hits → fall through to the local fallback (the clean unknown-column error survives).
+    }
     return { kind: 'local', column };
   }
 
