@@ -54,8 +54,30 @@ export interface CumulativeMeasureDef {
   label?: string;
 }
 
+/** A host-facing derived expression: a small binary tree over the closed 4-op set whose
+ *  leaves are either an ATOMIC catalog measure name ({ref}) or a numeric literal ({lit},
+ *  a weight). normalize lowers each {ref} to a generated leg alias. */
+export type DerivedExpr =
+  | { ref: string } // names an ATOMIC catalog measure (e.g. 'ExpectedRevenue.sum')
+  | { lit: number } // a numeric literal (a weight)
+  | { op: '+' | '-' | '*' | '/'; left: DerivedExpr; right: DerivedExpr };
+
+/** A derived metric: an arithmetic EXPRESSION over atomic measure legs (the ADR-0029 D2
+ *  subtractive/weighted gap — gross_profit = revenue - cost). Each {ref} names an atomic
+ *  catalog measure; the expression is computed as outer-SELECT arithmetic over the collapsed
+ *  legs (never a CTE), so it inherits fan-safety from its atomic legs. Always non-additive. */
+export interface DerivedMeasureDef {
+  kind: 'derived';
+  expr: DerivedExpr;
+  label?: string;
+}
+
 /** A catalog entry. (B5 will add 'pop'; cumulative is enumerable but routes to query().) */
-export type MeasureDef = AtomicMeasureDef | RatioMeasureDef | CumulativeMeasureDef;
+export type MeasureDef =
+  | AtomicMeasureDef
+  | RatioMeasureDef
+  | CumulativeMeasureDef
+  | DerivedMeasureDef;
 
 /** name → definition. Referenced from a query by `{ ref: name }` (consumed in B3). */
 export type MeasureCatalog = Record<string, MeasureDef>;
@@ -122,6 +144,71 @@ export function validateRatioDef(
         `${ENGINE_ERROR.AGGREGATE} ratio "${name}": leg "${leg}" is not an atomic measure (a ratio's legs may not themselves be composites)`,
       );
     }
+  }
+}
+
+const DERIVED_OPS = new Set(['+', '-', '*', '/']);
+
+/** Validate a derived def: every `{ref}` in the expression tree must name an ATOMIC catalog
+ *  measure (no nested composites — a derived metric's legs are pre-aggregated atoms, mirroring
+ *  the ratio leg check); the op set is the fixed closed 4; an empty/var-arg tree is rejected;
+ *  a `{lit}` must be a finite number. Checked when a derived {ref} is expanded AND at host
+ *  registration (fail-loud at model load). */
+export function validateDerivedDef(
+  catalog: MeasureCatalog,
+  name: string,
+  def: DerivedMeasureDef,
+): void {
+  let refCount = 0;
+  const walk = (node: DerivedExpr): void => {
+    if (node == null || typeof node !== 'object') {
+      throw new Error(`${ENGINE_ERROR.AGGREGATE} derived "${name}": malformed expression node`);
+    }
+    if ('lit' in node) {
+      if (typeof node.lit !== 'number' || !Number.isFinite(node.lit)) {
+        throw new Error(
+          `${ENGINE_ERROR.AGGREGATE} derived "${name}": literal must be a finite number`,
+        );
+      }
+      return;
+    }
+    if ('ref' in node) {
+      refCount++;
+      const legDef = catalog[node.ref];
+      if (!legDef) {
+        throw new Error(
+          `${ENGINE_ERROR.AGGREGATE} derived "${name}": leg measure "${node.ref}" is not in the catalog`,
+        );
+      }
+      if (legDef.kind !== 'atomic') {
+        throw new Error(
+          `${ENGINE_ERROR.AGGREGATE} derived "${name}": leg "${node.ref}" is not an atomic measure (a derived metric's legs may not themselves be composites)`,
+        );
+      }
+      return;
+    }
+    if ('op' in node) {
+      if (!DERIVED_OPS.has(node.op)) {
+        throw new Error(
+          `${ENGINE_ERROR.AGGREGATE} derived "${name}": unsupported operator "${node.op}" (allowed: + - * /)`,
+        );
+      }
+      if (!node.left || !node.right) {
+        throw new Error(
+          `${ENGINE_ERROR.AGGREGATE} derived "${name}": operator "${node.op}" requires both left and right operands`,
+        );
+      }
+      walk(node.left);
+      walk(node.right);
+      return;
+    }
+    throw new Error(`${ENGINE_ERROR.AGGREGATE} derived "${name}": malformed expression node`);
+  };
+  walk(def.expr);
+  if (refCount === 0) {
+    throw new Error(
+      `${ENGINE_ERROR.AGGREGATE} derived "${name}": expression references no atomic measure`,
+    );
   }
 }
 

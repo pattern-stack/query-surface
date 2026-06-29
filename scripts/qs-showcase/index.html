@@ -504,7 +504,7 @@
       }
 
       // ── measures workbench ──────────────────────────────────────────────────────────────────
-      const defineForm = { kind: "count", name: "", entity: "opportunities", field: "", agg: "sum", additivity: "additive", numerator: "", denominator: "" };
+      const defineForm = { kind: "count", name: "", entity: "opportunities", field: "", agg: "sum", additivity: "additive", numerator: "", denominator: "", op: "-", left: "", right: "", rightIsLit: false };
 
       async function viewMeasures(main) {
         main.appendChild(el("p", { className: "blurb" },
@@ -539,7 +539,7 @@
           kindSel.appendChild(g);
         };
         mkGroup("Measure (one aggregation pass)", [["count", "entity count — count(id)"], ["field", "field aggregate"]]);
-        mkGroup("Metric (post-aggregate)", [["ratio", "ratio — A / B"]]);
+        mkGroup("Metric (post-aggregate)", [["ratio", "ratio — A / B"], ["derived", "derived — A ± B (subtractive / weighted)"]]);
         kindSel.onchange = () => { defineForm.kind = kindSel.value; render(); };
         f.appendChild(mkRow("kind", kindSel));
 
@@ -577,6 +577,38 @@
           f.appendChild(mkRow("numerator", mkAtomicSel(defineForm.numerator, (v) => { defineForm.numerator = v; }, "— atomic measure —")));
           f.appendChild(mkRow("denominator", mkAtomicSel(defineForm.denominator, (v) => { defineForm.denominator = v; }, "— atomic measure —")));
           f.appendChild(mkRow("", el("span", { className: "muted", style: "font-size:12px" }, "→ numerator / denominator over two ATOMIC measures (each pre-aggregates in its own CTE → fan-safe). Always non-additive. e.g. won_count / opportunity_count = win rate.")));
+        } else if (defineForm.kind === "derived") {
+          // A derived (ADR-0029 D2) metric: an arithmetic EXPRESSION over atomic legs — the
+          // subtractive/weighted gap ratio can't express (gross_profit = revenue - cost). v1 builder
+          // is a two-term form: left <op> right, right being another atomic leg OR a numeric literal.
+          const atomics = info.atomics || [];
+          const mkAtomicSel = (cur, onpick, ph) => {
+            const s = el("select"); s.style.minWidth = "240px";
+            s.appendChild(el("option", { value: "" }, ph));
+            atomics.forEach((a) => s.appendChild(el("option", { value: a, selected: a === cur }, a)));
+            s.onchange = () => onpick(s.value);
+            return s;
+          };
+          f.appendChild(mkRow("left", mkAtomicSel(defineForm.left, (v) => { defineForm.left = v; }, "— atomic measure —")));
+          const opSel = el("select");
+          ["+", "-", "*", "/"].forEach((o) => opSel.appendChild(el("option", { value: o, selected: o === defineForm.op }, o)));
+          opSel.onchange = () => { defineForm.op = opSel.value; };
+          f.appendChild(mkRow("op", opSel));
+          // right is either another atomic measure or a numeric literal (a weight) — toggle.
+          const rTypeSel = el("select");
+          [["atomic", "atomic measure"], ["lit", "numeric literal (weight)"]].forEach(([v, l]) =>
+            rTypeSel.appendChild(el("option", { value: v, selected: (v === "lit") === !!defineForm.rightIsLit }, l)));
+          rTypeSel.onchange = () => { defineForm.rightIsLit = rTypeSel.value === "lit"; defineForm.right = ""; render(); };
+          f.appendChild(mkRow("right is", rTypeSel));
+          if (defineForm.rightIsLit) {
+            const litIn = el("input", { value: defineForm.right, placeholder: "e.g. 0.5" });
+            litIn.style.minWidth = "240px";
+            litIn.oninput = () => { defineForm.right = litIn.value; };
+            f.appendChild(mkRow("right", litIn));
+          } else {
+            f.appendChild(mkRow("right", mkAtomicSel(defineForm.right, (v) => { defineForm.right = v; }, "— atomic measure —")));
+          }
+          f.appendChild(mkRow("", el("span", { className: "muted", style: "font-size:12px" }, "→ left <op> right over ATOMIC legs (each pre-aggregates in its own CTE → fan-safe; the op is OUTER-SELECT arithmetic, adds no fan). Always non-additive. e.g. ExpectedRevenue.sum - Amount.sum = gross profit.")));
         } else {
           const fields = info.eligibleFields?.opportunities || [];
           const fieldSel = el("select");
@@ -600,7 +632,7 @@
           defMsg.innerHTML = '<span class="loading">defining…</span>';
           const res = await post("/api/measures/define", defineForm);
           if (res.error) { defMsg.innerHTML = ""; defMsg.appendChild(errCard(res.error)); return; }
-          defineForm.name = ""; defineForm.field = ""; defineForm.slug = ""; defineForm.numerator = ""; defineForm.denominator = "";
+          defineForm.name = ""; defineForm.field = ""; defineForm.slug = ""; defineForm.numerator = ""; defineForm.denominator = ""; defineForm.left = ""; defineForm.right = "";
           render();
         };
         const br = el("div", { className: "row" }); br.appendChild(defBtn); br.appendChild(defMsg);
@@ -657,9 +689,10 @@
         });
         // ── the METRIC layer (ADR-0029) — post-aggregate compositions, not entity-scoped ─────
         const mc = card(`engine catalog · METRIC layer  ·  post-aggregate compositions (not entity-scoped)`);
+        const fmtExpr = (n) => n == null ? "" : ("lit" in n ? String(n.lit) : "ref" in n ? n.ref : `(${fmtExpr(n.left)} ${n.op} ${fmtExpr(n.right)})`);
         const mrows = (info.engineMetrics || []).map((m) => ({
           ref: m.name, layer: m.layer, kind: m.kind,
-          composition: m.kind === "ratio" ? `${m.numerator} / ${m.denominator}` : m.kind === "cumulative" ? `cumulative(${m.measure})` : (m.label || ""),
+          composition: m.kind === "ratio" ? `${m.numerator} / ${m.denominator}` : m.kind === "cumulative" ? `cumulative(${m.measure})` : m.kind === "derived" ? fmtExpr(m.expr) : (m.label || ""),
         }));
         mc.body.appendChild(mrows.length ? rowsTable(mrows) : el("div", { className: "muted" }, "— none defined — a ratio appears here once you define one —"));
         out.appendChild(mc.c);

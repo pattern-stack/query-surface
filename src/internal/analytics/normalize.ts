@@ -19,12 +19,25 @@ import { mapLeaves } from './filter-columns';
 import {
   type AggregateInput,
   type AtomicMeasureDef,
+  type DerivedExpr,
+  type DerivedMeasureDef,
   type MeasureCatalog,
+  validateDerivedDef,
   validateRatioDef,
 } from './measure-catalog';
-import type { Aggregate, CompositeColumn, Measure, Predicate } from './types';
+import type {
+  Agg,
+  Aggregate,
+  CompiledDerivedExpr,
+  CompositeColumn,
+  Measure,
+  Predicate,
+} from './types';
 
 const legAlias = (as: string, side: 'num' | 'den') => `__cmp_${as}_${side}`;
+// Derived legs reuse the reserved `__cmp_` prefix (distinct from _num/_den) so they ride the
+// same claim() uniqueness set + compiler leg-exclusion as ratio legs.
+const derivedLegAlias = (as: string, i: number) => `__cmp_${as}_d${i}`;
 
 function atomicToMeasure(def: AtomicMeasureDef, as: string): Measure {
   return {
@@ -75,6 +88,44 @@ export function normalizeAggregate(catalog: MeasureCatalog, input: AggregateInpu
     claim(as);
     if (def.kind === 'atomic') {
       measures.push(atomicToMeasure(def, as));
+      continue;
+    }
+    if (def.kind === 'derived') {
+      // derived: N DISTINCT atomic legs (fan-safe, in their own CTEs) + an outer-SELECT
+      // arithmetic expression. The Map IS the dedupe — the same atomic referenced twice =>
+      // one leg; legByRef.size indexes the alias; agg carries the per-leg null-policy.
+      validateDerivedDef(catalog, item.ref, def as DerivedMeasureDef);
+      const legByRef = new Map<string, { alias: string; agg: Agg }>();
+      const collect = (node: DerivedExpr): void => {
+        if ('op' in node) {
+          collect(node.left);
+          collect(node.right);
+        } else if ('ref' in node && !legByRef.has(node.ref)) {
+          const atom = catalog[node.ref] as AtomicMeasureDef;
+          legByRef.set(node.ref, { alias: derivedLegAlias(as, legByRef.size), agg: atom.agg });
+        }
+      };
+      collect((def as DerivedMeasureDef).expr);
+      for (const [ref, leg] of legByRef) {
+        claim(leg.alias);
+        measures.push(atomicToMeasure(catalog[ref] as AtomicMeasureDef, leg.alias));
+      }
+      const rewrite = (node: DerivedExpr): CompiledDerivedExpr => {
+        if ('op' in node) {
+          return { op: node.op, left: rewrite(node.left), right: rewrite(node.right) };
+        }
+        if ('ref' in node) {
+          // biome-ignore lint/style/noNonNullAssertion: every ref was collected above.
+          return { ref: legByRef.get(node.ref)!.alias };
+        }
+        return { lit: node.lit };
+      };
+      composites.push({
+        kind: 'derived',
+        as,
+        expr: rewrite((def as DerivedMeasureDef).expr),
+        legs: [...legByRef.values()],
+      });
       continue;
     }
     // ratio: two atomic legs (fan-safe, in their own CTEs) + an outer-SELECT division.
