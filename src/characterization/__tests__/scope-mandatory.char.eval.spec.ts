@@ -133,7 +133,9 @@ suite('scope mandatory + fail-closed (characterization)', () => {
 
   it('S1 select(observations) under tenant A → EXACTLY A’s rows, never B’s', async () => {
     const res = await svc(tenantA).select('observations', { page: { limit: 100000 } });
-    const aTruth = await truth(`select count(*)::int n from observations where account_id = '${A}'`);
+    const aTruth = await truth(
+      `select count(*)::int n from observations where account_id = '${A}'`,
+    );
     const full = await truth('select count(*)::int n from observations');
     expect(res.total).toBe(num(aTruth[0]!.n)); // exactly A's population
     expect(res.total).toBeLessThan(num(full[0]!.n)); // genuinely narrowed (not the whole table)

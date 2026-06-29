@@ -87,13 +87,15 @@ export const observationsMeta: FieldMetaMap = {
   opportunityId: { role: 'dimension' },
   artifactId: {
     role: 'dimension',
-    description: 'ID of the source artifact (email, note, meeting record) the observation was extracted from',
+    description:
+      'ID of the source artifact (email, note, meeting record) the observation was extracted from',
   },
   type: {
     role: 'dimension',
     isKeyField: true,
     selectOptions: [...OBSERVATION_TYPE_TAXONOMY],
-    description: 'Observation semantic type — the intent/signal this captures (the deal-type taxonomy)',
+    description:
+      'Observation semantic type — the intent/signal this captures (the deal-type taxonomy)',
   },
   scope: {
     role: 'dimension',

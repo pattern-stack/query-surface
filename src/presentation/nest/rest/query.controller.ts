@@ -123,7 +123,8 @@ export class QueryController {
   @Post(':entity')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Select an entity: filter (structured or semantic/relevance) to matching IDs (+ optional preview rows)',
+    summary:
+      'Select an entity: filter (structured or semantic/relevance) to matching IDs (+ optional preview rows)',
     operationId: 'querySelect',
   })
   @ApiParam(ENTITY_PARAM)
