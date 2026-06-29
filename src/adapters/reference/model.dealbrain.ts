@@ -135,7 +135,7 @@ export const observationsMeta: FieldMetaMap = {
  *  app) or the built-in default set. */
 export interface DealbrainMeasureSpec {
   key: string; // the dealbrain EAV field_definitions.key AND the surfaced field name (e.g. 'Amount')
-  aggs: ('sum' | 'avg' | 'count_distinct' | 'min' | 'max')[];
+  aggs: ('sum' | 'avg' | 'count' | 'count_distinct' | 'min' | 'max')[];
   additivity?: 'additive' | 'semi' | 'non'; // summable-ness; default 'additive'
 }
 

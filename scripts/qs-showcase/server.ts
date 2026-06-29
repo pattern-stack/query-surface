@@ -73,7 +73,7 @@ type FieldMeasure = {
   name: string;
   entity: 'opportunities';
   field: string;
-  agg: 'sum' | 'avg' | 'min' | 'max' | 'count_distinct';
+  agg: 'sum' | 'avg' | 'min' | 'max' | 'count' | 'count_distinct';
   additivity: 'additive' | 'semi' | 'non';
 };
 type CountMeasure = { slug: string; kind: 'count'; name: string; entity: string };
@@ -376,7 +376,8 @@ async function apiMeasuresDefine(body: any): Promise<unknown> {
   } else if (body.kind === 'field') {
     const field = String(body.field ?? '');
     const agg = String(body.agg ?? 'sum') as FieldMeasure['agg'];
-    const additivity = (body.additivity ?? (agg === 'sum' ? 'additive' : 'non')) as FieldMeasure['additivity'];
+    // sum + count are additive (re-aggregatable across grain); avg/min/max/count_distinct are not.
+    const additivity = (body.additivity ?? (agg === 'sum' || agg === 'count' ? 'additive' : 'non')) as FieldMeasure['additivity'];
     if (!field) throw new Error('define: a field-aggregate measure needs a `field`');
     m = { slug, kind: 'field', name, entity: 'opportunities', field, agg, additivity };
   } else if (body.kind === 'ratio') {

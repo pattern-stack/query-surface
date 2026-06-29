@@ -531,9 +531,15 @@
           r.appendChild(node);
           return r;
         };
+        // Grouped by LAYER (ADR-0029): Measure = one aggregation pass; Metric = post-aggregate composition.
         const kindSel = el("select");
-        [["count", "count(id) — entity count"], ["field", "field aggregate"], ["ratio", "ratio — A / B"]].forEach(([v, l]) =>
-          kindSel.appendChild(el("option", { value: v, selected: v === defineForm.kind }, l)));
+        const mkGroup = (label, opts) => {
+          const g = el("optgroup", { label });
+          opts.forEach(([v, l]) => g.appendChild(el("option", { value: v, selected: v === defineForm.kind }, l)));
+          kindSel.appendChild(g);
+        };
+        mkGroup("Measure (one aggregation pass)", [["count", "entity count — count(id)"], ["field", "field aggregate"]]);
+        mkGroup("Metric (post-aggregate)", [["ratio", "ratio — A / B"]]);
         kindSel.onchange = () => { defineForm.kind = kindSel.value; render(); };
         f.appendChild(mkRow("kind", kindSel));
 
@@ -579,8 +585,8 @@
           fieldSel.onchange = () => { defineForm.field = fieldSel.value; };
           f.appendChild(mkRow("field", fieldSel));
           const aggSel = el("select");
-          ["sum", "avg", "min", "max"].forEach((a) => aggSel.appendChild(el("option", { value: a, selected: a === defineForm.agg }, a)));
-          aggSel.onchange = () => { defineForm.agg = aggSel.value; defineForm.additivity = aggSel.value === "sum" ? "additive" : "non"; };
+          ["sum", "avg", "min", "max", "count", "count_distinct"].forEach((a) => aggSel.appendChild(el("option", { value: a, selected: a === defineForm.agg }, a)));
+          aggSel.onchange = () => { defineForm.agg = aggSel.value; defineForm.additivity = (aggSel.value === "sum" || aggSel.value === "count") ? "additive" : "non"; };
           f.appendChild(mkRow("agg", aggSel));
           const addSel = el("select");
           ["additive", "semi", "non"].forEach((a) => addSel.appendChild(el("option", { value: a, selected: a === defineForm.additivity }, a)));
