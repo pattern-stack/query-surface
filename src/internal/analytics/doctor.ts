@@ -3,6 +3,7 @@
 
 import { ENGINE_ERROR } from '../language/error-messages';
 import { groupGrain, measureField, measureSource } from './grain';
+import { resolveJoinPlan } from './join-plan';
 import { type AggRegistry, type Aggregate, rowExprCols } from './types';
 
 export type AggFindingCode =
@@ -35,6 +36,22 @@ export function diagnoseAggregate(reg: AggRegistry, q: Aggregate): AggFinding[] 
     // additivity is HOST-DECLARED on the def. Never call measureField on an object (it throws).
     if (typeof m.on === 'object') {
       for (const col of rowExprCols(m.on)) {
+        // A DOTTED leg (ADR-0029 D4 follow-up) is an EXPLICIT `target.column` reached via a single
+        // belongs_to (to-one) chain — it is NOT a field on `src`, so the bare ent.fields[col] lookup
+        // would false-flag UNKNOWN_FIELD. Resolve it: a to-one reach to a registered target field is
+        // covered (validated to-one+numeric at model load); anything else (has_many/diamond/missing)
+        // is a real coverage gap.
+        if (col.includes('.')) {
+          const plan = resolveJoinPlan(reg, src, col, 'filter');
+          if (plan.kind !== 'to-one' || !reg[plan.target]?.fields[plan.column]) {
+            findings.push({
+              code: 'UNKNOWN_FIELD',
+              severity: 'error',
+              message: `expression measure leg "${col}" is not a to-one reach to a registered field from ${src}`,
+            });
+          }
+          continue;
+        }
         if (!ent?.fields[col]) {
           findings.push({
             code: 'UNKNOWN_FIELD',
