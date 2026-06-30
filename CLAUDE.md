@@ -19,9 +19,9 @@ dealbrain copies). **All query-surface work happens HERE now**, not in those cop
 ## The primitives
 - `describe(entity?)` — typed field catalog (native ⊕ EAV) + the graph-derived **conformed
   dimension set** per metric.
-- `query(entity, …)` — find IDs (+ preview, + `window` annotations), **grain preserved**.
+- `select(entity, …)` — find IDs (+ preview, + `window` annotations, + semantic `relevant`/`rank_by`), **grain preserved**.
 - `fetch(entity, ids, …)` — hydrate IDs into rows.
-- `aggregate(entity, q, …)` — **collapse** to grouped rows with measures, **grain-safe**.
+- `measure(entity, q, …)` — **collapse** to grouped rows with measures, **grain-safe** (the verb formerly named `aggregate`; rename locked ADR-0024 Amendment 3).
 - `compare(entity, …)` — N-variant aligned comparison (PoP / variant-vs-variant).
 
 ## Architecture — hexagonal (driving / driven)

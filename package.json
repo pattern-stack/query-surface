@@ -1,6 +1,6 @@
 {
   "name": "@pattern-stack/query-surface",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Agent-aware semantic query + aggregation surface (describe/query/fetch/aggregate/compare) over a host schema — hexagonal, backend-pluggable.",
