@@ -1,16 +1,36 @@
-# Handoff — 2026-06-29 (v0.1.0 released)
+# Handoff — 2026-06-30
 
-**Branch:** `main` (== origin/main, clean tree). **Released `v0.1.0`** — the first tag/GitHub release.
-
-**Last action:** Shipped ADR-0029 **D4 expression measures** + the **to-one expression-col** follow-up, then cut **v0.1.0**. Five PRs merged this session: #27 (D4 — row-level `RowExpr` measures + missing→0), #28 (biome `src` 13→0), #29 (D4 follow-up — to-one cols), #30 (docs/release — deep README, CHANGELOG, ADR-0029 shipped amendment, verb-name fixes, version 0.0.0→0.1.0). ADR-0029 is complete through D4 + to-one.
-
-**Next action:** No committed query-surface work remains — it's at a release boundary. The active frontier is in **sibling repos** (see the workspace `../CLAUDE.md`): finish `resolveUniverse` dispatch + commit the `bySemantic` probe in **`dealbrain-projection`**; or the **L3 agents** in **`canvas-workstation`**. In-repo deferred (no pressure): D5 (measures-also-simple-metrics), the cumulative/window rung, ADR-0028 (the `QueryPlan` IR + `QueryBackend` port — only when a second backend is needed).
-
-**Obstacles:** none blocking.
+**Branch:** `main` (== origin/main, clean tree).
+**Last action:** Merged **PR #32** (`b1bd4d7`) — `ConformedDim.valueDomain: 'declared' | 'open'` on the
+`describe` surface. The model now reads `field_definitions.select_options`; an EAV select dim / native
+enum → `declared`, free-string/to-one → `open`. No new verb, no scan — declared values stay in
+`key_fields`, live values for an `open` dim come from the existing `measure(group_by:[path])` (scoped).
+MCP describe adds a `dimensions_note` when any dim is open.
+**Next action:** Nothing required in-repo — `valueDomain` is complete. Frontier moved to the **retrieval
+agent** (cross-repo, see memory `retrieval-agent-landscape`): the upgrade = **marry** the canvas analyst
+(`canvas-workstation/src/query-surface/`, newest, new 5-verb surface, wiring-proven only) with the
+**legacy v1** (`/Users/dug/Projects/retrieval-agent/src/`, proven + benchmark-calibrated, old REST
+surface). Mine legacy's **eval harness** (`packages/benchmarks/agent-eval/` + ground-truth corpus +
+`questions.jsonl`), its **calibrated manual**, and its **judgments**; re-target them at the analyst.
+**Linchpin to verify FIRST:** does `dealbrain-projection/scripts/mcp-serve.ts` pass the engine's new
+`describe.valueDomain` through, and are its MCP verb names the new `select`/`measure` or old
+`query`/`aggregate`? (The analyst calls the new names — a mismatch blocks it.)
+**Obstacles:** none. (Op note: the running query-surface MCP server has pre-merge code — `/mcp` reconnect
+to pick up `valueDomain`.)
 
 ## Notes
-- **Full suite:** 396 pass / 12 fail. The 12 are **pre-existing** `OPENAI_API_KEY`/embedding-drift specs (relevance-as-filter / observations-retrieval / rank_by / citation-chain) — verified unrelated via `git stash`. `tsc` clean; `biome check src` clean (cleared 13→0 in #28).
-- **Fixture gap:** `accounts` has no numeric field, so the literal `Amount · account.weight_factor` to-one shape is capability-complete but not *eval-pinned* — the to-one eval reaches `observations → opportunities` instead (identical machinery).
-- **Verb names:** the public surface is `describe · select · fetch · measure · compare` (locked ADR-0024 Amend 3). README + CLAUDE.md primitives were stale (`query`/`aggregate`) and were fixed in #30; deeper conceptual `aggregate()` mentions in CLAUDE.md's hard-rules prose were left (a future surgical pass).
-- **DB:** `DBURL=postgres://postgres:password@localhost:54321/dealbrain` (dealbrain's dev DB, Bean Maxx fixture). Bring it up there if down.
-- **Workflows this session** were lead-reviewed + independently gate-verified before merge (not merged on reviewer verdict alone) — the reviewers caught real bugs in prior workflows, so the lead pass stays mandatory.
+- **Suite:** 398 pass / 12 fail. The 12 are the pre-existing `OPENAI_API_KEY` embedding-drift specs
+  (relevance-as-filter / observations-retrieval / rank_by / citation-chain) — unrelated. `tsc` + `biome
+  check src` clean. (PR #32 added 2 passing tests over the prior 396 baseline.)
+- **Deferred enhancements on this feature (only if wanted, NOT gaps):** the declared-vs-observed **drift
+  diff** (`dirty:true` when observed ⊄ declared) and a **high-card `limit` guard** on `measure(group_by)`.
+  Both are enhancements — the capability (cardinality/values via `measure`) already exists.
+- **Why declared ≠ truth (prod-grounded):** measured against real-world data — a large share of
+  opportunity select fields have UNUSED declared options, and some carry UNDECLARED (drift) values. So
+  declared `select_options` is a trustworthy PRIOR, not exhaustive. See memory
+  `prod-select-options-divergence`.
+- **The design exploration** (workflow: profile-verb vs tiered-inline panel) concluded the heavy "profile
+  scan" machinery was unnecessary — `measure` already IS the scoped scan. We shipped only the missing
+  *prior + classification*. ADR amendment under ADR-0024 was NOT written (the change is small + self-
+  documenting via the inline comments + this handoff); write one if the drift-diff/guard follow-ups land.
+- **DB:** `DBURL=postgres://postgres:password@localhost:54321/dealbrain` (dealbrain's dev DB, Bean Maxx).
