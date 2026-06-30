@@ -46,7 +46,7 @@ const reg: AggRegistry = {
       id: { type: 'uuid', role: 'dimension' },
       account_id: { type: 'uuid', role: 'dimension' },
       opportunity_id: { type: 'uuid', role: 'dimension' },
-      type: { type: 'string', role: 'dimension' },
+      type: { type: 'string', role: 'dimension', hasDeclaredDomain: true }, // a declared taxonomy
     },
   },
 };
@@ -172,6 +172,18 @@ describe('conformedDimensions (the describe surface)', () => {
       .map((d) => d.path)
       .sort();
     expect(paths).toEqual(['id', 'name']);
+  });
+  it('valueDomain: a hasDeclaredDomain field → "declared"; undeclared local & to-one dims → "open"', () => {
+    const byPath = (dims: ReturnType<typeof conformedDimensions>, p: string) =>
+      dims.find((d) => d.path === p);
+    const obs = conformedDimensions(reg, 'observations');
+    // observations.type is a declared taxonomy → declared, both as a local dim...
+    expect(byPath(obs, 'type')?.valueDomain).toBe('declared');
+    // ...and the marker rides through a to-one reach (observations → opportunities).
+    expect(byPath(obs, 'opportunities.state_of_deal_status')?.valueDomain).toBe('open');
+    const opp = conformedDimensions(reg, 'opportunities');
+    expect(byPath(opp, 'state_of_deal_status')?.valueDomain).toBe('open'); // undeclared local
+    expect(byPath(opp, 'accounts.name')?.valueDomain).toBe('open'); // undeclared to-one
   });
 });
 

@@ -239,6 +239,11 @@ export interface ConformedDim {
   type: AggColType;
   owner: string;
   via: 'local' | 'to-one';
+  /** `'declared'` = a known value domain (native enum / select_options) the agent can read for
+   *  free from describe `key_fields`; `'open'` = free-string / to-one with no declared list —
+   *  enumerate live values with `measure(group_by:[path])` (scoped) or size with `count_distinct`
+   *  first. Declared is a PRIOR, not exhaustive (real data drifts past it). */
+  valueDomain: 'declared' | 'open';
 }
 
 export function conformedDimensions(reg: AggRegistry, sourceEntity: string): ConformedDim[] {
@@ -247,7 +252,14 @@ export function conformedDimensions(reg: AggRegistry, sourceEntity: string): Con
   if (!ent) return out;
   for (const [col, f] of Object.entries(ent.fields)) {
     if (f.role === 'dimension') {
-      out.push({ path: col, column: col, type: f.type, owner: sourceEntity, via: 'local' });
+      out.push({
+        path: col,
+        column: col,
+        type: f.type,
+        owner: sourceEntity,
+        via: 'local',
+        valueDomain: f.hasDeclaredDomain ? 'declared' : 'open',
+      });
     }
   }
   for (const target of Object.keys(reg)) {
@@ -262,6 +274,7 @@ export function conformedDimensions(reg: AggRegistry, sourceEntity: string): Con
           type: f.type,
           owner: target,
           via: 'to-one',
+          valueDomain: f.hasDeclaredDomain ? 'declared' : 'open',
         });
       }
     }

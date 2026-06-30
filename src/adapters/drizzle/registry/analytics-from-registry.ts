@@ -47,6 +47,12 @@ export function analyticsFromRegistry(
         ...(meta.aggs ? { aggs: meta.aggs } : {}),
         ...(meta.additivity ? { additivity: meta.additivity } : {}),
         ...(meta.time ? { time: meta.time } : {}),
+        // Declared domain: a native pg-enum OR a qField-declared select_options list. Mirrors
+        // catalog.ts's `nativeEnum ?? meta.selectOptions` (the enumValues source) so describe's
+        // dimension marker and key_fields agree on what counts as "has a known value domain".
+        ...(colType(col) === 'enum' || meta.selectOptions?.length
+          ? { hasDeclaredDomain: true }
+          : {}),
       };
     }
     // EAV measures (tags can't ride field_definitions on dealbrain → overlay)
