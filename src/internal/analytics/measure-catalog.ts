@@ -11,6 +11,7 @@
 
 import { ENGINE_ERROR } from '../language/error-messages';
 import { measureField } from './grain';
+import { resolveJoinPlan } from './join-plan';
 import type { Additivity, Agg, AggRegistry, Aggregate, Measure, Predicate, RowExpr } from './types';
 
 /** A simple (single-column) measure: an aggregate over one field of one source. */
@@ -135,10 +136,36 @@ export function validateMeasureDef(
             `${ENGINE_ERROR.AGGREGATE} measure "${name}": col must be a non-empty field key`,
           );
         }
+        // TO-ONE DOTTED REACH (ADR-0029 D4 follow-up): an EXPLICIT dotted `target.column` is legal
+        // iff it is reached by a SINGLE belongs_to (to-one) chain to a registered NUMERIC field — each
+        // hop is 1:1 so the value stays a single non-fanning pre-agg leg (composes lowerToOne at
+        // compile). A has_many / diamond / unreachable reach is REJECTED fail-loud (it would fan the
+        // measure value — invariant #2). resolveJoinPlan with role 'filter' returns 'to-one' for a
+        // single-belongs_to-path target (the role gate is only the BARE group-dim search, bypassed for
+        // a dotted col), 'semijoin' for a direct has_many, and 'reject' (ambiguous) for a diamond.
         if (node.col.includes('.')) {
-          throw new Error(
-            `${ENGINE_ERROR.AGGREGATE} measure "${name}": col "${node.col}" is a dotted/relation reach — v1 expression measures are LOCAL-only (a future wave composes a to-one lower)`,
-          );
+          const plan = resolveJoinPlan(analytics, def.source, node.col, 'filter');
+          if (plan.kind !== 'to-one') {
+            const detail =
+              plan.kind === 'reject'
+                ? plan.reason
+                : `${def.source}→${node.col} is a ${plan.kind} (has_many / would fan), not a 1:1 belongs_to chain`;
+            throw new Error(
+              `${ENGINE_ERROR.AGGREGATE} measure "${name}": col "${node.col}" is not a to-one reach to a registered numeric field — ${detail}`,
+            );
+          }
+          const targetField = analytics[plan.target]?.fields[plan.column];
+          if (!targetField) {
+            throw new Error(
+              `${ENGINE_ERROR.AGGREGATE} measure "${name}": col "${node.col}" on "${plan.target}" is not a registered numeric field (not registered)`,
+            );
+          }
+          if (targetField.type !== 'number') {
+            throw new Error(
+              `${ENGINE_ERROR.AGGREGATE} measure "${name}": col "${node.col}" on "${plan.target}" is type "${targetField.type}", not numeric — arithmetic requires a numeric field`,
+            );
+          }
+          return;
         }
         const exprField = analytics[def.source]?.fields[node.col];
         if (!exprField) {
