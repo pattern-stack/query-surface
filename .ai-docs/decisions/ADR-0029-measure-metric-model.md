@@ -1,6 +1,6 @@
 # ADR-0029 — The Measure / Metric layered model
 
-**Status:** proposed — surfaced in-session 2026-06-29 while exposing the just-shipped host-named measure defs in the workbench (`c776ccb` + `0430b3b`, PRs #19/#20). The **two-layer model with its measure-layer grades (§Decision 1) and the single-pass-computability decision criterion (§Decision 2)** are settled; the **build** is staged behind a strangler (§Sequencing) and one tactical UI fix is do-now. This ADR NAMES the model — it does not yet change the engine (except D3's no-engine UI fix). · **Scope:** the layering of the aggregation vocabulary — what is a **measure** (computable in one aggregation pass over a row-level expression) vs a **metric** (post-aggregate arithmetic over collapsed legs) — and where the existing `ratio`/`cumulative`/`count(pk)` work sits in it; EXCLUDES dimension naming (D6) and the second-backend reorg (ADR-0028). · **Builds on** [ADR-0024](./ADR-0024-conformed-dimensions.md) (the named-measure catalog derived from `role`-tagged FieldMeta + `compare()`; the conformed-dimension rule a metric's group keys still obey) and [ADR-0028](./ADR-0028-engine-unification-and-query-backend.md) (the `Aggregate` shape + `QueryPlan` IR these tiers compile through). · **Aligns with** dbt MetricFlow's measure/metric split (measures as aggregation building blocks; metrics — simple/ratio/derived/cumulative/conversion — as the queryable layer above the aggregation boundary).
+**Status:** SHIPPED through D4 + the to-one expression-col follow-up — see **Amendment 1** (2026-06-29) for the build record and the row-level NULL / additivity decisions. Originally surfaced in-session 2026-06-29 while exposing the just-shipped host-named measure defs in the workbench (`c776ccb` + `0430b3b`, PRs #19/#20). The **two-layer model with its measure-layer grades (§Decision 1) and the single-pass-computability decision criterion (§Decision 2)** are settled; the **build** is staged behind a strangler (§Sequencing) and one tactical UI fix is do-now. This ADR NAMES the model — it does not yet change the engine (except D3's no-engine UI fix). · **Scope:** the layering of the aggregation vocabulary — what is a **measure** (computable in one aggregation pass over a row-level expression) vs a **metric** (post-aggregate arithmetic over collapsed legs) — and where the existing `ratio`/`cumulative`/`count(pk)` work sits in it; EXCLUDES dimension naming (D6) and the second-backend reorg (ADR-0028). · **Builds on** [ADR-0024](./ADR-0024-conformed-dimensions.md) (the named-measure catalog derived from `role`-tagged FieldMeta + `compare()`; the conformed-dimension rule a metric's group keys still obey) and [ADR-0028](./ADR-0028-engine-unification-and-query-backend.md) (the `Aggregate` shape + `QueryPlan` IR these tiers compile through). · **Aligns with** dbt MetricFlow's measure/metric split (measures as aggregation building blocks; metrics — simple/ratio/derived/cumulative/conversion — as the queryable layer above the aggregation boundary).
 
 ---
 
@@ -116,6 +116,28 @@ MetricFlow's full agg list is `sum, min, max, average, median, count_distinct, p
 
 - **REJECT — a flat agg dropdown `[Count, Sum, Avg, Min, Max, Ratio]`.** This is the status-quo `kind` dropdown's sin (`scripts/qs-showcase/index.html:535`) taken further: it puts the **aggregation axis** (count/sum/avg…) and the **layer axis** (measure vs ratio/derived metric) on one list. They are orthogonal — a ratio is not "another agg" — and flattening them is exactly the conceptual error this ADR names. Rejected.
 - **REJECT FOR NOW — gating measures behind metrics, MetricFlow-style** (every queryable thing is a metric; a simple metric wraps one measure). Cleaner end-state and the recorded north star (D5), but **worse for an agent today**: an extra wrapper indirection with no current payoff. Deferred to Step 5, not adopted now.
+
+---
+
+## Amendment 1 — D1–D4 + to-one expression cols SHIPPED (2026-06-29, Dug)
+
+The strangler sequence (§Sequencing) is **complete through D4**, all eval-gated and merged to `main`:
+
+- **D1** (`08e7c8f`) — `layer` tag on `MeasureCatalogEntry` + `describeMetrics()`.
+- **D2** (`6304b71`) — the `derived` composite metric (arithmetic over atomic legs; `gross_profit = revenue − cost`, weighted blends). Eval `derived-metric.eval.spec.ts`.
+- **D3** (`fc943d6`) — workbench granular `count`/`count_distinct` aggs + Measure/Metric optgroups.
+- **D4 — expression measures** (PR #27, `8db92a8` + `c2b25a1`) — `AtomicMeasureDef.on` generalized from a single column to a **row-level `RowExpr` AST** (`{col}|{lit}|{op,left,right}`, closed 4-op), evaluated per row then aggregated once: `agg(f(col₁,col₂,…))`. Headline `weighted_pipeline = SUM(Amount·Probability)` — single-pass, hence a *measure*, never a metric. Multi-EAV leaves get distinct 1:1 join aliases (`fv_<as>_<i>`); the doctor bypasses its `SUM`-on-non-additive refusal for the expression grade. Eval `expression-measure.eval.spec.ts`.
+- **D4 follow-up — to-one expression cols** (PR #29, `aaa4e12`) — a `{col}` leaf may be an explicit dotted `target.column` reached via a single `belongs_to` (to-one) chain, composing the existing scope-folded `lowerToOne`. A has_many / diamond / non-numeric / unregistered reach is rejected fail-loud at model load.
+
+**Two row-level semantic decisions made during the build (the ones §2's distribution discussion implied but did not pin):**
+
+1. **Missing operand → 0 (the arithmetic identity), never a dropped row.** Each `{col}` leaf compiles to `coalesce(col, 0)`. Rationale: `profit = sales_price − item_cost` over a deal with no recorded cost must yield `sales_price`, not vanish from the total (a NULL operand makes the per-row expression NULL, and `SUM` silently skips it). This **dissolves an intersection-NULL subtlety** the first cut carried: with coalesce, the expression form coincides with the post-aggregate derived form over **all** rows (`SUM(a−b) ≡ SUM(a)−SUM(b)`), exactly as §2 claims, rather than only over the co-present subset. A host that genuinely wants "exclude rows missing X" uses a measure-level `where` on X.
+
+2. **Additivity is HOST-DECLARED for an expression measure; the doctor bypasses its per-field `SUM`-on-non-additive refusal for this grade only.** A row-level product of an additive amount × a non-additive ratio (`SUM(Amount·Probability)`, `Probability` is `additivity:'non'`) is itself additively summable — there is no single field whose additivity governs the expression. A *string* atomic `SUM` on a non-additive field is still refused (no regression). Validation instead checks each leaf resolves to a registered numeric field.
+
+**Grain note (to-one cols):** summing a parent attribute at the child grain counts it once per child — defined semantics, **not** a fan (the `belongs_to` LEFT JOIN adds zero rows beyond the child base grain). Source the measure at the parent for parent-grain weighting. Pinned by `expression-measure.eval.spec.ts` D4-8 (obs-grain total ≠ opp-grain total).
+
+**Still deferred:** D5 (measures-also-queryable-as-simple-metrics — the MetricFlow north star), the cumulative/window rung (routed to `select({ window })`).
 
 ---
 
