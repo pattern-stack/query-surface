@@ -297,7 +297,10 @@ export function registerQueryTools(
           filter: a.filter as unknown as FilterExpression | undefined,
           rank_by: a.rank_by as QueryOptions['rank_by'],
           columns: a.columns,
-          sort: a.sort,
+          // The wire DSL names a sort key `on` (uniform with rank_by / measure.on); the service's
+          // `Sort` type wants `field`. Map it — without this the service reads `sort.field` as
+          // undefined and crashes in path resolution (`dotted.split` of undefined).
+          sort: a.sort?.map((s) => ({ field: s.on, dir: s.dir })),
           page:
             a.limit !== undefined || a.offset !== undefined
               ? prune({ limit: a.limit, offset: a.offset })
