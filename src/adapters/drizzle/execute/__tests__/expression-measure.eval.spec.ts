@@ -45,6 +45,22 @@ const MEASURE_DEFS = {
     additivity: 'additive' as const,
     label: 'Revenue minus Amount (row-level)',
   },
+  // TO-ONE×TO-ONE headline (ADR-0029 D4 follow-up): a measure on the OBSERVATIONS source whose two
+  // EXPLICIT DOTTED cols 'opportunities.Amount'/'opportunities.Probability' are reached via the single
+  // observations→opportunities belongs_to (to-one). Each observation reaches its ONE parent opp's
+  // Amount·Probability (1:1, no fan); the SUM is over observations rows.
+  to_one_weighted: {
+    kind: 'atomic' as const,
+    on: {
+      op: '*' as const,
+      left: { col: 'opportunities.Amount' },
+      right: { col: 'opportunities.Probability' },
+    },
+    agg: 'sum' as const,
+    source: 'observations',
+    additivity: 'additive' as const,
+    label: 'To-one weighted (obs→opp)',
+  },
 };
 
 suite('expression measure — agg(f(col,col)) over local numeric cols (ADR-0029 D4)', () => {
@@ -243,6 +259,119 @@ suite('expression measure — agg(f(col,col)) over local numeric cols (ADR-0029 
     }
   });
 
+  it('D4-7 HEADLINE to-one×to-one: SUM(opportunities.Amount·opportunities.Probability) on OBSERVATIONS source == raw Σ over the parent opp, per observations.type', async () => {
+    // INDEPENDENT ground truth: each observation reaches its ONE parent opportunity (belongs_to), and
+    // the EAV cols key on the PARENT opp id (amt.eid = opp.id, NOT o.id — the load-bearing distinction
+    // that makes this independent of the to-one path). Grouped by the LOCAL observations.type dim, so
+    // the ONLY opportunities join present comes from the measure (a clean witness).
+    const expected = await truth<{ type: string | null; wp: string }>(
+      `select o.type as type, sum(coalesce(amt.v,0) * coalesce(prob.v,0)) as wp
+         from observations o
+         left join opportunities opp on opp.id = o.opportunity_id
+         left join ${fvNum('Amount')} amt on amt.eid = opp.id
+         left join ${fvNum('Probability')} prob on prob.eid = opp.id
+        group by o.type`,
+    );
+    const expBy = new Map<string, number | null>();
+    for (const e of expected) expBy.set(bucketKey(e.type), e.wp == null ? null : num(e.wp));
+
+    const res = await h.service.measure(
+      'observations',
+      {
+        group_by: ['observations.type'],
+        measures: [{ ref: 'to_one_weighted', as: 'wp' } as never],
+      },
+      { include_sql: true },
+    );
+    const gotBy = new Map<string, number | null>();
+    // the group alias for a dotted dim is the dotted path itself ('observations.type').
+    for (const r of res.rows)
+      gotBy.set(bucketKey(r['observations.type']), r.wp == null ? null : num(r.wp));
+
+    // value parity per (type) bucket
+    expect(gotBy.size).toBeGreaterThan(0);
+    const keys = new Set([...expBy.keys(), ...gotBy.keys()]);
+    for (const k of keys) {
+      const e = expBy.get(k);
+      const g = gotBy.get(k);
+      if (e == null && g == null) continue;
+      expect(g).toBeCloseTo(e ?? 0, 2);
+    }
+
+    // WITNESS the EAV-via-to-one joins: two distinct fvt_opportunities_<col> aliases (toIdentifier
+    // lowercases the key), NOT the bare-EAV fv_<as>_<i> scheme → proves the dotted cols took the
+    // to-one path.
+    const fvt = new Set((res.sql ?? '').match(/fvt_opportunities_\w+/g) ?? []);
+    expect(fvt.size).toBe(2);
+    expect(fvt.has('fvt_opportunities_amount')).toBe(true);
+    expect(fvt.has('fvt_opportunities_probability')).toBe(true);
+    // WITNESS the belongs_to hop observations→opportunities (the FK ON).
+    expect(res.sql ?? '').toMatch(/opportunity_id/i);
+    // NEGATIVE witness: the bare-local EAV alias scheme must be ABSENT (the cols did NOT resolve local).
+    const bare = (res.sql ?? '').match(/fv_wp_\d+/g) ?? [];
+    expect(bare.length).toBe(0);
+  });
+
+  it('D4-8 NO-FAN + GRAIN: row count == independent group count, summed at OBSERVATIONS grain (not opp grain)', async () => {
+    const expected = await truth<{ type: string | null; wp: string }>(
+      `select o.type as type, sum(coalesce(amt.v,0) * coalesce(prob.v,0)) as wp
+         from observations o
+         left join opportunities opp on opp.id = o.opportunity_id
+         left join ${fvNum('Amount')} amt on amt.eid = opp.id
+         left join ${fvNum('Probability')} prob on prob.eid = opp.id
+        group by o.type`,
+    );
+    const res = await h.service.measure('observations', {
+      group_by: ['observations.type'],
+      measures: [{ ref: 'to_one_weighted', as: 'wp' } as never],
+    });
+    // row-count parity: the belongs_to + two EAV joins are each 1:1 → exactly one row per type, no
+    // inflation (a has_many would have multiplied).
+    expect(res.row_count).toBe(expected.length);
+
+    const expBy = new Map(
+      expected.map((e) => [bucketKey(e.type), e.wp == null ? null : num(e.wp)]),
+    );
+    const gotBy = new Map(
+      res.rows.map((r) => [bucketKey(r['observations.type']), r.wp == null ? null : num(r.wp)]),
+    );
+    expect(gotBy.size).toBe(expBy.size);
+    for (const [k, v] of gotBy) {
+      const e = expBy.get(k);
+      if (v == null && e == null) continue;
+      expect(v).toBeCloseTo(e ?? 0, 2);
+    }
+
+    // GRAIN NON-DEGENERACY: the OBSERVATIONS-grain total (each opp's product counted once PER child
+    // observation) must DIFFER from the opp-grain total (each opp once) — else ≥1 opp has >1 obs is
+    // false and the test would pass vacuously even if the engine collapsed to opp grain.
+    const [obsRow] = await truth<{ t: string }>(
+      `select sum(coalesce(amt.v,0) * coalesce(prob.v,0)) t
+         from observations o
+         left join opportunities opp on opp.id = o.opportunity_id
+         left join ${fvNum('Amount')} amt on amt.eid = opp.id
+         left join ${fvNum('Probability')} prob on prob.eid = opp.id`,
+    );
+    const [oppRow] = await truth<{ t: string }>(
+      `select sum(coalesce(amt.v,0) * coalesce(prob.v,0)) t
+         from opportunities opp
+         left join ${fvNum('Amount')} amt on amt.eid = opp.id
+         left join ${fvNum('Probability')} prob on prob.eid = opp.id`,
+    );
+    const obsTotal = num(obsRow?.t);
+    const oppTotal = num(oppRow?.t);
+    expect(
+      Math.abs(obsTotal - oppTotal) > 0.5,
+      'fixture-degenerate: every opportunity has ≤1 observation, so observations-grain == opp-grain ' +
+        'and this grain guard cannot witness the per-obs SUM (a real finding about fixture shape).',
+    ).toBe(true);
+    // the engine grand total must equal the OBSERVATIONS-grain total — proving it summed per-obs via a
+    // 1:1 to-one, NOT at opp grain.
+    let engTotal = 0;
+    for (const v of gotBy.values()) engTotal += v ?? 0;
+    expect(engTotal).toBeCloseTo(obsTotal, 2);
+  });
+
   it('D4-5a FAIL-LOUD: a { col } naming a non-numeric / unregistered field is refused at model load', async () => {
     // 'stage' is a string EAV dimension (type:string), not numeric → arithmetic refused.
     await expect(
@@ -258,18 +387,54 @@ suite('expression measure — agg(f(col,col)) over local numeric cols (ADR-0029 
     ).rejects.toThrow(/not registered/i);
   });
 
-  it('D4-5b FAIL-LOUD: a dotted relation col is refused at model load (LOCAL-only v1)', async () => {
+  it('D4-5b FAIL-LOUD: a dotted col that is NOT a to-one reach to a registered numeric field is refused at model load', async () => {
+    // CONTRACT INVERSION (ADR-0029 D4 follow-up): a to-one dotted col is now ALLOWED (see D4-7); only a
+    // non-numeric-target / unregistered-target / has_many-reach / diamond-reach is refused fail-loud.
+    const def = (left: { col: string }, source: string) => ({
+      bad_expr: {
+        kind: 'atomic' as const,
+        on: { op: '*' as const, left, right: { col: 'Probability' } },
+        agg: 'sum' as const,
+        source,
+        additivity: 'additive' as const,
+      },
+    });
+    // (i) NON-NUMERIC target: opportunities→accounts is to-one, but accounts.name is a string dim.
     await expect(
-      loadDealbrainModel(h.db, undefined, DIMENSION_SPECS, {
-        bad_expr: {
-          kind: 'atomic',
-          on: { op: '*', left: { col: 'account.size' }, right: { col: 'Probability' } },
-          agg: 'sum',
-          source: 'opportunities',
-          additivity: 'additive',
-        },
-      }),
-    ).rejects.toThrow(/dotted|relation|local/i);
+      loadDealbrainModel(
+        h.db,
+        undefined,
+        DIMENSION_SPECS,
+        def({ col: 'accounts.name' }, 'opportunities'),
+      ),
+    ).rejects.toThrow(/numeric/i);
+    // (ii) UNREGISTERED target col: to-one, but accounts has no 'nope' field.
+    await expect(
+      loadDealbrainModel(
+        h.db,
+        undefined,
+        DIMENSION_SPECS,
+        def({ col: 'accounts.nope' }, 'opportunities'),
+      ),
+    ).rejects.toThrow(/not a registered numeric field|not registered|numeric/i);
+    // (iii) HAS_MANY reach: opportunities has_many observations → resolveJoinPlan(role 'filter') = semijoin, not to-one (would fan).
+    await expect(
+      loadDealbrainModel(
+        h.db,
+        undefined,
+        DIMENSION_SPECS,
+        def({ col: 'observations.id' }, 'opportunities'),
+      ),
+    ).rejects.toThrow(/to-one|fan/i);
+    // (iv) DIAMOND reach: observations→accounts has TWO belongs_to paths (direct + via opportunities) → ambiguous.
+    await expect(
+      loadDealbrainModel(
+        h.db,
+        undefined,
+        DIMENSION_SPECS,
+        def({ col: 'accounts.name' }, 'observations'),
+      ),
+    ).rejects.toThrow(/ambiguous|diamond|to-one|numeric/i);
   });
 
   it('D4-5c FAIL-LOUD: a pure-literal expression (no col) is refused at model load', async () => {

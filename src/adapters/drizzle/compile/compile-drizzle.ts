@@ -306,9 +306,29 @@ function lowerRowExpr(
   measureAs: string,
   joins: Array<{ table: PgTable; on: SQL }>,
   counter: { n: number },
+  scopeFor?: ScopeFor,
 ): SQL {
   if ('lit' in node) return sql`${node.lit}`; // bound param — never sql.raw of caller data
   if ('col' in node) {
+    // TO-ONE DOTTED REACH (ADR-0029 D4 follow-up): an EXPLICIT dotted `target.column` reached via a
+    // SINGLE belongs_to (to-one) chain — compose the EXISTING, scope-folded lowerToOne (handles a
+    // native OR EAV target col + folds the target's scope into the belongs_to ON). Each hop is 1:1 →
+    // the leg cannot fan (invariant #2). Validation (validateMeasureDef) already rejected a
+    // non-to-one reach at MODEL LOAD; this re-resolves defensively and THROWS rather than ever emit an
+    // unsafe (fanning) leg. The EAV-via-to-one alias is fvt_<target>_<column> (lowerToOne) — distinct
+    // from the bare-EAV fv_<as>_<i> scheme; the SAME target col twice dedups to one join by table
+    // name. Missing operand (incl. an out-of-scope NULL parent) → coalesce to 0 (the bare-path policy).
+    if (node.col.includes('.')) {
+      const plan = resolveJoinPlan(model.analytics, source, node.col, 'filter');
+      if (plan.kind !== 'to-one') {
+        throw new Error(
+          `${ENGINE_ERROR.AGGREGATE} expression measure: col "${node.col}" is not a to-one reach from "${source}" — refusing to emit a fanning leg (validation should have rejected this at model load)`,
+        );
+      }
+      const lowered = lowerToOne(model, plan.hops, plan.target, plan.column, scopeFor);
+      for (const j of lowered.joins) joins.push(j);
+      return sql`coalesce(${lowered.expr}, 0)`; // missing/out-of-scope-NULL → 0, same as the bare path
+    }
     const field = model.analytics[source]?.fields[node.col];
     // MISSING → 0 (the arithmetic identity), NEVER a dropped row. A NULL operand makes a per-row
     // expression NULL, and SUM silently SKIPS it — so `profit = sales_price − item_cost` over a deal
@@ -333,8 +353,8 @@ function lowerRowExpr(
       `${ENGINE_ERROR.AGGREGATE} expression measure: unsupported operator "${node.op}"`,
     );
   }
-  const L = sql`${lowerRowExpr(model, source, node.left, measureAs, joins, counter)}::numeric`;
-  let R = sql`${lowerRowExpr(model, source, node.right, measureAs, joins, counter)}::numeric`;
+  const L = sql`${lowerRowExpr(model, source, node.left, measureAs, joins, counter, scopeFor)}::numeric`;
+  let R = sql`${lowerRowExpr(model, source, node.right, measureAs, joins, counter, scopeFor)}::numeric`;
   if (node.op === '/') R = sql`nullif(${R}, 0)`; // guard divisor → NULL, not div-by-zero
   return sql`(${L} ${sql.raw(node.op)} ${R})`; // op via sql.raw over the FIXED 4-set ONLY
 }
@@ -345,14 +365,16 @@ function measureValue(
   source: string,
   m: Measure,
   joins: Array<{ table: PgTable; on: SQL }>,
+  scopeFor?: ScopeFor,
 ): { valExpr: SQL; isStar: boolean } {
   if (m.on === '*') return { valExpr: sql``, isStar: true };
   // EXPRESSION measure (D4): an object `on` is a RowExpr → walk it into a composed pre-agg valExpr
-  // (aggCore wraps it unchanged). Must win BEFORE measureField (which throws on an object).
+  // (aggCore wraps it unchanged). Must win BEFORE measureField (which throws on an object). scopeFor
+  // is threaded so a TO-ONE dotted col's belongs_to target scope folds into the join ON (lowerToOne).
   if (typeof m.on === 'object') {
     const counter = { n: 0 };
     return {
-      valExpr: lowerRowExpr(model, source, m.on, assertIdent(m.as), joins, counter),
+      valExpr: lowerRowExpr(model, source, m.on, assertIdent(m.as), joins, counter, scopeFor),
       isStar: false,
     };
   }
@@ -852,7 +874,7 @@ function sourceSelect(
   }
   for (const m of measures) {
     assertIdent(m.as);
-    const { valExpr, isStar } = measureValue(model, source, m, joins);
+    const { valExpr, isStar } = measureValue(model, source, m, joins, scopeFor);
     // A measure's `where` is SOURCE-LOCAL by design: it filters THIS measure's own rows,
     // so a column not on this source is a caller error → HARD-THROW (aggregate: → 400).
     const filter = m.where
