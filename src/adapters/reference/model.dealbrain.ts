@@ -224,18 +224,33 @@ export async function loadDealbrainModel(
     valueDate: 'value_date',
     valueBoolean: 'value_boolean',
   };
+  // `select_options` is the CRM's DECLARED value domain for a select field — pulled here so an
+  // EAV dimension can carry `hasDeclaredDomain` (parity with native enums in analyticsFromRegistry).
+  // It is a PRIOR, not ground truth: prod data drifts past the declared set (see the
+  // prod-select-options-divergence finding) — the live values still come from measure(group_by).
   const fdRes = await db.execute(
-    sql`select id, key, data_type from field_definitions where entity_type='opportunity' and organization_id is not null`,
+    sql`select id, key, data_type, select_options from field_definitions where entity_type='opportunity' and organization_id is not null`,
   );
-  const fieldMap = new Map<string, { defId: string; dataType: string }>();
-  for (const r of fdRes.rows as Array<{ id: string; key: string; data_type: string }>) {
-    if (!fieldMap.has(r.key)) fieldMap.set(r.key, { defId: r.id, dataType: r.data_type });
+  const fieldMap = new Map<string, { defId: string; dataType: string; hasDomain: boolean }>();
+  for (const r of fdRes.rows as Array<{
+    id: string;
+    key: string;
+    data_type: string;
+    select_options: unknown;
+  }>) {
+    if (!fieldMap.has(r.key))
+      fieldMap.set(r.key, {
+        defId: r.id,
+        dataType: r.data_type,
+        hasDomain: Array.isArray(r.select_options) && r.select_options.length > 0,
+      });
   }
   const eavByKey = (key: string): NonNullable<AggFieldMeta['eav']> => {
     const fd = fieldMap.get(key);
     if (!fd) throw new Error(`EAV field_definition not found for key: ${key}`);
     return { valueColumn: PROP_TO_COL[valueColumnForDataType(fd.dataType)]!, defId: fd.defId };
   };
+  const eavHasDomain = (key: string): boolean => fieldMap.get(key)?.hasDomain ?? false;
 
   // EAV measure tags, DERIVED from measureSpecs (the host's resolved semantic layer — or the
   // built-in default). The field is registered under its REAL name (s.key) carrying the allowed
@@ -260,7 +275,12 @@ export async function loadDealbrainModel(
       ...Object.fromEntries(
         dimensionSpecs.map((s) => [
           s.name,
-          { type: 'string', role: 'dimension', eav: eavByKey(s.key) } satisfies AggFieldMeta,
+          {
+            type: 'string',
+            role: 'dimension',
+            eav: eavByKey(s.key),
+            ...(eavHasDomain(s.key) ? { hasDeclaredDomain: true } : {}),
+          } satisfies AggFieldMeta,
         ]),
       ),
     },
