@@ -37,6 +37,13 @@ export interface AggFieldMeta {
     valueColumn: 'value_number' | 'value_text' | 'value_date' | 'value_boolean';
     defId: string;
   };
+  /** A DIMENSION with a DECLARED value domain (a native pg-enum, or a qField/EAV
+   *  `select_options` list). Surfaced on ConformedDim as `valueDomain:'declared'` so an
+   *  agent knows the values are already enumerated for free (see describe `key_fields`),
+   *  vs `'open'` (free-string / to-one — no declared list; enumerate via `measure(group_by)`,
+   *  scoped). NB declared ≠ exhaustive: prod data drifts past the declared set (see
+   *  prod-select-options-divergence) — declared is a trustworthy PRIOR, not ground truth. */
+  hasDeclaredDomain?: boolean;
 }
 
 export interface AggRelationship {

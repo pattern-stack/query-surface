@@ -225,10 +225,21 @@ export function registerQueryTools(
           };
         }
 
+        // Each dimension carries valueDomain: 'declared' (values known for free — see key_fields)
+        // | 'open' (free-string / to-one — no declared list). When any dim is open, tell the agent
+        // how to get its live values WITHOUT a new verb: measure(group_by) IS the scoped scan.
+        const hasOpenDim =
+          Array.isArray(dimensions) && dimensions.some((d) => d.valueDomain === 'open');
         return ok({
           entity,
           measures,
           dimensions,
+          ...(hasOpenDim
+            ? {
+                dimensions_note:
+                  "dims with valueDomain:'open' have no declared value list — enumerate live values (scoped) with measure(entity, group_by:[path]); size first with a count_distinct measure to avoid a wide result",
+              }
+            : {}),
           key_fields: keyFields,
           relationships: catalog.relationships,
           fields: fieldsOut,

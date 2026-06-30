@@ -42,6 +42,19 @@ suite('EAV fields as conformed group dimensions — aggregate() (ADR-0025 §3)',
     `(select fv.entity_id eid, fv.${col} v from field_values fv
         join field_definitions fd on fd.id = fv.field_definition_id where fd.key = '${key}')`;
 
+  it('R0 conformed dims carry valueDomain: a declared-select EAV dim is "declared", native/to-one are "open"', async () => {
+    const dims = await h.service.describeConformedDimensions('opportunities');
+    const byPath = (p: string) => dims.find((d) => d.path === p);
+    // stage→StageName and deal_size_band carry field_definitions.select_options → DECLARED
+    // (values known for free in describe key_fields; declared is a PRIOR, not exhaustive).
+    expect(byPath('stage')?.valueDomain).toBe('declared');
+    expect(byPath('deal_size_band')?.valueDomain).toBe('declared');
+    // a native free-string local dim has no declared domain → OPEN (enumerate via measure(group_by)).
+    expect(byPath('state_of_deal_status')?.valueDomain).toBe('open');
+    // a to-one parent dim (accounts.name) has no declared domain → OPEN.
+    expect(byPath('accounts.name')?.valueDomain).toBe('open');
+  });
+
   it('R1 group_by an EAV dim (deal_size_band): per-group Σ weighted_amount == SQL ground truth', async () => {
     const expected = await truth<{ band: string; pipeline: string; deals: string }>(
       `select b.v as band, sum(e.v)::bigint as pipeline, count(distinct o.id) as deals
