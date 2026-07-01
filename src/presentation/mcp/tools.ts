@@ -271,7 +271,22 @@ export function registerQueryTools(
               .describe("text column to rank on (defaults to the entity's text column)"),
             method: z.string().optional().describe('"semantic" (embeds query) or "lexical"'),
             query: z.string().optional().describe('the rank query string'),
-            limit: z.number().int().positive().optional(),
+            limit: z
+              .number()
+              .int()
+              .positive()
+              .optional()
+              .describe('top-K overall — or top-K PER GROUP when partition_by is set'),
+            partition_by: z
+              .string()
+              .optional()
+              .describe(
+                'Per-group top-K (the window primitive): partition the ranking by this field and keep the ' +
+                  'best `limit` rows WITHIN each group instead of overall — e.g. partition_by:"opportunity_id" ' +
+                  '= "the top K most similar observations per deal, across all matching deals" in ONE call. ' +
+                  'Compiles to ROW_NUMBER() OVER (PARTITION BY col ORDER BY score DESC). Must be a to-one/local ' +
+                  'path — a has_many path is rejected. Aliases (group_by, per, per_group) are accepted too.',
+              ),
           })
           .partial()
           .optional()
