@@ -225,7 +225,14 @@ export function normalizeFilter(input: unknown): FilterExpression {
     throw new Error(`${E} a filter must be a JSON object`);
   }
   const keys = Object.keys(input);
-  if (keys.length === 0) throw new Error(`${E} a filter object must not be empty`);
+  // An empty filter is NO CONSTRAINT → match everything. It compiles to an empty AND
+  // (`and()` → no WHERE clause), and the caller's scope — which is ANDed in separately and is
+  // NON-BYPASSABLE (see scope-failclosed characterization) — still bounds the result to the
+  // tenant/org. (Relaxed 2026-07-10 from a fail-loud throw: `{}` = everything is the natural
+  // semantics; refusing it forced callers to special-case "omit the arg" and pushed agents to
+  // invent a filter where none was meant. Fan-out safety is enforced elsewhere — grain-safe
+  // aggregation, group_by conformance, and paging — not by this front-door check.)
+  if (keys.length === 0) return { and: [] };
 
   const hasLogical = keys.some((k) => LOGICAL.has(k));
   if (hasLogical) {
