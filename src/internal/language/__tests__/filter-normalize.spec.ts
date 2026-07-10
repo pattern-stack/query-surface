@@ -10,6 +10,11 @@ describe('normalizeFilter — natural DSL → canonical AST', () => {
     });
   });
 
+  it('an EMPTY filter is NO CONSTRAINT → match-all (empty AND, compiles to no WHERE)', () => {
+    // Scope is ANDed in separately and is non-bypassable, so `{}` = everything WITHIN scope.
+    expect(normalizeFilter({})).toEqual({ and: [] });
+  });
+
   it('maps an operator object to that op', () => {
     expect(normalizeFilter({ amount: { gt: 100000 } })).toEqual({
       on: 'amount',
