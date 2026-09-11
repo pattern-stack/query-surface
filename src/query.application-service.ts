@@ -43,7 +43,7 @@ import type {
 } from './internal/analytics/index.ts';
 import { crispifyRelevant } from './internal/analytics/normalize.ts';
 import { ENGINE_ERROR } from './internal/language/error-messages.ts';
-import { normalizeRankBy } from './internal/language/rank-normalize.ts';
+import { assertRankInput, normalizeRankBy } from './internal/language/rank-normalize.ts';
 import type {
   EntityName,
   FetchResponse,
@@ -400,9 +400,8 @@ export class QueryApplicationService {
     // Normalize rank_by aliases (group_by/per → partition_by, top_k → limit, quoted keys),
     // then fill rank_by.on with the entity's default text column when the caller omits it —
     // the one field agents reliably forget, and almost always unambiguous.
-    const rankBy = this.withDefaultMethod(
-      entity,
-      this.withDefaultRankOn(entity, normalizeRankBy(opts.rank_by)),
+    const rankBy = assertRankInput(
+      this.withDefaultMethod(entity, this.withDefaultRankOn(entity, normalizeRankBy(opts.rank_by))),
     );
     // Semantic rank: resolve the query vector + embedding column here (the
     // service owns the async embed() call; compile stays synchronous).
@@ -457,6 +456,8 @@ export class QueryApplicationService {
     if (!rankBy) return rankBy;
     if (rankBy.method === 'semantic' || rankBy.method === 'lexical') return rankBy;
     if (rankBy.method == null) {
+      // A caller-supplied vector can only mean semantic.
+      if (rankBy.vector != null) return { ...rankBy, method: 'semantic' };
       const cols = this.options.semanticColumns?.[entity] ?? {};
       const hasSemantic = rankBy.on ? !!cols[rankBy.on] : Object.keys(cols).length > 0;
       return { ...rankBy, method: hasSemantic ? 'semantic' : 'lexical' };
@@ -482,10 +483,13 @@ export class QueryApplicationService {
         `${ENGINE_ERROR.RANK} column '${rankBy.on}' does not support semantic ranking on '${entity}'`,
       );
     }
+    // A caller-supplied vector skips the embed port entirely (assertRankInput already
+    // guaranteed it is a non-empty array of finite numbers and that `query` is absent).
+    if (rankBy.vector) return { vector: rankBy.vector, embeddingColumn };
     if (!this.options.embed) {
       throw new Error(`${ENGINE_ERROR.RANK} semantic ranking is not configured (no embed port)`);
     }
-    const vector = await this.options.embed(rankBy.query);
+    const vector = await this.options.embed(rankBy.query as string);
     return { vector, embeddingColumn };
   }
 

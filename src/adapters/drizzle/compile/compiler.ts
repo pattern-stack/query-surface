@@ -984,6 +984,9 @@ export function compile(
       }
       for (const j of resolved.joins) pushJoin(ctx, j);
       const colExpr: SQL = resolved.kind === 'column' ? sql`${resolved.column}` : resolved.expr;
+      if (typeof rb.query !== 'string' || rb.query.trim() === '') {
+        throw new Error(`${ENGINE_ERROR.RANK} lexical rank_by requires query text`);
+      }
       const tsq = sql`replace(plainto_tsquery('english', ${rb.query})::text, ' & ', ' | ')::tsquery`;
       const rankExpr = sql`ts_rank_cd(to_tsvector('english', ${colExpr}::text), ${tsq})`;
       scoreExpr = rankExpr;

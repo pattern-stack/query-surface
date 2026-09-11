@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { normalizeRankBy } from '../rank-normalize.ts';
+import { assertRankInput, normalizeRankBy } from '../rank-normalize.ts';
 
 describe('normalizeRankBy — method value aliases', () => {
   it('conforms semantic synonyms', () => {
@@ -97,5 +97,62 @@ describe('normalizeRankBy — alias + tolerance canonicalization', () => {
     expect(normalizeRankBy(undefined)).toBeUndefined();
     expect(normalizeRankBy(null)).toBeUndefined();
     expect(normalizeRankBy('semantic')).toBeUndefined();
+  });
+});
+
+describe('normalizeRankBy — vector input (#38)', () => {
+  it('passes a canonical vector through untouched', () => {
+    expect(normalizeRankBy({ vector: [0.1, 0.2], method: 'semantic' })).toEqual({
+      vector: [0.1, 0.2],
+      method: 'semantic',
+    });
+  });
+  it('maps embedding / query_vector / queryVector to vector', () => {
+    for (const key of ['embedding', 'query_vector', 'queryVector', '"vector"']) {
+      expect(normalizeRankBy({ [key]: [1, 2, 3] })?.vector).toEqual([1, 2, 3]);
+    }
+  });
+  it('does not coerce a vector: a string stays a string for the validator to reject', () => {
+    expect(normalizeRankBy({ vector: '[1,2]' })?.vector).toBe('[1,2]' as unknown as number[]);
+  });
+});
+
+describe('assertRankInput — exactly one of query | vector', () => {
+  const ok = (rb: Parameters<typeof assertRankInput>[0]) => assertRankInput(rb);
+  it('returns undefined and a text rank unchanged', () => {
+    expect(ok(undefined)).toBeUndefined();
+    expect(ok({ query: 'pricing', method: 'semantic' })).toEqual({
+      query: 'pricing',
+      method: 'semantic',
+    });
+    expect(ok({ query: 'pricing', method: 'lexical' })).toEqual({
+      query: 'pricing',
+      method: 'lexical',
+    });
+  });
+  it('accepts a finite non-empty vector for semantic', () => {
+    expect(ok({ vector: [0.5, -0.25], method: 'semantic' })?.vector).toEqual([0.5, -0.25]);
+  });
+  it('rejects an empty, non-numeric or non-finite vector with a clear message', () => {
+    for (const v of [[], ['a'], [1, Number.NaN], [1, Number.POSITIVE_INFINITY], '[1,2]', 3]) {
+      expect(() => ok({ vector: v as unknown as number[], method: 'semantic' })).toThrow(
+        /rank_by:.*vector must be a non-empty array of finite numbers/,
+      );
+    }
+  });
+  it('rejects a vector on a lexical rank', () => {
+    expect(() => ok({ vector: [1], method: 'lexical' })).toThrow(
+      /vector requires method 'semantic'/,
+    );
+  });
+  it('rejects query AND vector together', () => {
+    expect(() => ok({ query: 'x', vector: [1], method: 'semantic' })).toThrow(
+      /query OR vector, not both/,
+    );
+  });
+  it('rejects neither, naming the vector option only for semantic', () => {
+    expect(() => ok({ method: 'semantic' })).toThrow(/query \(text\) or vector is required/);
+    expect(() => ok({ method: 'lexical' })).toThrow(/query is required/);
+    expect(() => ok({ query: '   ', method: 'semantic' })).toThrow(/query \(text\) or vector/);
   });
 });
