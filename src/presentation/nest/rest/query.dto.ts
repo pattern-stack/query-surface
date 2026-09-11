@@ -95,7 +95,20 @@ const rankBySchema = z
       .describe(
         "Text column to rank on. OPTIONAL — defaults to the entity's sole rankable text column (e.g. observations → normalized_text), so you usually omit it. See GET /describe for ranking support.",
       ),
-    query: z.string().min(1).describe('The search text to rank by.'),
+    query: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'The search text to rank by. Semantic: exactly one of query | vector. Lexical: query only.',
+      ),
+    vector: z
+      .array(z.number())
+      .min(1)
+      .optional()
+      .describe(
+        "A query vector you already hold, in the embedding column's dimension — ranked by directly, no embedding call. Semantic only; mutually exclusive with query.",
+      ),
     method: z
       .string()
       .optional()

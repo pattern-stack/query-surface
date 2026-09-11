@@ -4,6 +4,21 @@ All notable changes to `@pattern-stack/query-surface`. Format follows
 [Keep a Changelog](https://keepachangelog.com/); this project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **`rank_by.vector`** (#38): `select()`'s semantic rank takes a caller-supplied query vector
+  beside `query` text. Exactly one of `query` | `vector` is required for `method:'semantic'`;
+  `lexical` still takes `query` only. A vector skips the host's `embed()` port entirely, so a
+  host can rank by a centroid over several sentences, by a vector pinned beside a saved
+  definition, or by one from another pipeline. `normalizeRankBy` conforms `embedding` /
+  `query_vector` / `queryVector` to `vector`; `assertRankInput` (new, service-side) rejects an
+  empty / non-numeric / non-finite vector, `query` + `vector` together, and a vector on a
+  lexical rank — each with a clear `rank_by:` message. Before this a `rank_by.vector` key was
+  dropped silently and the request ranked by whatever `query` said.
+- The MCP `select` tool and the REST `rank_by` DTO document `vector`; the DTO's `query` is now
+  optional (the service enforces exactly-one).
+
 ## [0.1.0] — 2026-06-29
 
 First tagged release — the canonical home for the governed query + aggregation surface,
