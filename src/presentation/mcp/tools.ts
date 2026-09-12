@@ -270,7 +270,19 @@ export function registerQueryTools(
               .optional()
               .describe("text column to rank on (defaults to the entity's text column)"),
             method: z.string().optional().describe('"semantic" (embeds query) or "lexical"'),
-            query: z.string().optional().describe('the rank query string'),
+            query: z
+              .string()
+              .optional()
+              .describe(
+                'the rank query string (semantic: embedded; lexical: full-text). Give query OR vector.',
+              ),
+            vector: z
+              .array(z.number())
+              .optional()
+              .describe(
+                "a query vector you already hold, in the embedding column's dimension — ranks by it directly, " +
+                  'no embedding call. Semantic only. Mutually exclusive with query.',
+              ),
             limit: z
               .number()
               .int()

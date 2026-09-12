@@ -267,6 +267,59 @@ suite('retrieval rank_by + window — characterization', () => {
     expect(res.warnings).toBeUndefined();
   });
 
+  // ---------------------------------------------------------------------------
+  // SEMANTIC rank_by by VECTOR (#38) — the caller already holds the vector, so the
+  // embed port must NOT be consulted; the same stored embedding passed as
+  // `vector` ranks its source row #1 exactly as the text path does.
+  // ---------------------------------------------------------------------------
+  it('semantic rank_by.vector: ranks by the given vector, never calls embed(), and refuses query + vector together', async () => {
+    const PHRASE = 'a minimum billing commitment';
+    const [{ id: sourceId, vec }] = await truth(
+      `select id, embedding::text as vec from observations where embedding is not null and normalized_text is not null and normalized_text ilike '%${PHRASE}%' order by id limit 1`,
+    );
+    const vector = JSON.parse(String(vec)) as number[];
+    expect(vector.length).toBeGreaterThan(0);
+
+    // A harness whose embed port refuses to be called: a vector rank must not reach it.
+    const hv = makeQuerySurface(DBURL!, {
+      embed: async () => {
+        throw new Error('embed() must not be called when rank_by.vector is given');
+      },
+    });
+    try {
+      const res = await hv.service.select('observations', {
+        rank_by: { method: 'semantic', vector, limit: 3 },
+        preview: true,
+      });
+      const rows = res.preview ?? [];
+      expect(rows.length).toBe(3);
+      expect(res.ids[0]).toBe(String(sourceId));
+      expect(Number(rows[0]._rank)).toBeCloseTo(1, 5);
+      expect(rows[0]).not.toHaveProperty('_snippet');
+
+      // method omitted: a vector alone defaults to semantic.
+      const bare = await hv.service.select('observations', {
+        rank_by: { vector, limit: 1 },
+      });
+      expect(bare.ids[0]).toBe(String(sourceId));
+
+      // Exactly one of query | vector.
+      await expect(
+        hv.service.select('observations', {
+          rank_by: { method: 'semantic', query: PHRASE, vector, limit: 3 },
+        }),
+      ).rejects.toThrow(/rank_by:.*query OR vector, not both/);
+      // A vector on a lexical rank is refused, not silently ignored.
+      await expect(
+        hv.service.select('observations', {
+          rank_by: { method: 'lexical', on: 'normalized_text', vector, limit: 3 },
+        }),
+      ).rejects.toThrow(/vector requires method 'semantic'/);
+    } finally {
+      await hv.close();
+    }
+  });
+
   it('semantic rank_by min_score: cosine cutoff is calibrated (NO uncalibrated warning)', async () => {
     const res = await h.service.select('observations', {
       rank_by: {
