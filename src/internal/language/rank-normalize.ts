@@ -10,7 +10,10 @@
 //     (`{"\"limit\"": 5}`); strip wrapping quotes/whitespace before matching.
 //   • unknown keys are DROPPED with no error (rank_by is a directive, not a filter — a stray
 //     key shouldn't 400 the whole search; the canonical fields drive behavior).
+//   • vector input — vector / embedding / query_vector / queryVector → vector; the array is
+//     passed through untouched and VALIDATED by assertRankInput (below), never coerced.
 
+import { ENGINE_ERROR } from './error-messages.ts';
 import type { RankBy } from './types.ts';
 
 const KEY_ALIAS: Readonly<Record<string, keyof RankBy>> = {
@@ -21,6 +24,10 @@ const KEY_ALIAS: Readonly<Record<string, keyof RankBy>> = {
   q: 'query',
   text: 'query',
   search: 'query',
+  vector: 'vector',
+  embedding: 'vector',
+  query_vector: 'vector',
+  queryvector: 'vector',
   method: 'method',
   mode: 'method',
   limit: 'limit',
@@ -102,4 +109,43 @@ export function normalizeRankBy(input: unknown): RankBy | undefined {
     if (Number.isFinite(n)) out.min_score = n;
   }
   return out as unknown as RankBy;
+}
+
+/**
+ * The one place the rank INPUT is validated, after normalization and method defaulting:
+ * `semantic` takes EXACTLY ONE of `query` | `vector`; `lexical` takes `query` only. A vector
+ * must be a non-empty array of finite numbers — anything else is a clear 400, never a silent
+ * rank-by-nothing (before this existed, a `rank_by.vector` key was dropped on the floor).
+ * Returns the RankBy unchanged so it can sit inside a call chain.
+ */
+export function assertRankInput(rankBy: RankBy | undefined): RankBy | undefined {
+  if (!rankBy) return rankBy;
+  const E = ENGINE_ERROR.RANK;
+  const hasQuery = typeof rankBy.query === 'string' && rankBy.query.trim() !== '';
+  const hasVector = rankBy.vector !== undefined && rankBy.vector !== null;
+  if (hasVector) {
+    const v = rankBy.vector;
+    if (
+      !Array.isArray(v) ||
+      v.length === 0 ||
+      !v.every((x) => typeof x === 'number' && Number.isFinite(x))
+    ) {
+      throw new Error(`${E} vector must be a non-empty array of finite numbers`);
+    }
+    if (rankBy.method === 'lexical') {
+      throw new Error(`${E} vector requires method 'semantic' (lexical ranking takes query text)`);
+    }
+    if (hasQuery) {
+      throw new Error(`${E} give query OR vector, not both`);
+    }
+    return rankBy;
+  }
+  if (!hasQuery) {
+    throw new Error(
+      rankBy.method === 'semantic'
+        ? `${E} query (text) or vector is required for semantic ranking`
+        : `${E} query is required`,
+    );
+  }
+  return rankBy;
 }

@@ -105,7 +105,15 @@ export interface RankBy {
   // defaults it to the entity's sole semantic text column (e.g. observations → normalized_text),
   // so callers never have to name it. Always set by the time the engine consumes a RankBy.
   on?: string;
-  query: string; // the search text
+  // The search text. For `method:'semantic'` EXACTLY ONE of `query` | `vector` is required: give
+  // `query` and the service embeds it through the host's embed() port; give `vector` and the
+  // service ranks by it directly (a centroid over several sentences, a vector pinned beside a
+  // saved definition, a vector from another pipeline). `method:'lexical'` requires `query`.
+  query?: string;
+  // A caller-supplied query vector, in the embedding column's dimension. Finite numbers, non-empty;
+  // the service rejects anything else with a clear message. Aliases (embedding, query_vector)
+  // are conformed by normalizeRankBy. Mutually exclusive with `query`.
+  vector?: number[];
   // OPTIONAL at the wire: when omitted, the service defaults to 'semantic' if the entity has an
   // embedding column for `on`, else 'lexical'. Value-aliases (similarity/cosine/vector →
   // semantic, keyword/fts/text → lexical) are conformed by normalizeRankBy. Always one of the
