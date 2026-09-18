@@ -14,7 +14,7 @@ import {
   measureSource,
   planAggregate,
 } from '../../../internal/analytics/grain';
-import { resolveJoinPlan } from '../../../internal/analytics/join-plan';
+import { type JoinHop, resolveJoinPlan } from '../../../internal/analytics/join-plan';
 import { TENANT_GLOBAL } from '../../../internal/analytics/types';
 import type {
   Agg,
@@ -417,12 +417,12 @@ function scopeSqlFor(model: AggregateModel, entity: string, scopeFor?: ScopeFor)
 }
 
 // Lower a to-one join plan → LEFT JOIN specs (scope folded into each ON) + the resolved
-// column expr/type on the target. A belongs_to chain is 1:1 (FK→PK) so it cannot fan — the
+// column expr/type on the target. A to-one chain (belongs_to FK→PK / has_one PK←FK) is 1:1 so it cannot fan — the
 // SAME single-row-join class as the EAV value join. Scope folds into the ON (not a WHERE):
 // an out-of-scope parent yields NULL columns rather than dropping the (in-scope) child row.
 function lowerToOne(
   model: AggregateModel,
-  hops: { from: string; to: string; fk: string; toPk: string }[],
+  hops: JoinHop[],
   target: string,
   column: string,
   scopeFor?: ScopeFor,
@@ -434,7 +434,8 @@ function lowerToOne(
 } {
   const joins: Array<{ table: PgTable; on: SQL }> = [];
   for (const hop of hops) {
-    let on: SQL = eq(colObj(model, hop.from, hop.fk), colObj(model, hop.to, hop.toPk));
+    // belongs_to: from.fk = to.pk · has_one: from.pk = to.fk — both 1:1 (JoinHop fromCol/toCol).
+    let on: SQL = eq(colObj(model, hop.from, hop.fromCol), colObj(model, hop.to, hop.toCol));
     const scope = scopeSqlFor(model, hop.to, scopeFor);
     if (scope) on = and(on, scope)!;
     joins.push({ table: model.tables[hop.to]!, on });
@@ -1179,7 +1180,7 @@ export function compileNaiveDrizzle(db: Db, model: AggregateModel, q: Aggregate)
     joined.add(src);
     const rel = Object.values(model.registry[root]!.relationships).find((r) => r.target === src)!;
     const on =
-      rel.kind === 'has_many'
+      rel.kind !== 'belongs_to'
         ? eq(model.colByDbName[src]![rel.fk]!, model.colByDbName[root]!.id!)
         : eq(model.colByDbName[src]!.id!, model.colByDbName[root]![rel.fk]!);
     joins.push({ table: model.tables[src]!, on });

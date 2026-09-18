@@ -1,3 +1,4 @@
+import type { TablesRelationalConfig } from 'drizzle-orm';
 import type { AggregateModel } from '../../adapters/drizzle/registry/model.ts';
 import type { RegisterSchemaOptions } from '../../adapters/drizzle/registry/schema-registry.ts';
 import type { ScopeResolver, Unscoped, ViewingScope } from '../../query.application-service.ts';
@@ -51,9 +52,9 @@ export interface ScopeUser {
  * (engine, per-requester caching, describe/query/fetch surface).
  */
 export interface QuerySurfaceModuleOptions {
-  /** Tables + drizzle Relations objects, passed to `registerSchema` once at
-   *  module init. */
-  schema: Record<string, unknown>;
+  /** The host's Drizzle 1.0 relational config — `defineRelations(schema, …)` output —
+   *  passed to `registerSchema` once at module init. */
+  relations: TablesRelationalConfig;
   /** EAV overlay per entity (see `RegisterSchemaOptions['eav']`). */
   eav?: RegisterSchemaOptions['eav'];
   /** Per-entity fieldMeta overrides (see `RegisterSchemaOptions['fieldMeta']`).

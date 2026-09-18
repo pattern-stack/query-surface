@@ -24,15 +24,7 @@ import { type ArgumentMetadata, BadRequestException } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import { type DrizzleDb, makeDb } from '../../../adapters/drizzle/execute/drizzle-db';
 import { loadDealbrainModel } from '../../../adapters/reference/model.dealbrain';
-import {
-  accounts,
-  accountsRelations,
-  fieldValues,
-  observations,
-  observationsRelations,
-  opportunities,
-  opportunitiesRelations,
-} from '../../../adapters/reference/schema.dealbrain';
+import { dealbrainRelations } from '../../../adapters/reference/schema.dealbrain';
 import { QuerySurfaceService } from '../query-surface.service';
 import { QueryController } from '../rest/query.controller';
 import { aggregateRequestSchema, querySearchRequestSchema } from '../rest/query.dto';
@@ -92,15 +84,7 @@ suite('relevant leaf + citation — REST presentation chain (live dealbrain)', (
     };
 
     const svc = new QuerySurfaceService(db, {
-      schema: {
-        accounts,
-        opportunities,
-        observations, // schema.dealbrain's observations now carries embedding + normalized_text
-        fieldValues,
-        accountsRelations,
-        opportunitiesRelations,
-        observationsRelations,
-      },
+      relations: dealbrainRelations,
       // dealbrain test tables carry no tenancy column → tenant-global so the relevance path runs
       // unscoped (fail-closed would otherwise deny an uncovered source).
       scopeFor: () => () => undefined,

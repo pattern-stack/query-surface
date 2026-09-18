@@ -393,7 +393,7 @@ export const queryEntityCatalogDocSchema = z.object({
   relationships: z.array(
     z.object({
       name: z.string(),
-      kind: z.string().describe('belongs_to | has_many'),
+      kind: z.string().describe('belongs_to | has_one | has_many'),
       target: z.string().describe('Target entity name.'),
     }),
   ),
