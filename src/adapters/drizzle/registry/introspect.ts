@@ -70,11 +70,44 @@ export interface UnsupportedRelation {
   reason: string;
 }
 
-// A column is a primary key if Drizzle says so. Tables whose PK is declared via a
-// composite primaryKey() carry no per-column flag, so fall back to the `id` convention
-// the registry already assumes (EntityDescriptor.primaryKey = 'id').
-function isPk(col: PgColumn): boolean {
-  return col.primary || col.name === 'id';
+/** A table's primary-key columns, from Drizzle's own metadata: a column-level
+ *  `.primaryKey()` or a table-level `primaryKey({ columns })` (composite). A table that
+ *  declares no primary key at all falls back to its `id` column — the convention the
+ *  registry assumes (EntityDescriptor.primaryKey = 'id'). */
+export function primaryKeyColumns(table: PgTable): PgColumn[] {
+  const cols = Object.values(tableColumns(table));
+  const declared = [
+    ...cols.filter((c) => c.primary),
+    ...getTableConfig(table).primaryKeys.flatMap((pk) => pk.columns as PgColumn[]),
+  ];
+  return declared.length > 0 ? declared : cols.filter((c) => c.name === 'id');
+}
+
+/** Is the db column `dbName` unique on its own (sole PK, column `.unique()`, a
+ *  single-column unique constraint, or a single-column unique index)? Diagnostic — decides
+ *  whether a belongs_to's missing inverse should be a has_one or a has_many. */
+export function isUniqueColumn(table: PgTable, dbName: string): boolean {
+  const col = Object.values(tableColumns(table)).find((c) => c.name === dbName);
+  if (!col) return false;
+  if (col.isUnique || isSolePk(col, table)) return true;
+  const cfg = getTableConfig(table);
+  const single = (names: (string | undefined)[]) => names.length === 1 && names[0] === dbName;
+  return (
+    cfg.uniqueConstraints.some((u) => single(u.columns.map((c) => c.name))) ||
+    cfg.indexes.some(
+      (i) =>
+        i.config.unique &&
+        single(i.config.columns.map((c) => (c as { name?: string } | undefined)?.name)),
+    )
+  );
+}
+
+/** `col` IS its table's primary key (the sole PK column — a single-column relation can't
+ *  address a composite key). */
+function isSolePk(col: PgColumn, table: unknown): boolean {
+  if (!is(table, PgTable)) return false;
+  const pk = primaryKeyColumns(table);
+  return pk.length === 1 && pk[0]!.name === col.name;
 }
 
 /**
@@ -82,7 +115,12 @@ function isPk(col: PgColumn): boolean {
  *
  *  - `r.one.T({ from: src.fk, to: T.pk })`       → belongs_to (fk on source)
  *  - `r.one.T({ from: src.pk, to: T.fk })`       → has_one    (fk on target)
+ *  - `r.one.T({ from: src.pk, to: T.pk })`       → has_one    (shared-PK 1:1; fk = T.pk)
  *  - `r.many.T(...)` (explicit or via inverse)   → has_many   (fk on target)
+ *
+ * Primary keys come from the tables' PK metadata, never a column name. A shared-PK 1:1 is
+ * `has_one` in BOTH directions: neither side is finer, so neither may add a grain rank (a
+ * `belongs_to` each way would rank each side below the other).
  *
  * Unsupported (returned separately, never guessed): `.through()` many-to-many (the engine
  * needs a direct FK edge — register the junction as an entity instead), a relation to a
@@ -115,12 +153,15 @@ export function classifyRelations(rels: RelationsRecord | undefined): {
       continue;
     }
     const [s, t] = [src[0]!, tgt[0]!];
-    if (is(rel, Many) && isPk(s)) {
+    const srcPk = isSolePk(s, rel.sourceTable);
+    const tgtPk = isSolePk(t, target);
+    if (is(rel, Many) && srcPk) {
       relations.push({ name, kind: 'has_many', targetTable: target, fk: t.name });
-    } else if (is(rel, One) && isPk(t)) {
-      relations.push({ name, kind: 'belongs_to', targetTable: target, fk: s.name });
-    } else if (is(rel, One) && isPk(s)) {
+    } else if (is(rel, One) && srcPk) {
+      // PK→FK, or PK→PK (shared-PK 1:1): the target holds at most one row per source row.
       relations.push({ name, kind: 'has_one', targetTable: target, fk: t.name });
+    } else if (is(rel, One) && tgtPk) {
+      relations.push({ name, kind: 'belongs_to', targetTable: target, fk: s.name });
     } else {
       unsupported.push({
         name,

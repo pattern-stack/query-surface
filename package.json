@@ -13,19 +13,16 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "bun": "./src/index.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
     "./nest": {
       "types": "./dist/presentation/nest/index.d.ts",
-      "bun": "./src/presentation/nest/index.ts",
       "import": "./dist/presentation/nest/index.js",
       "default": "./dist/presentation/nest/index.js"
     },
     "./mcp": {
       "types": "./dist/presentation/mcp/index.d.ts",
-      "bun": "./src/presentation/mcp/index.ts",
       "import": "./dist/presentation/mcp/index.js",
       "default": "./dist/presentation/mcp/index.js"
     },
@@ -34,9 +31,6 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
-    "src",
-    "!src/**/__tests__",
-    "!src/characterization",
     "README.md",
     "CHANGELOG.md"
   ],
@@ -51,6 +45,7 @@
     "test": "bun test"
   },
   "peerDependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@nestjs/common": "^11.0.0",
     "@nestjs/swagger": "^11.0.0",
     "drizzle-orm": "^1.0.0-rc.4",
@@ -59,6 +54,9 @@
     "zod": "^3.23.0"
   },
   "peerDependenciesMeta": {
+    "@modelcontextprotocol/sdk": {
+      "optional": true
+    },
     "@nestjs/common": {
       "optional": true
     },
@@ -68,12 +66,16 @@
     "rxjs": {
       "optional": true
     },
+    "typescript": {
+      "optional": true
+    },
     "zod": {
       "optional": true
     }
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@nestjs/common": "^11.0.0",
     "@nestjs/swagger": "^11.0.0",
     "@types/bun": "^1.3.14",
@@ -86,7 +88,6 @@
     "zod": "^3.23.0"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
     "sql-formatter": "^15.8.1"
   }
 }

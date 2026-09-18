@@ -17,7 +17,8 @@ cardinality graph, EAV strategy, field tags); the reference instance
 
 ```bash
 bun add @pattern-stack/query-surface drizzle-orm@1.0.0-rc.4
-# the ./nest subpath also needs: @nestjs/common @nestjs/swagger rxjs zod
+# ./nest also needs: @nestjs/common @nestjs/swagger rxjs zod
+# ./mcp  also needs: @modelcontextprotocol/sdk zod
 ```
 
 Peer: **`drizzle-orm ^1.0.0-rc.4`** (Drizzle 1.0 / relational queries v2). Entry points:
@@ -45,9 +46,11 @@ Peer: **`drizzle-orm ^1.0.0-rc.4`** (Drizzle 1.0 / relational queries v2). Entry
 | `has_one` | the target | to-one | dims conform (LEFT JOIN `target.fk = this.pk`) | LEFT JOIN |
 | `has_many` | the target | to-many | filter → `EXISTS` semijoin; group → **reject** | `EXISTS` |
 
-A `has_one` is trusted to be 1:1 — back it with a `UNIQUE` on the target's FK. Introspection
-reads `r.one.T({ from: this.fk, to: T.pk })` as `belongs_to`, `r.one.T({ from: this.pk, to:
-T.fk })` as `has_one`, and `r.many.T(…)` as `has_many`; `.through()` many-to-many is skipped
+A `has_one` is trusted to be 1:1 — back it with a `UNIQUE` on the target's FK (`fetch`
+expand refuses a parent with more than one child). Introspection reads primary keys from the
+table metadata and classifies `r.one.T({ from: this.fk, to: T.pk })` as `belongs_to`,
+`r.one.T({ from: this.pk, to: T.fk })` — or a shared-PK `{ from: this.pk, to: T.pk }` — as
+`has_one`, and `r.many.T(…)` as `has_many`; `.through()` many-to-many is skipped
 (register the junction as an entity) and reported by `diagnose()`.
 
 ---

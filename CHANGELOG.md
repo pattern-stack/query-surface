@@ -18,7 +18,10 @@ Drizzle 1.0, a `has_one` relationship kind, and a publishable package (#40).
     `defineRelations(schema, (r) => …)` result (a `TablesRelationalConfig`), not a schema barrel.
     `registerFromDb(db)` reads `db._.relations` (a db built with `drizzle({ client, relations })`).
   - `EntityRegistration.relations` / `CatalogEntry.relations` are one table's
-    `RelationsRecord` (e.g. `rels.accounts.relations`); `CatalogEntry.relations` is optional.
+    `RelationsRecord` (e.g. `rels.accounts.relations`); `CatalogEntry.relations` is now
+    **optional** (a table with no relations needs no entry).
+  - `qEntity` / `qJunction` column maps are typed `Record<string, AnyPgColumnBuilder>` (1.0
+    dropped `PgColumnBuilderBase`).
   - `QuerySurfaceModuleOptions.schema` → **`relations: TablesRelationalConfig`**.
   - `JoinHop` is `{ from, to, kind: 'belongs_to' | 'has_one', fromCol, toCol }` (was
     `{ from, to, fk, toPk }`); `belongsToPaths` is renamed **`toOnePaths`** (the old name stays as
@@ -35,8 +38,13 @@ Drizzle 1.0, a `has_one` relationship kind, and a publishable package (#40).
   its parent's grain, and `describe` advertises its dims as conformed. Before this a declared
   model had to widen it to `has_many`, which made the oracle refuse groupings it could allow.
   Retrieval dotted paths resolve it as a LEFT JOIN (not `EXISTS`); `fetch({ expand })` attaches
-  it as a single object (or `null`). Introspection classifies `r.one.T({ from: src.pk, to:
-  T.fk })` as `has_one`.
+  it as a single object (or `null`), and **refuses** (naming the relation and the missing
+  `UNIQUE`) when more than one child matches a parent rather than attaching an arbitrary row.
+  Introspection classifies `r.one.T({ from: src.pk, to: T.fk })` as `has_one`, and a
+  shared-PK 1:1 (`r.one.T({ from: src.pk, to: T.pk })`) as `has_one` in **both** directions
+  (so neither side adds a grain rank). Primary keys are read from the tables' PK metadata
+  (column `.primaryKey()` or table `primaryKey({ columns })`), not the column name; only a
+  table with no declared PK falls back to its `id` column.
 - **`tenantScope({ getTenantId, column })`** — a `ScopeResolver` that reads the tenant at query
   time, so an `AsyncLocalStorage` request context (the one a host's repositories scope by)
   seeds this surface from the same boundary. Fail-closed: no tenant → the read is refused.
@@ -53,6 +61,8 @@ Drizzle 1.0, a `has_one` relationship kind, and a publishable package (#40).
   dropped silently and the request ranked by whatever `query` said.
 - The MCP `select` tool and the REST `rank_by` DTO document `vector`; the DTO's `query` is now
   optional (the service enforces exactly-one).
+- Doctor `MISSING_INVERSE` now names the right inverse: `r.one.X({ from, to })` when the
+  belongs_to's fk is unique (a has_one back), else `r.many.X()`.
 - Doctor finding **`UNSUPPORTED_RELATION`** — a `.through()` many-to-many, composite-column,
   view-target, or non-PK-keyed relation, which the registry skips.
 
@@ -60,13 +70,22 @@ Drizzle 1.0, a `has_one` relationship kind, and a publishable package (#40).
 - Column typing under Drizzle 1.0's compound `column.dataType` (`'string uuid'`, `'object
   date'`, `'object json'`): a `columnDataType()` normalizer keeps date-only whole-day
   comparisons, JSON-path (`->>`) filters and searchable-column derivation working.
+- `columnTypeFromPg` maps 1.0's `PgNumericNumber` / `PgNumericBigInt` (→ `number`) and
+  `PgDateString` (the default `date()` mode, → `date`).
 
 ### Packaging
-- No longer `private`. Publishes `dist/` (bundled ESM via `bun build` + `.d.ts` via
-  `tsc -p tsconfig.build.json`, relative specifiers rewritten to `.js` so both `bundler` and
-  `nodenext` consumers resolve them) plus `src/` for the `bun` export condition. `prepack`
-  builds. `@nestjs/*`, `rxjs`, `zod` are optional peers (only the `./nest` / `./mcp` subpaths
-  need them).
+- No longer `private`. Publishes `dist/` only: bundled ESM via `bun build --splitting` (one
+  shared chunk, so the root and `./nest` entries share one module-level registry) + `.d.ts`
+  via `tsc -p tsconfig.build.json`, relative specifiers rewritten to `.js` so both `bundler`
+  and `nodenext` consumers resolve them. Every runtime — Node and Bun — resolves the same
+  `dist/` graph: there is deliberately **no `bun` → `src` condition** (Bun compiles TS in
+  `node_modules` with the *consumer's* tsconfig, so the Nest decorators broke for a consumer
+  without legacy decorators, and mixing `src` + `dist` would duplicate the registry). `prepack`
+  builds.
+- Optional peers: `@nestjs/common`, `@nestjs/swagger`, `rxjs`, `zod` (`./nest`),
+  `@modelcontextprotocol/sdk` (`./mcp`, previously a hard dependency), and `typescript`.
+- `scripts/check-pack.sh` — packs, installs the tarball into a fresh project, type-checks
+  (`nodenext` + `bundler`) and imports root + `./nest` under both Node and Bun.
 
 ## [0.1.0] — 2026-06-29
 
