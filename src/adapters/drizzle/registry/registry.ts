@@ -1,25 +1,23 @@
 // buildRegistry() — derives the query registry at boot by introspecting
-// Drizzle's relations() declarations + column metadata. Replaces the
-// hand-authored, codegen-owned registry of the v1 approach.
+// Drizzle's relational config (1.0 `defineRelations()`) + column metadata.
 //
-// Why runtime introspection instead of codegen:
-//   - Single source of truth: the relational graph lives in `<entity>Relations`,
-//     declared next to the Drizzle table. Engineers maintain one file per entity
-//     instead of `entity.yaml + entity.ts + the generated registry`.
-//   - No YAMLs to throw away. No codegen step to run before drizzle-kit push.
-//   - Types and enum values come from Drizzle's column introspection — they
-//     can't drift from the schema.
+// This is the path for hosts WITHOUT a declared model. A host that already knows
+// its graph (e.g. generated from entity YAML) builds an `AggregateModel` directly
+// — `registry` is just `Record<string, EntityDescriptor>` — and never calls this.
 //
-// What we still need humans to declare (per-entity, in the .entity.ts file):
-//   - relations(table, ({ one, many }) => ({...}))  ← idiomatic Drizzle
+// What we still need humans to declare:
+//   - defineRelations(schema, (r) => ({ ... }))  ← idiomatic Drizzle 1.0
 //
 // What we DERIVE from Drizzle metadata:
-//   - belongs_to: target table from one()'s referencedTable; fk from config.fields[0]
-//   - has_many: target table from many()'s referencedTable; fk found by inverse one() lookup
+//   - belongs_to: r.one.T({ from: src.fk, to: T.pk })  → fk on the source
+//   - has_one:    r.one.T({ from: src.pk, to: T.fk })  → fk on the target (to-one)
+//   - has_many:   r.many.T(...)                        → fk on the target
+//     (Drizzle resolves an omitted from/to off the reverse relation, so the FK is
+//     already on the relation — no inverse lookup pass.)
 //   - searchableColumns: every text column that isn't an ID/UUID/enum
 //   - column types + enum values: directly from PgColumn introspection
 
-import type { Relations } from 'drizzle-orm';
+import type { RelationsRecord } from 'drizzle-orm';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 
 import type { EntityName, Op } from '../../../internal/language/types.ts';
@@ -27,15 +25,20 @@ import type { EntityName, Op } from '../../../internal/language/types.ts';
 // type-level; catalog.ts value-imports `registry`, never the reverse at runtime.
 import type { ColumnType } from './catalog.ts';
 import type { EntityMeta, FieldMetaMap } from './define-entity.ts';
-import { evaluateRelations, tableColumns, tableName } from './introspect.ts';
+import { classifyRelations, columnDataType, tableColumns, tableName } from './introspect.ts';
 
 // ---------------------------------------------------------------------------
 // Output shape — matches what compiler.ts / expand.ts / preview.ts read. Same
 // interface as the v1 codegen registry, new (introspected) derivation.
 // ---------------------------------------------------------------------------
 
+/** A relationship edge. `fk` is the FK column's DB name — on THIS entity for `belongs_to`,
+ *  on the TARGET for `has_one` / `has_many`. `belongs_to` and `has_one` are to-one (a join
+ *  never fans); `has_many` is to-many. A `has_one` is trusted to be 1:1 (the host declares
+ *  it; back it with a UNIQUE on the target's fk). */
 export type RelDescriptor =
   | { kind: 'belongs_to'; target: EntityName; fk: string }
+  | { kind: 'has_one'; target: EntityName; fk: string }
   | { kind: 'has_many'; target: EntityName; fk: string };
 
 /**
@@ -138,7 +141,9 @@ export interface EntityDescriptor {
 export interface EntityRegistration {
   name: EntityName;
   table: PgTable;
-  relations?: Relations;
+  /** This table's relations — the entry's `.relations` from Drizzle 1.0 `defineRelations()`
+   *  (e.g. `rels.accounts.relations`). */
+  relations?: RelationsRecord;
   /** EAV strategy when the entity's fields are value-table-backed. */
   eav?: EavStrategy;
   fieldMeta?: FieldMetaMap;
@@ -147,7 +152,7 @@ export interface EntityRegistration {
   computed?: ComputedFieldSpec[];
 }
 
-// Drizzle introspection helpers (tableName / tableColumns / evaluateRelations)
+// Drizzle introspection helpers (tableName / tableColumns / classifyRelations)
 // live in ./introspect — the single home for Drizzle-internal access.
 
 // ---------------------------------------------------------------------------
@@ -176,7 +181,7 @@ function deriveSearchableColumns(table: PgTable, fieldMeta?: FieldMetaMap): stri
     } // explicit opt-in
     if (meta?.searchable === false) continue; // explicit opt-out
     // Type-driven heuristic fallback: text columns that aren't IDs / FKs / enums.
-    if (col.dataType !== 'string') continue;
+    if (columnDataType(col) !== 'string') continue;
     const cName = (col as unknown as { columnType: string }).columnType;
     if (cName === 'PgUUID' || cName === 'PgEnumColumn') continue;
     if (dbName === 'id' || dbName === 'external_id' || dbName.endsWith('_id')) continue;
@@ -196,27 +201,16 @@ export function buildRegistry(
   const tableToEntity: Record<string, EntityName> = {};
   for (const e of entities) tableToEntity[tableName(e.table)] = e.name;
 
-  // Pass 1: build descriptors with belongs_to filled in. has_many FKs left
-  // as placeholders to resolve in pass 2 (Drizzle's many() doesn't carry
-  // the FK — it lives on the inverse one() declaration).
   const out = {} as Record<string, EntityDescriptor>;
 
   for (const spec of entities) {
-    const cfg = spec.relations ? evaluateRelations(spec.relations, spec.table) : {};
     const relationships: Record<string, RelDescriptor> = {};
-
-    for (const [relName, rel] of Object.entries(cfg)) {
-      const target = tableToEntity[tableName(rel.referencedTable)];
+    // Unsupported relations (through / composite / view) are skipped here and
+    // reported by the doctor; an edge to an unregistered table is dropped likewise.
+    for (const rel of classifyRelations(spec.relations).relations) {
+      const target = tableToEntity[tableName(rel.targetTable)];
       if (!target) continue;
-
-      if (rel.constructor.name === 'One') {
-        // NB: a drizzle One-relation always carries config with at least one field
-        const fkName = rel.config!.fields[0].name;
-        relationships[relName] = { kind: 'belongs_to', target, fk: fkName };
-      } else if (rel.constructor.name === 'Many') {
-        // FK resolved in pass 2 — leave a marker.
-        relationships[relName] = { kind: 'has_many', target, fk: '' };
-      }
+      relationships[rel.name] = { kind: rel.kind, target, fk: rel.fk };
     }
 
     out[spec.name] = {
@@ -231,27 +225,6 @@ export function buildRegistry(
       meta: spec.meta,
       computed: spec.computed,
     };
-  }
-
-  // Pass 2: for each has_many, find the inverse belongs_to on the target
-  // entity and copy its FK column name.
-  for (const desc of Object.values(out)) {
-    for (const rel of Object.values(desc.relationships)) {
-      if (rel.kind !== 'has_many' || rel.fk !== '') continue;
-      const targetDesc = out[rel.target];
-      const inverse = Object.values(targetDesc.relationships).find(
-        (r) => r.kind === 'belongs_to' && r.target === desc.name,
-      );
-      if (inverse) {
-        rel.fk = inverse.fk;
-      } else {
-        // Shouldn't happen if relations() is symmetric. Throw a clear error.
-        throw new Error(
-          `buildRegistry: has_many '${desc.name}' → '${rel.target}' has no inverse belongs_to. ` +
-            `Add a 'one(${desc.name})' declaration to ${rel.target}Relations.`,
-        );
-      }
-    }
   }
 
   return out;

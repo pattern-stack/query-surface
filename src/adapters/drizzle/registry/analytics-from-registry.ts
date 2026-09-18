@@ -7,12 +7,13 @@
 import { getTableColumns, getTableName } from 'drizzle-orm';
 import type { PgColumn } from 'drizzle-orm/pg-core';
 import type { AggColType, AggFieldMeta, AggRegistry } from '../../../internal/analytics/types';
+import { columnDataType } from './introspect';
 import type { EntityDescriptor } from './registry';
 
 function colType(col: PgColumn): AggColType {
   const ct = (col as unknown as { columnType?: string }).columnType;
   if (ct === 'PgUUID') return 'uuid';
-  switch (col.dataType) {
+  switch (columnDataType(col)) {
     case 'date':
       return 'datetime';
     case 'json':

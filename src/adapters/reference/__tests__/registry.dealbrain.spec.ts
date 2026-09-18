@@ -1,6 +1,6 @@
 // Proves the Drizzle pivot foundation: the belongs_to/has_many cardinality graph
 // the aggregate engine relies on is derived by the PACKAGE'S OWN buildRegistry()
-// from idiomatic Drizzle relations() — not a hand-built map. Pure, no DB.
+// from idiomatic Drizzle 1.0 defineRelations() — not a hand-built map. Pure, no DB.
 
 import { describe, expect, it } from 'bun:test';
 import { buildRegistry } from '../../drizzle/registry/registry';
@@ -14,7 +14,7 @@ import {
   opportunitiesRelations,
 } from '../schema.dealbrain';
 
-describe('dealbrain Drizzle registry — cardinality graph from relations()', () => {
+describe('dealbrain Drizzle registry — cardinality graph from defineRelations()', () => {
   const reg = buildRegistry([
     { name: 'accounts', table: accounts, relations: accountsRelations },
     {
@@ -44,7 +44,7 @@ describe('dealbrain Drizzle registry — cardinality graph from relations()', ()
     });
   });
 
-  it('resolves has_many fk from the inverse belongs_to (pass 2)', () => {
+  it('resolves has_many fk from the reverse relation (defineRelations fills it)', () => {
     expect(reg.opportunities!.relationships.observations).toEqual({
       kind: 'has_many',
       target: 'observations',

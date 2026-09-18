@@ -45,6 +45,7 @@ import {
 } from '../../../internal/language/types.ts';
 import type { EavContext, FieldMap } from '../eav/field-map.ts';
 import { coercionCategory, valueColumnForDataType } from '../eav/mapping.ts';
+import { columnDataType } from '../registry/introspect.ts';
 import { registry } from '../registry/registry.ts';
 import { buildComputedExpr } from './computed.ts';
 
@@ -178,17 +179,20 @@ function resolveFrom(
         inner,
       };
     }
-    // belongs_to — add LEFT JOIN and advance.
+    // to-one (belongs_to / has_one) — add LEFT JOIN and advance. belongs_to joins
+    // source.fk = target.pk; has_one (fk on the target) joins target.fk = source.pk.
+    // Both are 1:1, so the join never fans the root rows.
     const targetDesc = registry[rel.target];
-    const parentFkCol = (desc.columns as Record<string, PgColumn>)[camel(rel.fk)];
-    const targetPkCol = (targetDesc.columns as Record<string, PgColumn>)[targetDesc.primaryKey];
-    if (!parentFkCol || !targetPkCol) {
-      throw new Error(`belongs_to resolution failed for '${seg}' on '${currentEntity}'`);
+    const srcCols = desc.columns as Record<string, PgColumn>;
+    const tgtCols = targetDesc.columns as Record<string, PgColumn>;
+    const [left, right] =
+      rel.kind === 'belongs_to'
+        ? [srcCols[camel(rel.fk)], tgtCols[targetDesc.primaryKey]]
+        : [srcCols[desc.primaryKey], tgtCols[camel(rel.fk)]];
+    if (!left || !right) {
+      throw new Error(`${rel.kind} resolution failed for '${seg}' on '${currentEntity}'`);
     }
-    joins.push({
-      table: targetDesc.table,
-      on: eq(parentFkCol, targetPkCol),
-    });
+    joins.push({ table: targetDesc.table, on: eq(left, right) });
     currentEntity = rel.target;
   }
 
@@ -306,15 +310,13 @@ function coerceForColumn(col: PgColumn, value: unknown, coerceAs?: string): unkn
   if (value === null || value === undefined) return value;
   if (Array.isArray(value)) return value.map((v) => coerceForColumn(col, v, coerceAs));
 
-  // Drizzle exposes the TS-level type via .dataType. For PgTimestamp /
-  // PgTimestampWithTimezone this is 'date'; PgInteger is 'number'; PgBoolean
-  // is 'boolean'; PgText / PgVarchar / pgEnum are 'string'; etc.
+  // Drizzle exposes the TS-level type via .dataType (normalized by columnDataType):
+  // PgTimestamp is 'date'; PgInteger is 'number'; PgBoolean is 'boolean';
+  // PgText / PgVarchar / pgEnum are 'string'; etc.
   //
   // For EAV value columns the storage column lies (numeric → 'string'), so the
   // field-definition data_type is the authority — coerceAs carries it.
-  const dt = coerceAs
-    ? coercionCategory(coerceAs)
-    : (col as unknown as { dataType?: string }).dataType;
+  const dt = coerceAs ? coercionCategory(coerceAs) : columnDataType(col);
 
   if (dt === 'date') {
     if (value instanceof Date) return value;
@@ -388,12 +390,7 @@ function compileLeafOp(
   // Vector-distance primitive: the embedding column is `col` (crispify rewrote `on` to it),
   // so the cross-grain EXISTS inner reuses this op impl with the child-resolved column.
   if (op === 'sim_gte') return compileSimGte(col, sim!);
-  const colMeta = col as unknown as { dataType?: string; name?: string };
-  assertTextOpTarget(
-    op,
-    coerceAs ? coercionCategory(coerceAs) : colMeta.dataType,
-    colMeta.name ?? 'field',
-  );
+  assertTextOpTarget(op, coerceAs ? coercionCategory(coerceAs) : columnDataType(col), col.name);
   // Coerce once at the boundary. All subsequent op handlers see the right type.
   const value = coerceForColumn(col, rawValue, coerceAs);
   switch (op) {

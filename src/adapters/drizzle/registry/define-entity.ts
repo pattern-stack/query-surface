@@ -22,7 +22,7 @@
 // metadata layer — same field names, two storage homes — and both feed the same
 // CatalogField. See docs/field-catalog-design.md.
 
-import { type PgColumnBuilderBase, pgTable } from 'drizzle-orm/pg-core';
+import { type AnyPgColumnBuilder, pgTable } from 'drizzle-orm/pg-core';
 
 /**
  * Per-field semantics — the half Drizzle introspection can't give us, declared
@@ -101,7 +101,7 @@ export function qField<B>(builder: B, meta: FieldMeta): B {
  * is also stamped onto the table object so it travels with it (see readEntityMeta).
  * The `q` prefix mirrors qField — both are the Query-surface annotation layer.
  */
-export function qEntity<T extends Record<string, PgColumnBuilderBase>>(
+export function qEntity<T extends Record<string, AnyPgColumnBuilder>>(
   name: string,
   columns: T,
   meta: EntityMeta = {},
@@ -125,7 +125,7 @@ export function qEntity<T extends Record<string, PgColumnBuilderBase>>(
  * 'junction', ... })`, giving a subclass-style call-site and a home for any
  * junction-specific defaults later.
  */
-export function qJunction<T extends Record<string, PgColumnBuilderBase>>(
+export function qJunction<T extends Record<string, AnyPgColumnBuilder>>(
   name: string,
   columns: T,
   meta: Omit<EntityMeta, 'kind'> = {},

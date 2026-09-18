@@ -7,7 +7,10 @@
 import type { AggRegistry, Aggregate, AggregatePlan, Measure, RowExpr } from './types';
 
 /** Coarse→fine rank: longest belongs_to chain from this entity upward.
- *  accounts=0, opportunities=1 (belongs_to accounts), observations=2. */
+ *  accounts=0, opportunities=1 (belongs_to accounts), observations=2.
+ *  A belongs_to whose target declares a has_one BACK over the same fk is a 1:1 edge
+ *  (the child IS at its parent's grain), so it adds no rank: a has_one child never
+ *  counts as finer than its parent. */
 export function grainRank(
   reg: AggRegistry,
   entity: string,
@@ -19,7 +22,10 @@ export function grainRank(
   const next = new Set([...seen, entity]);
   for (const rel of Object.values(ent.rels)) {
     if (rel.kind === 'belongs_to') {
-      max = Math.max(max, 1 + grainRank(reg, rel.target, next));
+      const oneToOne = Object.values(reg[rel.target]?.rels ?? {}).some(
+        (r) => r.kind === 'has_one' && r.target === entity && r.fk === rel.fk,
+      );
+      max = Math.max(max, (oneToOne ? 0 : 1) + grainRank(reg, rel.target, next));
     }
   }
   return max;
@@ -74,7 +80,7 @@ export function measureField(m: { on: string | RowExpr }): string {
 }
 
 /** A measure FANS at the group grain iff its source is strictly finer
- *  (reached from the group grain across a has_many edge). */
+ *  (reached from the group grain across a has_many edge — never a has_one). */
 export function measureFans(reg: AggRegistry, groupGrainEntity: string, source: string): boolean {
   return grainRank(reg, source) > grainRank(reg, groupGrainEntity);
 }

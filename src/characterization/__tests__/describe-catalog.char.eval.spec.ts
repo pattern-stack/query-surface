@@ -97,7 +97,7 @@ suite('describe-catalog — characterization', () => {
       expect(cnt[0]?.n).toBe(0);
     });
 
-    it('derives both has_many relationships from relations()', async () => {
+    it('derives both has_many relationships from defineRelations()', async () => {
       const cat = await h.service.describe('accounts');
       // Account→Opp and Account→Obs are both to-many (the FK lives on the child).
       const rels = Object.fromEntries(cat.relationships.map((r) => [r.name, r]));

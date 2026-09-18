@@ -15,15 +15,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { type ArgumentMetadata, BadRequestException, NotFoundException } from '@nestjs/common';
 import { type DrizzleDb, makeDb } from '../../../adapters/drizzle/execute/drizzle-db';
 import { loadDealbrainModel } from '../../../adapters/reference/model.dealbrain';
-import {
-  accounts,
-  accountsRelations,
-  fieldValues,
-  observations,
-  observationsRelations,
-  opportunities,
-  opportunitiesRelations,
-} from '../../../adapters/reference/schema.dealbrain';
+import { dealbrainRelations } from '../../../adapters/reference/schema.dealbrain';
 import { QuerySurfaceService } from '../query-surface.service';
 import { QueryController } from '../rest/query.controller';
 import { compareRequestSchema } from '../rest/query.dto';
@@ -49,15 +41,7 @@ suite('compare() — REST presentation chain (live dealbrain)', () => {
   beforeAll(async () => {
     ({ db, close } = makeDb(DBURL!));
     const svc = new QuerySurfaceService(db, {
-      schema: {
-        accounts,
-        opportunities,
-        observations,
-        fieldValues,
-        accountsRelations,
-        opportunitiesRelations,
-        observationsRelations,
-      },
+      relations: dealbrainRelations,
       // dealbrain test tables carry no tenancy column → declare tenant-global so compare
       // runs unscoped (fail-closed would otherwise deny an uncovered source).
       scopeFor: () => () => undefined,

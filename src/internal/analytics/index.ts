@@ -35,6 +35,7 @@ export {
 export { normalizeAggregate } from './normalize.ts';
 export {
   belongsToPaths,
+  toOnePaths,
   conformedDimensions,
   resolveJoinPlan,
   type ConformedDim,
