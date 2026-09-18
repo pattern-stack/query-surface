@@ -265,6 +265,21 @@ async function expandHasMany(
     groups.get(fkVal)!.push(cr);
   }
 
+  // A has_one is declared 1:1. More than one child for a parent means the declaration is
+  // wrong (no UNIQUE on the fk) — refuse rather than attach an arbitrary row of an
+  // unordered batch.
+  if (single) {
+    for (const [parentId, children] of groups) {
+      if (children.length > 1) {
+        throw new Error(
+          `has_one '${relName}' → '${rel.target}' matched ${children.length} rows for parent ${parentId}: ` +
+            `'${rel.target}.${rel.fk}' is not unique. Back the has_one with a UNIQUE constraint on ` +
+            `${rel.target}.${rel.fk}, or declare the relationship has_many.`,
+        );
+      }
+    }
+  }
+
   // Merge EAV fields into the materialized children before attaching.
   await hydrateEavRows(db, rel.target, childRows, eav?.fieldMaps[rel.target]);
 

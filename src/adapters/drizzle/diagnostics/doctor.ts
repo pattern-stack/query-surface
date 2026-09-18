@@ -21,6 +21,8 @@ import {
   type UnsupportedRelation,
   classifyRelations,
   foreignKeys,
+  isUniqueColumn,
+  primaryKeyColumns,
   tableColumns,
   tableName,
 } from '../registry/introspect.ts';
@@ -184,14 +186,21 @@ export function diagnose(
       );
       if (hasInverse) continue;
       const targetTable = tableName(target.reg.table);
+      // A UNIQUE fk makes the inverse to-one (has_one: r.one keyed pk → fk); otherwise
+      // it is a collection (has_many: r.many, from/to resolved off this belongs_to).
+      const targetPk = primaryKeyColumns(target.reg.table)[0]?.name ?? 'id';
+      const oneBack = isUniqueColumn(reg.table, rel.fk);
+      const inverse = oneBack
+        ? `r.one.${srcTable}({ from: r.${targetTable}.${propFor(target.reg, targetPk)}, to: r.${srcTable}.${propFor(reg, rel.fk)} })`
+        : `r.many.${srcTable}()`;
       findings.push({
         severity: 'warn',
         code: 'MISSING_INVERSE',
         entity: target.reg.name,
         message:
           `'${reg.name}.${rel.name}' points to '${target.reg.name}', but '${target.reg.name}' declares no inverse ` +
-          `many('${srcTable}') — you can expand ${reg.name}→${target.reg.name} but not ${target.reg.name}→${reg.name}.`,
-        fix: `// add to ${targetTable}'s entry of defineRelations():\n${srcTable}: r.many.${srcTable}(),`,
+          `${oneBack ? 'r.one' : 'r.many'}.${srcTable}(…) back — you can expand ${reg.name}→${target.reg.name} but not ${target.reg.name}→${reg.name}.`,
+        fix: `// add to ${targetTable}'s entry of defineRelations():\n${srcTable}: ${inverse},`,
       });
     }
   }

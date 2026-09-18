@@ -6,7 +6,7 @@ REPO=$(cd "$(dirname "$0")/.." && pwd); WORK=${1:-$(mktemp -d)}
 rm -rf "$WORK" && mkdir -p "$WORK/pack" "$WORK/app"
 ( cd "$REPO" && npm pack --pack-destination "$WORK/pack" >/dev/null 2>&1 )
 TGZ=$(ls "$WORK"/pack/*.tgz); echo "tarball: $(basename "$TGZ")"
-tar -tzf "$TGZ" | grep -E "__tests__|characterization|\.spec\.ts" && { echo "FAIL: tests in tarball"; exit 1; } || true
+tar -tzf "$TGZ" | grep -E "__tests__|characterization|\.spec\.ts|package/src/" && { echo "FAIL: tests or src in tarball"; exit 1; } || true
 cd "$WORK/app"
 cat > package.json <<JSON
 { "name": "qs-consumer", "private": true, "type": "module" }
@@ -63,3 +63,16 @@ JSON
 done
 node -e "import('@pattern-stack/query-surface').then(m => console.log('node import (root):', Object.keys(m).length, 'exports; has_one-aware toOnePaths =', typeof m.toOnePaths))"
 node -e "import('reflect-metadata').then(() => import('@pattern-stack/query-surface/nest')).then(m => console.log('node import (./nest):', Object.keys(m).length, 'exports'))"
+# Bun resolves the same dist/ graph (no `bun` condition: a src/ condition would make Bun
+# compile the Nest decorators per the CONSUMER's tsconfig, and splitting root/nest across
+# src + dist would duplicate the module-level registry). No decorator tsconfig here on purpose.
+bun -e "
+for (const s of ['@pattern-stack/query-surface', '@pattern-stack/query-surface/nest']) {
+  const p = import.meta.resolve(s);
+  if (!p.includes('/dist/') || !p.endsWith('.js')) throw new Error('bun resolved ' + s + ' outside dist: ' + p);
+}
+const m = await import('@pattern-stack/query-surface');
+await import('reflect-metadata');
+const n = await import('@pattern-stack/query-surface/nest');
+console.log('bun import (dist): root', Object.keys(m).length, 'exports; ./nest', Object.keys(n).length, 'exports');
+"
