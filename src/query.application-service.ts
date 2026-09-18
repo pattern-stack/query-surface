@@ -65,6 +65,26 @@ import type {
 export type ScopeResolver = (entity: EntityName) => FilterExpression | undefined;
 
 /**
+ * A `ScopeResolver` keyed on the requester's tenant, read at QUERY time — so a host that
+ * keeps its tenant in an `AsyncLocalStorage` request context (the same one its repositories
+ * scope by) seeds this surface from that one request boundary: pass the context's getter.
+ * `column` is the tenant column's db name — one for every entity, or a per-entity map (an
+ * entity absent from the map resolves `undefined`). Fail-closed like any resolver: no tenant
+ * in context, or no column for the entity → `undefined` → the engine REFUSES the read unless
+ * the entity is declared `tenantGlobalEntities`.
+ */
+export function tenantScope(opts: {
+  getTenantId: () => string | null | undefined;
+  column: string | Readonly<Record<EntityName, string>>;
+}): ScopeResolver {
+  return (entity) => {
+    const on = typeof opts.column === 'string' ? opts.column : opts.column[entity];
+    const tenantId = on ? opts.getTenantId() : undefined;
+    return on && tenantId ? { on, op: 'eq', value: tenantId } : undefined;
+  };
+}
+
+/**
  * Explicit opt-out of tenancy scoping — a FIRST-CLASS mode, not an escape hatch.
  * Legitimate for single-tenant databases, company-wide BI / analytics, admin
  * tools, and the eval fixture, where reading across all rows is the intent.

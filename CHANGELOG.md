@@ -6,7 +6,50 @@ All notable changes to `@pattern-stack/query-surface`. Format follows
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-09-17
+
+Drizzle 1.0, a `has_one` relationship kind, and a publishable package (#40).
+
+### Breaking
+- **Peer `drizzle-orm` is now `^1.0.0-rc.4`** (was `^0.45.2`; dev pin `1.0.0-rc.4`). Drizzle 1.0
+  removed the v1 `relations()` API; introspection now walks **`defineRelations()`** output
+  (relational queries v2) — no v1 import remains.
+  - `registerSchema(relations, opts)` / `buildRegistrationsFromSchema(relations, opts)` take the
+    `defineRelations(schema, (r) => …)` result (a `TablesRelationalConfig`), not a schema barrel.
+    `registerFromDb(db)` reads `db._.relations` (a db built with `drizzle({ client, relations })`).
+  - `EntityRegistration.relations` / `CatalogEntry.relations` are one table's
+    `RelationsRecord` (e.g. `rels.accounts.relations`); `CatalogEntry.relations` is now
+    **optional** (a table with no relations needs no entry).
+  - `qEntity` / `qJunction` column maps are typed `Record<string, AnyPgColumnBuilder>` (1.0
+    dropped `PgColumnBuilderBase`).
+  - `QuerySurfaceModuleOptions.schema` → **`relations: TablesRelationalConfig`**.
+  - `JoinHop` is `{ from, to, kind: 'belongs_to' | 'has_one', fromCol, toCol }` (was
+    `{ from, to, fk, toPk }`); `belongsToPaths` is renamed **`toOnePaths`** (the old name stays as
+    a deprecated alias).
+- Introspection is the path for hosts **without** a declared model. A host that already knows
+  its graph (e.g. a code generator emitting from entity YAML) builds an `AggregateModel`
+  directly and never introspects.
+
 ### Added
+- **`has_one` relationship kind** — `RelDescriptor` / `AggRelationship` / `RelationshipInfo`
+  are `belongs_to | has_one | has_many`. A `has_one` (FK on the target) is **to-one** for grain
+  purposes: its target's dimensions conform at the parent grain (LEFT JOIN `target.fk =
+  parent.pk`, composable with `belongs_to` hops), the grain oracle ranks a `has_one` child at
+  its parent's grain, and `describe` advertises its dims as conformed. Before this a declared
+  model had to widen it to `has_many`, which made the oracle refuse groupings it could allow.
+  Retrieval dotted paths resolve it as a LEFT JOIN (not `EXISTS`); `fetch({ expand })` attaches
+  it as a single object (or `null`), and **refuses** (naming the relation and the missing
+  `UNIQUE`) when more than one child matches a parent rather than attaching an arbitrary row.
+  Introspection classifies `r.one.T({ from: src.pk, to: T.fk })` as `has_one`, and a
+  shared-PK 1:1 (`r.one.T({ from: src.pk, to: T.pk })`) as `has_one` in **both** directions
+  (so neither side adds a grain rank). Primary keys are read from the tables' PK metadata
+  (column `.primaryKey()` or table `primaryKey({ columns })`), not the column name; only a
+  table with no declared PK falls back to its `id` column.
+- **`tenantScope({ getTenantId, column })`** — a `ScopeResolver` that reads the tenant at query
+  time, so an `AsyncLocalStorage` request context (the one a host's repositories scope by)
+  seeds this surface from the same boundary. Fail-closed: no tenant → the read is refused.
+- Root exports `AggEntity`, `AggRelationship`, `DerivedExpr`, `DerivedMeasureDef` (the shapes a
+  code generator emits into a declared `AggregateModel` / `MeasureCatalog`).
 - **`rank_by.vector`** (#38): `select()`'s semantic rank takes a caller-supplied query vector
   beside `query` text. Exactly one of `query` | `vector` is required for `method:'semantic'`;
   `lexical` still takes `query` only. A vector skips the host's `embed()` port entirely, so a
@@ -18,6 +61,31 @@ All notable changes to `@pattern-stack/query-surface`. Format follows
   dropped silently and the request ranked by whatever `query` said.
 - The MCP `select` tool and the REST `rank_by` DTO document `vector`; the DTO's `query` is now
   optional (the service enforces exactly-one).
+- Doctor `MISSING_INVERSE` now names the right inverse: `r.one.X({ from, to })` when the
+  belongs_to's fk is unique (a has_one back), else `r.many.X()`.
+- Doctor finding **`UNSUPPORTED_RELATION`** — a `.through()` many-to-many, composite-column,
+  view-target, or non-PK-keyed relation, which the registry skips.
+
+### Fixed
+- Column typing under Drizzle 1.0's compound `column.dataType` (`'string uuid'`, `'object
+  date'`, `'object json'`): a `columnDataType()` normalizer keeps date-only whole-day
+  comparisons, JSON-path (`->>`) filters and searchable-column derivation working.
+- `columnTypeFromPg` maps 1.0's `PgNumericNumber` / `PgNumericBigInt` (→ `number`) and
+  `PgDateString` (the default `date()` mode, → `date`).
+
+### Packaging
+- No longer `private`. Publishes `dist/` only: bundled ESM via `bun build --splitting` (one
+  shared chunk, so the root and `./nest` entries share one module-level registry) + `.d.ts`
+  via `tsc -p tsconfig.build.json`, relative specifiers rewritten to `.js` so both `bundler`
+  and `nodenext` consumers resolve them. Every runtime — Node and Bun — resolves the same
+  `dist/` graph: there is deliberately **no `bun` → `src` condition** (Bun compiles TS in
+  `node_modules` with the *consumer's* tsconfig, so the Nest decorators broke for a consumer
+  without legacy decorators, and mixing `src` + `dist` would duplicate the registry). `prepack`
+  builds.
+- Optional peers: `@nestjs/common`, `@nestjs/swagger`, `rxjs`, `zod` (`./nest`),
+  `@modelcontextprotocol/sdk` (`./mcp`, previously a hard dependency), and `typescript`.
+- `scripts/check-pack.sh` — packs, installs the tarball into a fresh project, type-checks
+  (`nodenext` + `bundler`) and imports root + `./nest` under both Node and Bun.
 
 ## [0.1.0] — 2026-06-29
 
@@ -71,8 +139,9 @@ measure/metric waves.
   backend behavior — the regression net that let the engine be consolidated without drift.
 
 ### Tooling
-- Bun 1.3 · TypeScript 5 strict · Drizzle ORM (pinned `0.45.2`) · NestJS (presentation) ·
+- Bun 1.3 · TypeScript 5 strict · Drizzle ORM (pinned `0.45.2` at this release) · NestJS (presentation) ·
   Postgres 16 · Biome. The `*.eval.spec.ts` suites are the gate (DB-gated on `DBURL`, ground
   truth computed independently of the path under test).
 
+[0.2.0]: https://github.com/pattern-stack/query-surface/releases/tag/v0.2.0
 [0.1.0]: https://github.com/pattern-stack/query-surface/releases/tag/v0.1.0

@@ -6,6 +6,6 @@ export type DrizzleDb = ReturnType<typeof drizzle>;
 
 export function makeDb(connectionString: string): { db: DrizzleDb; close: () => Promise<void> } {
   const pool = new Pool({ connectionString });
-  const db = drizzle(pool);
+  const db = drizzle({ client: pool });
   return { db, close: () => pool.end() };
 }

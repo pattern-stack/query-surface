@@ -13,6 +13,48 @@ cardinality graph, EAV strategy, field tags); the reference instance
 
 ---
 
+## Install
+
+```bash
+bun add @pattern-stack/query-surface drizzle-orm@1.0.0-rc.4
+# ./nest also needs: @nestjs/common @nestjs/swagger rxjs zod
+# ./mcp  also needs: @modelcontextprotocol/sdk zod
+```
+
+Peer: **`drizzle-orm ^1.0.0-rc.4`** (Drizzle 1.0 / relational queries v2). Entry points:
+`@pattern-stack/query-surface` (engine + types), `/nest` (NestJS module + REST), `/mcp`.
+
+### Two ways to supply the model
+
+- **Declared (primary).** Build an `AggregateModel` directly — `registry`
+  (`Record<string, EntityDescriptor>`), `analytics` (`AggRegistry`), `tables`, `colByDbName`,
+  optional `catalog` (`MeasureCatalog`) — and pass it as `QueryServiceOptions.aggregateModel`.
+  This is the path for a host that already knows its graph (e.g. generated from entity YAML).
+- **Introspected.** For a host without a declared model: hand the surface your Drizzle 1.0
+  relational config and it derives the registry.
+
+  ```ts
+  const relations = defineRelations(schema, (r) => ({ /* … */ }));
+  registerSchema(relations, { eav: { /* … */ } });   // or registerFromDb(drizzle({ client, relations }))
+  ```
+
+### Relationship kinds
+
+| kind | FK lives on | cardinality | aggregate stage | retrieval path |
+|---|---|---|---|---|
+| `belongs_to` | this entity | to-one | dims conform (LEFT JOIN `this.fk = target.pk`) | LEFT JOIN |
+| `has_one` | the target | to-one | dims conform (LEFT JOIN `target.fk = this.pk`) | LEFT JOIN |
+| `has_many` | the target | to-many | filter → `EXISTS` semijoin; group → **reject** | `EXISTS` |
+
+A `has_one` is trusted to be 1:1 — back it with a `UNIQUE` on the target's FK (`fetch`
+expand refuses a parent with more than one child). Introspection reads primary keys from the
+table metadata and classifies `r.one.T({ from: this.fk, to: T.pk })` as `belongs_to`,
+`r.one.T({ from: this.pk, to: T.fk })` — or a shared-PK `{ from: this.pk, to: T.pk }` — as
+`has_one`, and `r.many.T(…)` as `has_many`; `.through()` many-to-many is skipped
+(register the junction as an entity) and reported by `diagnose()`.
+
+---
+
 ## The five primitives
 
 | Verb | Signature | What it does |
@@ -114,7 +156,7 @@ Semantics that are easy to get wrong, and how this engine resolves them:
    set, `asc/desc`, `in`) — never a caller string.
 2. **Grain-relative fan-safety.** Each measure pre-aggregates in its **own** source-entity
    CTE, joined on the group key. Fan-safety is group-grain→measure-entity relative, never
-   query-root relative. A to-one (`belongs_to`) / EAV join is 1:1 and allowed; a
+   query-root relative. A to-one (`belongs_to` / `has_one`) / EAV join is 1:1 and allowed; a
    fan-inducing join is not.
 3. **Scope is FAIL-CLOSED, per-source, pre-aggregation** — folded through every traversed
    entity (to-one `ON` + semijoin `EXISTS` body). A resolver returning `undefined` for a
@@ -175,7 +217,7 @@ is to-one, `Account→Opp` to-many, `observations` carry real 1536-dim embedding
 
 ## Stack
 
-Bun 1.3 · TypeScript 5 (strict) · Drizzle ORM (pinned `0.45.2`) · NestJS (presentation only)
+Bun 1.3 · TypeScript 5 (strict) · Drizzle ORM 1.0 (peer `^1.0.0-rc.4`, dev pin `1.0.0-rc.4`) · NestJS (presentation only)
 · Postgres 16 · Biome.
 
 ## Design docs

@@ -1,5 +1,5 @@
 // The Drizzle-native model: the package's real registry (cardinality graph + EAV
-// strategy + FieldMeta analytics tags, from Drizzle relations()) PLUS an EAV
+// strategy + FieldMeta analytics tags, from Drizzle defineRelations()) PLUS an EAV
 // measure overlay (tags can't ride dealbrain's field_definitions). The analytics
 // manifest is DERIVED from the registry (analyticsFromRegistry) — the field tags
 // are live, not hand-built.

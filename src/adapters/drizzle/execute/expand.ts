@@ -1,8 +1,8 @@
 // Expand — relational hydration on /fetch.
 //
 // Given a list of rows from one entity and an array of dotted expand paths,
-// attach related entities inline. belongs_to becomes a child object on the
-// row; has_many becomes an array.
+// attach related entities inline. belongs_to / has_one become a child object on
+// the row; has_many becomes an array.
 //
 // Batched: ONE SELECT per expand segment using `WHERE id IN (...)` (or
 // `WHERE fk IN (...)` for has_many). Avoids N+1.
@@ -127,7 +127,9 @@ export async function expandRows(
         scopeFor,
         depth,
       );
-    } else if (rel.kind === 'has_many') {
+    } else {
+      // has_many → an array; has_one → the single child (or null). Same batched read:
+      // the FK lives on the target for both.
       await expandHasMany(
         db,
         rows,
@@ -215,7 +217,7 @@ async function expandHasMany(
   db: NodePgDatabase<any>,
   rows: Array<Record<string, unknown>>,
   parentDesc: (typeof registry)[EntityName],
-  rel: { kind: 'has_many'; target: EntityName; fk: string },
+  rel: { kind: 'has_many' | 'has_one'; target: EntityName; fk: string },
   relName: string,
   targetDesc: (typeof registry)[EntityName],
   targetCols: Record<string, PgColumn>,
@@ -233,8 +235,9 @@ async function expandHasMany(
     ),
   ];
 
+  const single = rel.kind === 'has_one';
   if (parentIds.length === 0) {
-    for (const r of rows) r[relName] = [];
+    for (const r of rows) r[relName] = single ? null : [];
     return;
   }
 
@@ -262,13 +265,29 @@ async function expandHasMany(
     groups.get(fkVal)!.push(cr);
   }
 
+  // A has_one is declared 1:1. More than one child for a parent means the declaration is
+  // wrong (no UNIQUE on the fk) — refuse rather than attach an arbitrary row of an
+  // unordered batch.
+  if (single) {
+    for (const [parentId, children] of groups) {
+      if (children.length > 1) {
+        throw new Error(
+          `has_one '${relName}' → '${rel.target}' matched ${children.length} rows for parent ${parentId}: ` +
+            `'${rel.target}.${rel.fk}' is not unique. Back the has_one with a UNIQUE constraint on ` +
+            `${rel.target}.${rel.fk}, or declare the relationship has_many.`,
+        );
+      }
+    }
+  }
+
   // Merge EAV fields into the materialized children before attaching.
   await hydrateEavRows(db, rel.target, childRows, eav?.fieldMaps[rel.target]);
 
   // Attach
   for (const r of rows) {
     const pk = r[parentPkKey];
-    r[relName] = typeof pk === 'string' ? (groups.get(pk) ?? []) : [];
+    const children = typeof pk === 'string' ? (groups.get(pk) ?? []) : [];
+    r[relName] = single ? (children[0] ?? null) : children;
   }
 
   // Recurse on attached children (flat list across all parents — same depth+1)

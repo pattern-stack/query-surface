@@ -46,8 +46,10 @@ export interface AggFieldMeta {
   hasDeclaredDomain?: boolean;
 }
 
+/** A cardinality edge. `belongs_to` (fk on THIS entity) and `has_one` (fk on the target) are
+ *  TO-ONE — joinable at this grain without fan-out; `has_many` (fk on the target) is to-many. */
 export interface AggRelationship {
-  kind: 'belongs_to' | 'has_many';
+  kind: 'belongs_to' | 'has_one' | 'has_many';
   target: string;
   fk: string;
 }

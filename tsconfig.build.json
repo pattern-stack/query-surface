@@ -1,0 +1,14 @@
+{
+  // Publish build: declarations only (dist/**/*.d.ts). The JS is bundled by `bun build`
+  // (scripts in package.json) — tsc can't emit runnable ESM from sources whose relative
+  // imports are extensionless.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "rewriteRelativeImportExtensions": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["src/**/__tests__/**", "src/**/*.spec.ts", "src/characterization/**"]
+}

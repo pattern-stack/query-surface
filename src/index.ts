@@ -39,6 +39,7 @@ export {
   andFilter,
   assertAggregateSafe,
   belongsToPaths,
+  toOnePaths,
   conformedDimensions,
   diagnoseAggregate,
   measuresFromRegistry,
@@ -60,7 +61,9 @@ export type {
   AggregateInput,
   AggregatePlan,
   AggregateResponse,
+  AggEntity,
   AggRegistry,
+  AggRelationship,
   AtomicMeasureDef,
   ConformedDim,
   DimRole,
@@ -73,6 +76,8 @@ export type {
   CompareVariant,
   CompositeColumn,
   CumulativeMeasureDef,
+  DerivedExpr,
+  DerivedMeasureDef,
   Measure,
   MeasureCatalog,
   MeasureDef,
@@ -91,7 +96,7 @@ export type {
   Unscoped,
   ViewingScope,
 } from './query.application-service.ts';
-export { QueryApplicationService, UNSCOPED } from './query.application-service.ts';
+export { QueryApplicationService, UNSCOPED, tenantScope } from './query.application-service.ts';
 export type {
   ComputedFieldSpec,
   ComputedFilterLeaf,

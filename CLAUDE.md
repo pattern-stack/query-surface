@@ -78,7 +78,7 @@ the reference fixture: `Opp→Account` is to-one, `Account→Opp` to-many, `obse
 1536-dim embeddings.
 
 ## Stack
-Bun 1.3 + TypeScript 5 (strict) + Drizzle + NestJS (presentation only) + Postgres 16. Biome.
+Bun 1.3 + TypeScript 5 (strict) + Drizzle 1.0 (`defineRelations`, peer `^1.0.0-rc.4`) + NestJS (presentation only) + Postgres 16. Biome.
 Package: `@pattern-stack/query-surface`.
 
 ## What this is *not*

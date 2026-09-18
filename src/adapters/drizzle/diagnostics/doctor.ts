@@ -1,11 +1,11 @@
 // diagnose() — a read-only health check on a consumer's registered entities.
 //
 // The query surface is introspection-first: relationships come ONLY from
-// Drizzle relations() declarations (the compiler resolves joins through them).
-// So the surface is exactly as capable as the relations() graph is complete —
+// Drizzle 1.0 `defineRelations()` declarations (the compiler resolves joins through
+// them). So the surface is exactly as capable as the relations graph is complete —
 // and the failure mode is silent: a missing relation just means no dotted path,
 // no expand, no error. diagnose() surfaces those gaps and hands back the
-// relations() snippet to close each one.
+// relation snippet to close each one.
 //
 // It is the lenient sibling of buildRegistry(): where buildRegistry throws on
 // the first inconsistency (correct for a runtime boot), diagnose collects every
@@ -17,9 +17,12 @@
 // consumer's value-table structure is mapped onto the EavStrategy shapes.
 
 import {
-  type RelationsConfig,
-  evaluateRelations,
+  type IntrospectedRelation,
+  type UnsupportedRelation,
+  classifyRelations,
   foreignKeys,
+  isUniqueColumn,
+  primaryKeyColumns,
   tableColumns,
   tableName,
 } from '../registry/introspect.ts';
@@ -28,9 +31,10 @@ import type { EntityRegistration } from '../registry/registry.ts';
 export type Severity = 'error' | 'warn' | 'info';
 
 export type FindingCode =
-  | 'DANGLING_FK' // FK constraint with no relations() edge → invisible to the surface
-  | 'MISSING_INVERSE' // belongs_to with no inverse many() → expand works one direction only
+  | 'DANGLING_FK' // FK constraint with no belongs_to edge → invisible to the surface
+  | 'MISSING_INVERSE' // belongs_to with no inverse many()/one() → expand works one direction only
   | 'EDGE_TO_UNREGISTERED' // relation targets an unregistered/excluded table → silently dropped
+  | 'UNSUPPORTED_RELATION' // through / composite / non-PK relation → skipped by the registry
   | 'HEURISTIC_FK'; // *_id column, no FK constraint and no relation → possible missing link
 
 export interface Finding {
@@ -41,7 +45,7 @@ export interface Finding {
   /** Column (DB name) involved, when applicable. */
   column?: string;
   message: string;
-  /** Paste-ready relations() snippet that closes the gap, when applicable. */
+  /** Paste-ready defineRelations() snippet that closes the gap, when applicable. */
   fix?: string;
 }
 
@@ -56,7 +60,8 @@ const DEFAULT_HEURISTIC_IGNORES = ['external_id'];
 
 interface Resolved {
   reg: EntityRegistration;
-  rels: RelationsConfig;
+  rels: IntrospectedRelation[];
+  unsupported: UnsupportedRelation[];
 }
 
 /** Strip a trailing `Id` (JS prop) → a conventional relation name. */
@@ -83,47 +88,54 @@ export function diagnose(
     ...(opts.ignoreHeuristicColumns ?? []),
   ]);
 
-  // Resolve every registration once: its evaluated relations + table name lookups.
+  // Resolve every registration once: its classified relations + table name lookups.
   const byTable = new Map<string, Resolved>(); // DB table name → resolved
   const byEntity = new Map<string, Resolved>(); // logical name   → resolved
   for (const reg of entities) {
-    const rels = reg.relations ? evaluateRelations(reg.relations, reg.table) : {};
-    const resolved: Resolved = { reg, rels };
+    const { relations: rels, unsupported } = classifyRelations(reg.relations);
+    const resolved: Resolved = { reg, rels, unsupported };
     byTable.set(tableName(reg.table), resolved);
     byEntity.set(reg.name, resolved);
   }
 
-  for (const { reg, rels } of byEntity.values()) {
+  for (const { reg, rels, unsupported } of byEntity.values()) {
     const entity = reg.name;
     const srcTable = tableName(reg.table);
 
-    // One-relations on this entity, by the DB FK column they bind.
+    // belongs_to relations on this entity, by the DB FK column they bind.
     const oneByFkColumn = new Map<string, { relName: string; targetTable: string }>();
-    for (const [relName, rel] of Object.entries(rels)) {
-      if (rel.constructor.name === 'One' && rel.config?.fields?.length) {
-        oneByFkColumn.set(rel.config.fields[0].name, {
-          relName,
-          targetTable: tableName(rel.referencedTable),
-        });
+    for (const rel of rels) {
+      if (rel.kind === 'belongs_to') {
+        oneByFkColumn.set(rel.fk, { relName: rel.name, targetTable: tableName(rel.targetTable) });
       }
     }
 
+    // --- UNSUPPORTED_RELATION: declared, but not a shape the engine can join.
+    for (const u of unsupported) {
+      findings.push({
+        severity: 'warn',
+        code: 'UNSUPPORTED_RELATION',
+        entity,
+        message: `relation '${u.name}'${u.targetTable ? ` → '${tableName(u.targetTable)}'` : ''} ${u.reason}. The edge is skipped by the surface.`,
+      });
+    }
+
     // --- EDGE_TO_UNREGISTERED: any relation pointing at a table we didn't register.
-    for (const [relName, rel] of Object.entries(rels)) {
-      const target = tableName(rel.referencedTable);
+    for (const rel of rels) {
+      const target = tableName(rel.targetTable);
       if (!byTable.has(target)) {
         findings.push({
           severity: 'warn',
           code: 'EDGE_TO_UNREGISTERED',
           entity,
           message:
-            `relation '${relName}' → '${target}' targets a table that isn't registered ` +
+            `relation '${rel.name}' → '${target}' targets a table that isn't registered ` +
             `(excluded, or missing from the schema). The edge is silently dropped — register '${target}' or remove it from excludes.`,
         });
       }
     }
 
-    // --- DANGLING_FK: declared FK with no One-relation binding its column.
+    // --- DANGLING_FK: declared FK with no belongs_to relation binding its column.
     const fks = foreignKeys(reg.table);
     const fkColumns = new Set(fks.flatMap((fk) => fk.fromColumns));
     for (const fk of fks) {
@@ -139,8 +151,8 @@ export function diagnose(
         code: 'DANGLING_FK',
         entity,
         column: srcCol,
-        message: `'${entity}.${srcCol}' is a foreign key to '${fk.toTable}' but has no relations() entry — the surface can't see this relationship (no dotted-path filters, no expand).`,
-        fix: `// in ${entity}'s entity file — merge into the existing relations() if present:\nexport const ${srcTable}Relations = relations(${srcTable}, ({ one }) => ({\n  ${relName}: one(${fk.toTable}, {\n    fields: [${srcTable}.${srcProp}],\n    references: [${fk.toTable}.${targetProp}],\n  }),\n}));`,
+        message: `'${entity}.${srcCol}' is a foreign key to '${fk.toTable}' but has no relation entry — the surface can't see this relationship (no dotted-path filters, no expand).`,
+        fix: `// merge into ${srcTable}'s entry of your defineRelations(schema, (r) => ({ ... })):\n${srcTable}: {\n  ${relName}: r.one.${fk.toTable}({\n    from: r.${srcTable}.${srcProp},\n    to: r.${fk.toTable}.${targetProp},\n  }),\n},`,
       });
     }
 
@@ -156,32 +168,39 @@ export function diagnose(
         code: 'HEURISTIC_FK',
         entity,
         column: db,
-        message: `'${entity}.${db}' looks like a foreign key (ends in _id) but has no FK constraint and no relation. If it references another entity, add a .references() + a relations() entry; otherwise ignore.`,
+        message: `'${entity}.${db}' looks like a foreign key (ends in _id) but has no FK constraint and no relation. If it references another entity, add a .references() + a relation entry; otherwise ignore.`,
       });
     }
   }
 
-  // --- MISSING_INVERSE: a belongs_to (One) to a registered entity that has no
-  // inverse many() back. expand then works one direction only.
+  // --- MISSING_INVERSE: a belongs_to to a registered entity that has no inverse
+  // many() / has-one one() back. expand then works one direction only.
   for (const { reg, rels } of byEntity.values()) {
     const srcTable = tableName(reg.table);
-    for (const [relName, rel] of Object.entries(rels)) {
-      if (rel.constructor.name !== 'One') continue;
-      const target = byTable.get(tableName(rel.referencedTable));
+    for (const rel of rels) {
+      if (rel.kind !== 'belongs_to') continue;
+      const target = byTable.get(tableName(rel.targetTable));
       if (!target) continue; // already reported as EDGE_TO_UNREGISTERED
-      const hasInverse = Object.values(target.rels).some(
-        (r) => r.constructor.name === 'Many' && tableName(r.referencedTable) === srcTable,
+      const hasInverse = target.rels.some(
+        (r) => r.kind !== 'belongs_to' && tableName(r.targetTable) === srcTable,
       );
       if (hasInverse) continue;
       const targetTable = tableName(target.reg.table);
+      // A UNIQUE fk makes the inverse to-one (has_one: r.one keyed pk → fk); otherwise
+      // it is a collection (has_many: r.many, from/to resolved off this belongs_to).
+      const targetPk = primaryKeyColumns(target.reg.table)[0]?.name ?? 'id';
+      const oneBack = isUniqueColumn(reg.table, rel.fk);
+      const inverse = oneBack
+        ? `r.one.${srcTable}({ from: r.${targetTable}.${propFor(target.reg, targetPk)}, to: r.${srcTable}.${propFor(reg, rel.fk)} })`
+        : `r.many.${srcTable}()`;
       findings.push({
         severity: 'warn',
         code: 'MISSING_INVERSE',
         entity: target.reg.name,
         message:
-          `'${reg.name}.${relName}' points to '${target.reg.name}', but '${target.reg.name}' declares no inverse ` +
-          `many('${srcTable}') — you can expand ${reg.name}→${target.reg.name} but not ${target.reg.name}→${reg.name}.`,
-        fix: `// add to ${targetTable}Relations:\n` + `${srcTable}: many(${srcTable}),`,
+          `'${reg.name}.${rel.name}' points to '${target.reg.name}', but '${target.reg.name}' declares no inverse ` +
+          `${oneBack ? 'r.one' : 'r.many'}.${srcTable}(…) back — you can expand ${reg.name}→${target.reg.name} but not ${target.reg.name}→${reg.name}.`,
+        fix: `// add to ${targetTable}'s entry of defineRelations():\n${srcTable}: ${inverse},`,
       });
     }
   }

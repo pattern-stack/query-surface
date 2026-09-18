@@ -5,7 +5,7 @@
 // characterization net proved the retrieval path silently mis-resolves.
 
 import { describe, expect, it } from 'bun:test';
-import { belongsToPaths, conformedDimensions, resolveJoinPlan } from '../join-plan';
+import { conformedDimensions, resolveJoinPlan, toOnePaths } from '../join-plan';
 import type { AggRegistry } from '../types';
 
 const reg: AggRegistry = {
@@ -51,22 +51,28 @@ const reg: AggRegistry = {
   },
 };
 
-describe('belongsToPaths (the to-one walker)', () => {
+describe('toOnePaths (the to-one walker)', () => {
   it('opportunities→accounts is a single to-one path', () => {
-    const paths = belongsToPaths(reg, 'opportunities', 'accounts');
+    const paths = toOnePaths(reg, 'opportunities', 'accounts');
     expect(paths).toHaveLength(1);
     expect(paths[0]).toEqual([
-      { from: 'opportunities', to: 'accounts', fk: 'account_id', toPk: 'id' },
+      {
+        from: 'opportunities',
+        to: 'accounts',
+        kind: 'belongs_to',
+        fromCol: 'account_id',
+        toCol: 'id',
+      },
     ]);
   });
   it('observations→accounts is a DIAMOND — two distinct to-one paths (direct + via opportunity)', () => {
-    expect(belongsToPaths(reg, 'observations', 'accounts')).toHaveLength(2);
+    expect(toOnePaths(reg, 'observations', 'accounts')).toHaveLength(2);
   });
   it('observations→opportunities is a single to-one path', () => {
-    expect(belongsToPaths(reg, 'observations', 'opportunities')).toHaveLength(1);
+    expect(toOnePaths(reg, 'observations', 'opportunities')).toHaveLength(1);
   });
   it('accounts→opportunities has NO to-one path (it is to-many)', () => {
-    expect(belongsToPaths(reg, 'accounts', 'opportunities')).toHaveLength(0);
+    expect(toOnePaths(reg, 'accounts', 'opportunities')).toHaveLength(0);
   });
 });
 
@@ -89,7 +95,13 @@ describe('resolveJoinPlan — group role', () => {
     expect(plan.target).toBe('accounts');
     expect(plan.column).toBe('name');
     expect(plan.hops).toEqual([
-      { from: 'opportunities', to: 'accounts', fk: 'account_id', toPk: 'id' },
+      {
+        from: 'opportunities',
+        to: 'accounts',
+        kind: 'belongs_to',
+        fromCol: 'account_id',
+        toCol: 'id',
+      },
     ]);
     expect(plan.traversed).toEqual(['accounts']);
   });
@@ -116,7 +128,13 @@ describe('resolveJoinPlan — group role', () => {
     expect(plan.kind).toBe('to-one');
     if (plan.kind !== 'to-one') throw new Error('expected to-one');
     expect(plan.hops).toEqual([
-      { from: 'observations', to: 'opportunities', fk: 'opportunity_id', toPk: 'id' },
+      {
+        from: 'observations',
+        to: 'opportunities',
+        kind: 'belongs_to',
+        fromCol: 'opportunity_id',
+        toCol: 'id',
+      },
     ]);
   });
   it('an entity with no column is unsupported', () => {
@@ -223,7 +241,7 @@ describe('resolveJoinPlan — bare-name conformed group dim (Amendment 4)', () =
 
   it('a bare name owned only via a DIAMOND target is excluded → local fallback (fails loud downstream)', () => {
     // `name` lives on accounts, reachable from observations by 2 paths (direct + via opportunities) →
-    // belongsToPaths length 2 → skipped → 0 hits → local (then unknown-column at lowering).
+    // toOnePaths length 2 → skipped → 0 hits → local (then unknown-column at lowering).
     expect(resolveJoinPlan(reg, 'observations', 'name', 'group')).toEqual({
       kind: 'local',
       column: 'name',

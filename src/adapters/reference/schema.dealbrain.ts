@@ -1,12 +1,12 @@
-// Real Drizzle schema + relations() for the dealbrain analytics entities.
+// Real Drizzle schema + defineRelations() for the dealbrain analytics entities.
 // The package's buildRegistry() derives the belongs_to/has_many cardinality
-// graph from these relations() — same source of truth the retrieval surface uses.
+// graph from these relations — same source of truth the retrieval surface uses.
 //
 // observations belongs_to opportunities belongs_to accounts;
 // weighted_amount / deal_probability are EAV custom fields on opportunities
 // (field_values, typed-columns shape).
 
-import { relations } from 'drizzle-orm';
+import { defineRelations } from 'drizzle-orm';
 import {
   boolean,
   customType,
@@ -68,21 +68,30 @@ export const fieldValues = pgTable('field_values', {
   valueBoolean: boolean('value_boolean'),
 });
 
-// relations() — the cardinality graph buildRegistry introspects.
-export const accountsRelations = relations(accounts, ({ many }) => ({
-  opportunities: many(opportunities),
-  observations: many(observations),
-}));
-
-export const opportunitiesRelations = relations(opportunities, ({ one, many }) => ({
-  account: one(accounts, { fields: [opportunities.accountId], references: [accounts.id] }),
-  observations: many(observations),
-}));
-
-export const observationsRelations = relations(observations, ({ one }) => ({
-  opportunity: one(opportunities, {
-    fields: [observations.opportunityId],
-    references: [opportunities.id],
+// defineRelations() — the cardinality graph buildRegistry introspects. The many()
+// sides omit from/to: Drizzle resolves them off the reverse one().
+export const dealbrainRelations = defineRelations(
+  { accounts, opportunities, observations },
+  (r) => ({
+    accounts: {
+      opportunities: r.many.opportunities(),
+      observations: r.many.observations(),
+    },
+    opportunities: {
+      account: r.one.accounts({ from: r.opportunities.accountId, to: r.accounts.id }),
+      observations: r.many.observations(),
+    },
+    observations: {
+      opportunity: r.one.opportunities({
+        from: r.observations.opportunityId,
+        to: r.opportunities.id,
+      }),
+      account: r.one.accounts({ from: r.observations.accountId, to: r.accounts.id }),
+    },
   }),
-  account: one(accounts, { fields: [observations.accountId], references: [accounts.id] }),
-}));
+);
+
+// Per-table slices, for EntityRegistration.relations.
+export const accountsRelations = dealbrainRelations.accounts.relations;
+export const opportunitiesRelations = dealbrainRelations.opportunities.relations;
+export const observationsRelations = dealbrainRelations.observations.relations;

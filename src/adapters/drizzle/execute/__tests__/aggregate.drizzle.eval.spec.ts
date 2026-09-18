@@ -1,5 +1,5 @@
 // SAME eval superset as aggregate.eval.spec.ts, now via the DRIZZLE-NATIVE path
-// (real registry from relations(), real PgColumns, parameterized Drizzle sql).
+// (real registry from defineRelations(), real PgColumns, parameterized Drizzle sql).
 // The eval is the safety net: behavior is pinned, only the engine underneath changed.
 //
 //   DBURL=postgres://postgres:PW@localhost:54321/dealbrain bun test aggregate.drizzle.eval
