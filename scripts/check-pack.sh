@@ -7,6 +7,12 @@ rm -rf "$WORK" && mkdir -p "$WORK/pack" "$WORK/app"
 ( cd "$REPO" && npm pack --pack-destination "$WORK/pack" >/dev/null 2>&1 )
 TGZ=$(ls "$WORK"/pack/*.tgz); echo "tarball: $(basename "$TGZ")"
 tar -tzf "$TGZ" | grep -E "__tests__|characterization|\.spec\.ts|package/src/" && { echo "FAIL: tests or src in tarball"; exit 1; } || true
+tar -tzf "$TGZ" | grep -E "adapters/reference" && { echo "FAIL: reference fixture (adapters/reference) in tarball"; exit 1; } || true
+# The package is peer-deps only: a runtime `dependencies` entry would be installed into every consumer.
+tar -xzOf "$TGZ" package/package.json | node -e "
+const d = JSON.parse(require('fs').readFileSync(0, 'utf8')).dependencies ?? {};
+if (Object.keys(d).length) { console.error('FAIL: packed package.json has dependencies: ' + Object.keys(d).join(', ')); process.exit(1); }
+console.log('packed package.json: no runtime dependencies');"
 cd "$WORK/app"
 cat > package.json <<JSON
 { "name": "qs-consumer", "private": true, "type": "module" }

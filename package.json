@@ -3,13 +3,36 @@
   "version": "0.2.0",
   "type": "module",
   "description": "Agent-aware semantic query + aggregation surface (describe/query/fetch/aggregate/compare) over a host schema \u2014 hexagonal, backend-pluggable.",
-  "license": "MIT",
+  "license": "FSL-1.1-MIT",
+  "author": "Pattern Stack",
+  "homepage": "https://github.com/pattern-stack/query-surface#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/pattern-stack/query-surface.git"
   },
+  "bugs": {
+    "url": "https://github.com/pattern-stack/query-surface/issues"
+  },
+  "keywords": [
+    "semantic-layer",
+    "query",
+    "aggregation",
+    "analytics",
+    "metrics",
+    "drizzle",
+    "drizzle-orm",
+    "postgres",
+    "mcp",
+    "agents",
+    "llm-tools",
+    "nestjs"
+  ],
   "publishConfig": {
     "access": "public"
+  },
+  "engines": {
+    "node": ">=20",
+    "bun": ">=1.3"
   },
   "exports": {
     ".": {
@@ -39,7 +62,6 @@
     "build": "rm -rf dist && bun run build:types && bun run build:js",
     "build:types": "tsc -p tsconfig.build.json && bun scripts/fix-dts-specifiers.ts dist",
     "build:js": "bun build src/index.ts src/presentation/nest/index.ts src/presentation/mcp/index.ts --root src --outdir dist --target node --format esm --splitting --packages external",
-    "prepare": "bun run build",
     "prepack": "bun run build",
     "check:type": "tsc --noEmit",
     "lint": "biome check .",
@@ -86,10 +108,8 @@
     "drizzle-orm": "1.0.0-rc.4",
     "pg": "^8.21.0",
     "rxjs": "^7.0.0",
+    "sql-formatter": "^15.8.1",
     "typescript": "^5.6.0",
     "zod": "^3.23.0"
-  },
-  "dependencies": {
-    "sql-formatter": "^15.8.1"
   }
 }

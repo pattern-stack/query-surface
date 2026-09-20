@@ -10,5 +10,12 @@
     "rewriteRelativeImportExtensions": true
   },
   "include": ["src/**/*"],
-  "exclude": ["src/**/__tests__/**", "src/**/*.spec.ts", "src/characterization/**"]
+  // src/adapters/reference/** is the dealbrain eval fixture: only specs + the char net import it,
+  // no entry point exports it and no JS is bundled for it — so its declarations are not shipped.
+  "exclude": [
+    "src/**/__tests__/**",
+    "src/**/*.spec.ts",
+    "src/characterization/**",
+    "src/adapters/reference/**"
+  ]
 }
