@@ -233,3 +233,16 @@ This is the **canonical** home for the engine that previously drifted across thr
 (`dealbrain/packages/query-surface`, `query-surface-poc`, `swe-brain/packages/query-surface`),
 seeded from the `swe-brain` superset (retrieval + the grain-safe analytics stage). Fixes land
 **only** here; consumers bump.
+
+## License
+
+Source-available under the [Functional Source License, Version 1.1, MIT Future License](LICENSE)
+(SPDX `FSL-1.1-MIT`, see <https://fsl.software>). This is **not** an OSI-approved open-source license.
+
+- **Allowed:** use, modify, embed and ship this package inside your own products and internal tools.
+- **Reserved:** a *Competing Use* — offering this package, or a substitute for it, to others as a
+  commercial product or hosted service.
+- **Converts to MIT:** each version becomes available under the MIT license two years after its release.
+- **Earlier versions:** versions ≤ 0.2.0 were published on GitHub under MIT and remain MIT.
+
+This section is a summary only — [`LICENSE`](LICENSE) is the authoritative text.
