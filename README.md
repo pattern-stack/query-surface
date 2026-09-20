@@ -205,7 +205,7 @@ eval that computes ground truth **independently** (raw SQL), never via the path 
 ```bash
 bun install
 bun run check:type                                   # tsc --noEmit
-bunx @biomejs/biome check src                         # lint + format (CI gates this)
+bun run lint                                          # biome, whole repo (CI gates this)
 bun test                                              # DB-gated specs skip cleanly
 DBURL=postgres://postgres:password@localhost:54321/dealbrain bun test   # the full eval
 ```

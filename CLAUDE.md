@@ -68,14 +68,30 @@ Behavior is pinned by the `*.eval.spec.ts` + `*.char.eval.spec.ts` suites; DB-ba
 without behavior drift.
 
 ```bash
-DBURL=postgres://postgres:password@localhost:54321/dealbrain bun test   # 268 pass / 0 fail
-bun test                          # DB-gated specs skip cleanly (still green)
+DBURL=postgres://postgres:password@localhost:54321/dealbrain bun test   # 443 pass / 0 fail (2026-09-20)
+bun test                          # 155 pass, DB-gated specs skip cleanly — this is what CI runs
 bunx tsc --noEmit                 # types
-bunx @biomejs/biome check src     # lint + format (CI gates this — run before pushing)
+bun run lint                      # biome over the WHOLE repo, src + scripts/ (CI gates this — run before pushing)
+scripts/check-pack.sh             # pack → install in a fresh project → type-check + import (CI gates this)
 ```
 The dealbrain dev DB (`:54321`) is **dealbrain's, not this repo's** — bring it up there if down. It's
 the reference fixture: `Opp→Account` is to-one, `Account→Opp` to-many, `observations` carry real
 1536-dim embeddings.
+
+## CI, release, license
+- **CI** (`.github/workflows/ci.yml`): `test` job = frozen install, tsc, `bun run lint`, `bun test`
+  (no DB), `scripts/check-pack.sh`. `main` requires it and blocks force-push. CI has **no DBURL** —
+  run the DB-backed suite locally before merging anything that touches the engine.
+- **Release = a version bump merged to `main`.** The `publish` job ships via npm trusted publishing
+  (OIDC, no token) iff `package.json`'s version is not on npm yet AND the repo variable
+  `NPM_PUBLISH_ENABLED` is `'true'`. Never add an `NPM_TOKEN`.
+- **Keep the `prepare` script.** Sibling checkouts (sdlc-patterns) consume this repo as a `file:` dep
+  and their image builds rely on `bun install` here producing `dist/`.
+- **License: FSL-1.1-MIT** (source-available; hosted/competing use reserved; each release → MIT after
+  2 years). `≤0.2.0` was MIT, GitHub-only. The package is peer-deps only — `check-pack.sh` fails on any
+  runtime `dependencies` entry or on `adapters/reference` in the tarball.
+- **History was rewritten on 2026-09-20** (scrub). Never push from a clone made before that date.
+  Never write third-party personal names or production figures into this public repo.
 
 ## Stack
 Bun 1.3 + TypeScript 5 (strict) + Drizzle 1.0 (`defineRelations`, peer `^1.0.0-rc.4`) + NestJS (presentation only) + Postgres 16. Biome.
