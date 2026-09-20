@@ -6,6 +6,37 @@ All notable changes to `@pattern-stack/query-surface`. Format follows
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-09-20
+
+First release on npm. No engine or API changes since 0.2.0 — this release is licensing, packaging
+and CI.
+
+### Breaking
+- **License: MIT → FSL-1.1-MIT** (Functional Source License, source-available; not OSI open
+  source) (#46). You may use, modify, embed and ship the package in your own products and internal
+  tools; a *Competing Use* — offering this package, or a substitute for it, to others as a commercial
+  product or hosted service — is reserved. Each release converts to MIT two years after it ships.
+  Versions `≤ 0.2.0` were GitHub-only and remain MIT.
+
+### Changed
+- **No runtime dependencies** (#47). `sql-formatter` was only ever used by the demo servers under
+  `scripts/`; it is now a devDependency and is no longer installed into consumers.
+- **Slimmer tarball** (#47): the dealbrain reference-fixture declarations
+  (`dist/adapters/reference/*.d.ts`) are no longer shipped — no entry point exported them.
+- `package.json` gains `homepage`, `bugs`, `keywords`, `author`, `engines` (node ≥ 20, bun ≥ 1.3);
+  the description names the current verbs (`describe / select / fetch / measure / compare`).
+
+### Added
+- **CI** (#44): typecheck, whole-repo lint (#49), unit tests and `scripts/check-pack.sh` on every
+  PR; releases publish from `main` via npm trusted publishing (OIDC, provenance attested) when the
+  version is bumped. `check-pack.sh` now fails on any runtime `dependencies` entry or on the
+  reference fixture appearing in the tarball.
+
+### Fixed
+- Characterization net: seven specs pinned live fixture counts that drifted; they now assert the
+  engine against independent SQL truth, and the hidden-field gate is exercised against every hidden
+  key in the fixture (#42, #48).
+
 ## [0.2.0] — 2026-09-17
 
 Drizzle 1.0, a `has_one` relationship kind, and a publishable package (#40).
