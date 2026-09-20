@@ -3,6 +3,7 @@
   "version": "0.2.0",
   "type": "module",
   "description": "Agent-aware semantic query + aggregation surface (describe/query/fetch/aggregate/compare) over a host schema \u2014 hexagonal, backend-pluggable.",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/pattern-stack/query-surface.git"
