@@ -41,7 +41,8 @@ const suite = DBURL ? describe : describe.skip;
 
 // The deterministic anchor: a distinctive phrase from the first pricing_signal observation. The
 // harness embed() stub resolves it (ILIKE %phrase%, order by id limit 1) to ONE stored embedding;
-// the same lookup gives us the ground-truth vector. Live-verified sweep on this anchor:
+// the same lookup gives us the ground-truth vector. Live-verified sweep on this anchor (as first
+// recorded — the live fixture drifts, e.g. 0.5 → 1344 on 2026-09-20):
 //   sim>=0.4 → 5349, 0.5 → 1345, 0.6 → 178, 0.7 → 5.
 const ANCHOR = 'conditional, not-yet-agreed concession off the';
 
@@ -109,11 +110,12 @@ suite('relevance-as-filter (query/fetch) — characterization', () => {
     const THRESHOLD = 0.5;
 
     // Ground truth at the cutoff.
-    // truth: count where sim >= 0.5 → 1345
+    // truth: count where sim >= 0.5 → 1344 seen 2026-09-20 (was 1345 — the fixture is live and
+    // non-hermetic, so the literal is NOT pinned; the contract is engine == this SQL truth).
     const [{ c: matchCount }] = await truth<{ c: number }>(
       `with q as ${Q} select count(*)::int as c from observations o, q where o.embedding is not null and ${SIM} >= ${THRESHOLD}`,
     );
-    expect(Number(matchCount)).toBe(1345);
+    expect(Number(matchCount)).toBeGreaterThan(0); // non-vacuity bound
 
     // lowest_included = the WEAKEST member (sim desc, pk asc → last row of the cohort): the row the
     // cutoff is decided on. highest_excluded = the STRONGEST non-member (one row past the cutoff).
@@ -135,7 +137,7 @@ suite('relevance-as-filter (query/fetch) — characterization', () => {
     expect(cit?.query).toBe(ANCHOR);
     expect(cit?.mode).toBe('threshold');
     expect(cit?.cutoff).toBe(THRESHOLD); // threshold mode: cutoff IS the resolved threshold
-    expect(cit?.match_count).toBe(1345);
+    expect(cit?.match_count).toBe(Number(matchCount)); // engine == SQL truth at the cutoff
 
     // Boundary rows match the SQL straddle, similarity to 6 dp.
     expect(cit?.boundary.lowest_included.id).toBe(lowestIncluded.id);
