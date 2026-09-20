@@ -34,8 +34,9 @@ jobs:
         with:
           node-version: 24
 
-      # No build here: there is no `prepare` script. tsc / biome / bun test run on src/, and
-      # check-pack.sh builds dist/ itself (`npm pack` runs `prepack`).
+      # `prepare` runs the build here too, so dist is present from this point. Keep `prepare`:
+      # sibling checkouts consume this repo as a `file:` dep and their image builds rely on
+      # `bun install` here producing dist/ (and it is what makes npm's git-install route work).
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
