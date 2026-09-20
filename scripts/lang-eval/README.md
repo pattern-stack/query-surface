@@ -44,7 +44,6 @@ ollama pull qwen2.5:7b
 
 ```bash
 # From the repo root
-cd /Users/dug/Projects/query-surface
 bun scripts/lang-eval/run.ts
 ```
 

@@ -42,11 +42,10 @@ jobs:
       - name: Typecheck
         run: bun run check:type
 
-      # The repo's lint gate is `biome check src`, NOT `bun run lint`
-      # (`biome check .`) — the latter has 37 pre-existing errors under
-      # scripts/, unrelated to the package source. See CLAUDE.md.
+      # `bun run lint` = `biome check .` — the WHOLE repo (src + scripts/), so
+      # the demo/eval scripts cannot drift red again (#43).
       - name: Lint
-        run: bunx @biomejs/biome check src
+        run: bun run lint
 
       # DB-backed *.eval.spec.ts / *.char.eval.spec.ts skip cleanly without
       # DBURL, so this is the unit run: 155 pass / 347 skip / 0 fail.
