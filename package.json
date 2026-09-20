@@ -62,6 +62,7 @@
     "build": "rm -rf dist && bun run build:types && bun run build:js",
     "build:types": "tsc -p tsconfig.build.json && bun scripts/fix-dts-specifiers.ts dist",
     "build:js": "bun build src/index.ts src/presentation/nest/index.ts src/presentation/mcp/index.ts --root src --outdir dist --target node --format esm --splitting --packages external",
+    "prepare": "bun run build",
     "prepack": "bun run build",
     "check:type": "tsc --noEmit",
     "lint": "biome check .",
