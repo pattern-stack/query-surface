@@ -1,8 +1,8 @@
 {
   "name": "@pattern-stack/query-surface",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
-  "description": "Agent-aware semantic query + aggregation surface (describe/query/fetch/aggregate/compare) over a host schema \u2014 hexagonal, backend-pluggable.",
+  "description": "Agent-aware semantic query + aggregation surface (describe/select/fetch/measure/compare) over a host schema \u2014 hexagonal, backend-pluggable.",
   "license": "FSL-1.1-MIT",
   "author": "Pattern Stack",
   "homepage": "https://github.com/pattern-stack/query-surface#readme",
