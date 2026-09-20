@@ -141,73 +141,28 @@ suite('describe-catalog — characterization', () => {
       // EAV keys are the RAW field_definitions keys (Amount, StageName,
       // ExpectedRevenue, ...), NOT the aggregate-only logical handles
       // (weighted_amount/deal_probability). Sorted by previewOrder then key: the
-      // 6 is_key_field defs come FIRST in keyFieldOrder (StageName=1, Amount=2,
-      // CloseDate=3, outcome=4, lead_pain=5, NextStep=6), then the remaining 54
-      // in key.localeCompare order.
-      expect(eav).toEqual([
-        // preview block — is_key_field defs, ordered by keyFieldOrder.
-        'StageName',
-        'Amount',
-        'CloseDate',
-        'outcome',
-        'lead_pain',
-        'NextStep',
-        // remaining 54 — key.localeCompare order.
-        'AccountName',
-        'age_days',
-        'bean_maxx_use_case',
-        'buyer_commit',
-        'camera_disposition',
-        'campaign_source',
-        'champion_status',
-        'coffee_program_maturity',
-        'compelling_event',
-        'competitive_context',
-        'competitor',
-        'contract_term_months',
-        'created_date',
-        'customer_story_potential',
-        'data_sources',
-        'days_in_stage',
-        'deal_size_band',
-        'decision_criteria',
-        'decision_process',
-        'discount_percent',
-        'economic_buyer_status',
-        'engagement_profile',
-        'executive_sponsor',
-        'ExpectedRevenue',
-        'fiscal_period',
-        'ForecastCategory',
-        'implementation_timeline',
-        'integration_requirements',
-        'is_closed',
-        'is_won',
-        'last_activity_date',
-        'last_modified_date',
-        'lead_source',
-        'legal_status',
-        'loss_reason',
-        'mutual_action_plan_status',
-        'Name',
-        'next_activity_date',
-        'office_rollout_scope',
-        'owner_name',
-        'pilot_status',
-        'pricing_model',
-        'primary_contact',
-        'privacy_requirements',
-        'Probability',
-        'procurement_status',
-        'product_requests',
-        'record_type',
-        'renewal_date',
-        'risk_level',
-        'security_review_status',
-        'success_metric',
-        'technical_validation_status',
-        'Type',
-      ]);
+      // defs carrying a key_field_order come FIRST in that order (StageName=1,
+      // Amount=2, CloseDate=3, outcome=4, lead_pain=5, NextStep=6, ...), then the
+      // rest in key.localeCompare order.
+      //
+      // GROUND TRUTH: the visible opportunity defs + their key_field_order, straight
+      // from the DB, ordered by the SAME documented rule (in JS — a SQL `order by key`
+      // would use the DB collation, not localeCompare). The literal 60-key list this
+      // used to pin drifted (the live fixture is non-hermetic: 63 visible defs on
+      // 2026-09-20, 9 of them key fields), so the contract is engine == this truth.
+      // truth: select key, key_field_order from field_definitions where ... is_visible=true
+      const rows = await truth(
+        "select key, key_field_order from field_definitions where organization_id='a30c290d-6798-4da7-b3af-7b48c50212b8' and entity_type='opportunity' and is_visible=true",
+      );
+      const order = (r: Record<string, unknown>) =>
+        r.key_field_order == null ? 999 : Number(r.key_field_order);
+      const truthOrdered = [...rows]
+        .sort((a, b) => order(a) - order(b) || (a.key as string).localeCompare(b.key as string))
+        .map((r) => r.key as string);
+      expect(truthOrdered.length).toBeGreaterThan(0); // non-vacuity bound
+      expect(eav).toEqual(truthOrdered);
+      // The ordering is genuinely two-block: at least one ordered (preview) def leads.
+      expect(rows.some((r) => r.key_field_order != null)).toBe(true);
 
       // native block precedes the EAV block in field order.
       const keys = cat.fields.map((f) => f.key);
@@ -234,7 +189,9 @@ suite('describe-catalog — characterization', () => {
         "select key from field_definitions where organization_id='a30c290d-6798-4da7-b3af-7b48c50212b8' and entity_type='opportunity' and is_visible=true order by key",
       );
       const truthKeys = rows.map((r) => r.key as string).sort();
-      expect(truthKeys.length).toBe(60);
+      // 63 seen 2026-09-20 (was 60) — live-fixture count, NOT pinned; the contract
+      // is the set equality below.
+      expect(truthKeys.length).toBeGreaterThan(0); // non-vacuity bound
       expect(eavKeys).toEqual(truthKeys);
 
       // GROUND TRUTH: weighted_amount / deal_probability are aggregate-only
@@ -360,16 +317,15 @@ suite('describe-catalog — characterization', () => {
       );
     });
 
-    it('the is_key_field EAV defs surface as preview=true (6 in the org defs)', async () => {
+    it('the is_key_field EAV defs surface as preview=true (== the org key-field defs)', async () => {
       const cat = await h.service.describe('opportunities');
       const previewEav = cat.fields
         .filter((f) => f.eav && f.preview)
         .map((f) => f.key)
         .sort();
-      // Exactly the 6 is_key_field defs are preview; every other EAV field is not.
-      expect(previewEav).toEqual(
-        ['StageName', 'Amount', 'CloseDate', 'outcome', 'lead_pain', 'NextStep'].sort(),
-      );
+      // Exactly the is_key_field defs are preview; every other EAV field is not. The
+      // literal 6-key list this used to pin drifted (9 key fields on 2026-09-20 — the
+      // live fixture is non-hermetic), so the set is asserted against SQL truth below.
 
       // GROUND TRUTH: the visible opportunity defs flagged is_key_field, derived
       // straight from the DB — the preview set MUST equal this key set.
@@ -378,8 +334,10 @@ suite('describe-catalog — characterization', () => {
         "select key from field_definitions where organization_id='a30c290d-6798-4da7-b3af-7b48c50212b8' and entity_type='opportunity' and is_visible=true and is_key_field=true order by key",
       );
       const keyFieldKeys = rows.map((r) => r.key as string).sort();
-      expect(keyFieldKeys.length).toBe(6);
+      expect(keyFieldKeys.length).toBeGreaterThan(0); // non-vacuity bound
       expect(previewEav).toEqual(keyFieldKeys);
+      // ...and it is a STRICT subset: some visible EAV field is NOT preview.
+      expect(previewEav.length).toBeLessThan(cat.fields.filter((f) => f.eav).length);
     });
 
     it('relationships: belongs_to account (to-one) + has_many observations', async () => {

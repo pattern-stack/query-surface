@@ -283,28 +283,46 @@ suite('retrieval — EAV (Shape A typed-columns) — characterization', () => {
     expect(status?.eav).toBe(false);
     expect(status?.column).toBe('stateOfDealStatus');
 
-    // Live shape (Bean Maxx): 60 visible EAV keys + 4 native catalog fields = 64 total.
+    // Live shape (Bean Maxx): the visible EAV keys + 4 native catalog fields. The EAV
+    // count is a LIVE-fixture number (63 seen 2026-09-20, was 60), so it is asserted
+    // against SQL truth, not pinned; the 4 native fields are code-registered → pinned.
+    const [{ n: visible }] = (await truth(
+      `select count(*)::int as n from field_definitions
+         where entity_type='opportunity' and organization_id='${ORG}' and is_visible=true`,
+    )) as Array<{ n: number }>;
+    expect(visible).toBeGreaterThan(0); // non-vacuity bound
     const eavCount = cat.fields.filter((f) => f.eav).length;
-    expect(eavCount).toBe(60);
+    expect(eavCount).toBe(visible);
     expect(cat.fields.filter((f) => !f.eav).length).toBe(4);
-    expect(cat.fields.length).toBe(64);
+    expect(cat.fields.length).toBe(visible + 4);
   });
 
   it('an EAV key absent from the query surface is unresolvable on query/fetch (curation gate)', async () => {
     // query/fetch EAV is GATED to is_visible=true (loadFieldMap): a key not on the
     // visible curation surface is NOT filterable — the engine THROWS a field-path
-    // error rather than silently matching nothing. The old dealbrain fixture proved
-    // this with a key resolvable in the UNGATED analytics overlay but hidden
-    // (is_visible=false) from query; Bean Maxx has ZERO hidden opportunity defs (all
-    // 60 visible — see divergences), so that gated-vs-overlay split is undemonstrable
-    // here. The throw-on-unresolvable-key behavior itself is still pinned, exercised
-    // with a key absent from field_definitions entirely.
-    const [{ n: hidden }] = (await truth(
-      `select count(*)::int as n from field_definitions
-         where entity_type='opportunity' and organization_id='${ORG}' and is_visible=false`,
-    )) as Array<{ n: number }>;
-    // Ground truth (Bean Maxx): no opportunity field def is hidden.
-    expect(hidden).toBe(0);
+    // error rather than silently matching nothing. When this net was first pinned
+    // Bean Maxx had ZERO hidden opportunity defs, so the gate could only be exercised
+    // with a key absent from field_definitions entirely; the live fixture has since
+    // grown hidden defs (11 seen 2026-09-20), so the hidden count is NOT pinned —
+    // instead EVERY is_visible=false key found at test time must be refused (the
+    // gate itself), and the absent-key case below is kept as the always-available leg.
+    const hiddenKeys = (
+      (await truth(
+        `select key from field_definitions fd
+           where entity_type='opportunity' and organization_id='${ORG}' and is_visible=false
+             and not exists (select 1 from field_definitions v
+                              where v.entity_type='opportunity' and v.organization_id='${ORG}'
+                                and v.key=fd.key and v.is_visible=true)`,
+      )) as Array<{ key: string }>
+    ).map((r) => r.key);
+    for (const key of hiddenKeys) {
+      await expect(
+        h.service.select('opportunities', {
+          filter: { on: key, op: 'is_null' },
+          page: { limit: 1 },
+        }),
+      ).rejects.toThrow(/invalid at final column/);
+    }
 
     const [{ n: nonexistent }] = (await truth(
       `select count(*)::int as n from field_definitions
