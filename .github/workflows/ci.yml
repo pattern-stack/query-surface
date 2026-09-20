@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# PR runs cancel stale siblings; main pushes QUEUE instead — cancelling a
+# main run could kill the publish job mid-upload. The publish job's
+# already-on-npm check makes queued runs cheap no-ops.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.x
+
+      # check-pack.sh packs the tarball and type-checks it from a fresh
+      # project with npm + npx, so node is a real dependency of the run.
+      - name: Setup node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      # `prepare` runs the build here too, so dist is present from this point.
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run check:type
+
+      # The repo's lint gate is `biome check src`, NOT `bun run lint`
+      # (`biome check .`) — the latter has 37 pre-existing errors under
+      # scripts/, unrelated to the package source. See CLAUDE.md.
+      - name: Lint
+        run: bunx @biomejs/biome check src
+
+      # DB-backed *.eval.spec.ts / *.char.eval.spec.ts skip cleanly without
+      # DBURL, so this is the unit run: 155 pass / 347 skip / 0 fail.
+      - name: Unit tests
+        run: bun test
+
+      - name: Packaging check (tarball resolves + type-checks from a fresh project)
+        run: scripts/check-pack.sh
+
+  # Publish to npm on every merge to main, gated on green tests. Runs the
+  # tarball check first, then publishes IFF the version in package.json isn't
+  # already on npm — so merges without a version bump are fast no-ops, and a
+  # bump is what releases.
+  #
+  # Auth is npm trusted publishing (OIDC) — no NPM_TOKEN secret. This repo +
+  # this workflow file must be registered as a trusted publisher for
+  # @pattern-stack/query-surface on npmjs.com before this job can publish.
+  publish:
+    name: publish
+    runs-on: ubuntu-latest
+    needs: test
+    # Kill-switch: the repo variable NPM_PUBLISH_ENABLED must be 'true'. Leave it unset until the
+    # package exists on npm AND this workflow is registered as its trusted publisher — otherwise
+    # every merge to main runs a publish that can only fail (or, once the publisher is registered,
+    # ships whatever is on main before the release PR lands).
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.NPM_PUBLISH_ENABLED == 'true'
+    timeout-minutes: 20
+    permissions:
+      id-token: write # mint the OIDC token npm exchanges for publish credentials
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.x
+
+      - name: Setup node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Update npm (trusted publishing needs >= 11.5.1)
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Gate: build + pack + verify the consumer contract BEFORE anything
+      # uploads, so a bad tarball aborts the run instead of shipping.
+      - name: Packaging check
+        run: scripts/check-pack.sh
+
+      - name: Publish if the version isn't on npm yet
+        run: |
+          set -euo pipefail
+          name=$(node -p "require('./package.json').name")
+          ver=$(node -p "require('./package.json').version")
+          on_npm=$(npm view "${name}@${ver}" version 2>/dev/null || true)
+          if [ "${on_npm}" = "${ver}" ]; then
+            echo "${name}@${ver} is already on npm — nothing to publish."
+            exit 0
+          fi
+          echo "Publishing ${name}@${ver} (prepack runs \`bun run build\`)."
+          npm publish --access public
