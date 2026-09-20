@@ -153,7 +153,7 @@ async function rebuild(): Promise<void> {
     /* app not running — fall through to defaults */
   }
 
-  if (resolved && resolved.measures.length) {
+  if (resolved?.measures.length) {
     measureSpecs = resolved.measures.map((m) => ({
       name: m.name,
       key: m.key,
@@ -208,15 +208,26 @@ async function rebuild(): Promise<void> {
 
 await rebuild();
 
-function crispFrom(body: { mode?: string; threshold?: number; top_k?: number }) {
+// The JSON body the page POSTs to the relevance routes (each route reads the keys it needs).
+type DemoBody = {
+  query: string;
+  measure?: string;
+  mode?: string;
+  threshold?: number;
+  top_k?: number;
+  limit?: number;
+  dim?: string;
+};
+
+function crispFrom(body: DemoBody) {
   return body.mode === 'top_k'
     ? { top_k: Math.max(1, Math.floor(body.top_k ?? 25)) }
     : { threshold: Math.min(1, Math.max(0, body.threshold ?? 0.55)) };
 }
 
 // ── the cohort metric: aggregate() with a cross-grain relevant leaf + the mandatory citation ──
-async function apiRelevant(body: any) {
-  const m = MEASURES[body.measure as string] ?? MEASURES[DEFAULT_MEASURE];
+async function apiRelevant(body: DemoBody) {
+  const m = MEASURES[body.measure ?? DEFAULT_MEASURE] ?? MEASURES[DEFAULT_MEASURE];
   const t0 = performance.now();
   const res = await h.service.aggregate(
     'opportunities',
@@ -251,7 +262,7 @@ async function apiRelevant(body: any) {
 }
 
 // ── explore the cohort's EVIDENCE: query() the matching observations, ranked + scored ──
-async function apiExplore(body: any) {
+async function apiExplore(body: DemoBody) {
   const t0 = performance.now();
   const res = await h.service.query('observations', {
     filter: { on: 'normalized_text', op: 'relevant', query: body.query, ...crispFrom(body) },
@@ -277,7 +288,7 @@ async function apiExplore(body: any) {
 // ── conformed dimensions: group the cohort by a dimension; the GRAPH decides what's legal ──
 // A to-one dim (accounts.name) → a grain-safe LEFT JOIN. A to-many dim (observations.type) →
 // REFUSED (it would fan out the measure). The legality is derived from the join graph, not listed.
-async function apiGroup(body: any) {
+async function apiGroup(body: DemoBody) {
   const dim = String(body.dim ?? 'accounts.name');
   const t0 = performance.now();
   const res = await h.service.aggregate(
@@ -311,11 +322,11 @@ async function apiGroup(body: any) {
 // ── the host-supplied catalog: describe(entity) — native ⊕ EAV fields + the relation graph ──
 async function apiDescribe(entity: string) {
   const t0 = performance.now();
-  const d: any = await h.service.describe(entity);
+  const d = await h.service.describe(entity);
   return { ...d, ms: Math.round(performance.now() - t0) };
 }
 
-const ROUTES: Record<string, (body: any) => Promise<unknown>> = {
+const ROUTES: Record<string, (body: DemoBody) => Promise<unknown>> = {
   '/api/relevant': apiRelevant,
   '/api/explore': apiExplore,
   '/api/group': apiGroup,
@@ -366,7 +377,7 @@ const server = Bun.serve({
     const route = ROUTES[url.pathname];
     if (route && req.method === 'POST') {
       try {
-        return Response.json(await route(await req.json()));
+        return Response.json(await route((await req.json()) as DemoBody));
       } catch (e) {
         // The engine's fail-loud refusals (XOR violation, scope gap, non-conforming) land here —
         // surface them verbatim; they're the trust story, not noise.

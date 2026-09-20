@@ -5,12 +5,12 @@
  *   FORMAT B = mongo/prisma forgiving DSL (what filter-normalize.ts accepts)
  *
  * Run: bun scripts/lang-eval/run.ts
- * (from /Users/dug/Projects/query-surface)
+ * (from the repo root)
  */
 
-import { readFileSync, writeFileSync } from 'fs';
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { normalizeFilter } from '../../src/internal/language/filter-normalize.ts';
 import validatePredicate from './validate-predicate.ts';
 
@@ -146,17 +146,17 @@ function extractJson(raw: string): unknown {
 
   let depth = 0;
   let inString = false;
-  let escape = false;
+  let escaped = false;
   let end = -1;
 
   for (let i = start; i < text.length; i++) {
     const ch = text[i];
-    if (escape) {
-      escape = false;
+    if (escaped) {
+      escaped = false;
       continue;
     }
     if (ch === '\\' && inString) {
-      escape = true;
+      escaped = true;
       continue;
     }
     if (ch === '"') {
@@ -259,8 +259,8 @@ async function main() {
   for (const intent of intents) {
     const a = results.find((r) => r.intent_id === intent.id && r.format === 'A');
     const b = results.find((r) => r.intent_id === intent.id && r.format === 'B');
-    const aStr = a?.valid ? '✓' : `✗`;
-    const bStr = b?.valid ? '✓' : `✗`;
+    const aStr = a?.valid ? '✓' : '✗';
+    const bStr = b?.valid ? '✓' : '✗';
     tableRows.push(`| ${intent.id} | ${intent.description} | ${aStr} | ${bStr} |`);
   }
 
