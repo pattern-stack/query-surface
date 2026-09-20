@@ -2,7 +2,7 @@
 //
 // CHARACTERIZATION net: pins what the engine does TODAY for dotted-path filters,
 // sorts, and projections through the relational graph. The graph (from
-// schema.dealbrain relations()):
+// schema.dealbrain defineRelations()):
 //   accounts        has_many opportunities, has_many observations
 //   opportunities   belongs_to account (fk account_id), has_many observations
 //   observations    belongs_to opportunity (fk opportunity_id),

@@ -12,7 +12,7 @@
 // Toggle `enabled`, change `name`, or repoint `eav` in the DB and re-run the
 // loader → the exposed ERD changes, no redeploy. See docs/architecture.md.
 
-import type { Relations } from 'drizzle-orm';
+import type { RelationsRecord } from 'drizzle-orm';
 import { asc, eq } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { PgTable } from 'drizzle-orm/pg-core';
@@ -56,7 +56,8 @@ interface EavJson {
 
 export interface CatalogEntry {
   table: PgTable;
-  relations: Relations;
+  /** The table's `defineRelations()` entry `.relations`. */
+  relations?: RelationsRecord;
   fieldMeta?: FieldMetaMap;
   meta?: EntityMeta;
 }

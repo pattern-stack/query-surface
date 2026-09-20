@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { type SQL, relations, sql } from 'drizzle-orm';
+import { type SQL, defineRelations, sql } from 'drizzle-orm';
 import { PgDialect, pgTable, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
 import { projectCatalog } from '../../../../presentation/nest/projection.ts';
 import { buildEntityCatalog } from '../../registry/catalog.ts';
@@ -20,11 +20,9 @@ const children = pgTable('children', {
   occurredAt: timestamp('occurred_at'),
   scope: varchar('scope', { length: 32 }),
 });
-const parentsRelations = relations(parents, ({ many }) => ({
-  children: many(children),
-}));
-const childrenRelations = relations(children, ({ one }) => ({
-  parent: one(parents, { fields: [children.parentId], references: [parents.id] }),
+const relations = defineRelations({ parents, children }, (r) => ({
+  parents: { children: r.many.children() },
+  children: { parent: r.one.parents({ from: r.children.parentId, to: r.parents.id }) },
 }));
 
 const COMPUTED: Record<string, ComputedFieldSpec[]> = {
@@ -50,10 +48,7 @@ const COMPUTED: Record<string, ComputedFieldSpec[]> = {
 };
 
 function configure(): void {
-  registerSchema(
-    { parents, children, parentsRelations, childrenRelations },
-    { computed: COMPUTED },
-  );
+  registerSchema(relations, { computed: COMPUTED });
 }
 
 const dialect = new PgDialect();

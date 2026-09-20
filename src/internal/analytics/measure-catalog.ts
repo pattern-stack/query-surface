@@ -149,7 +149,7 @@ export function validateMeasureDef(
             const detail =
               plan.kind === 'reject'
                 ? plan.reason
-                : `${def.source}→${node.col} is a ${plan.kind} (has_many / would fan), not a 1:1 belongs_to chain`;
+                : `${def.source}→${node.col} is a ${plan.kind} (has_many / would fan), not a 1:1 to-one chain`;
             throw new Error(
               `${ENGINE_ERROR.AGGREGATE} measure "${name}": col "${node.col}" is not a to-one reach to a registered numeric field — ${detail}`,
             );

@@ -50,7 +50,7 @@ export class QuerySurfaceService implements OnModuleInit {
   onModuleInit(): void {
     // Register the host's curated tables + relations + EAV overlay into the
     // surface once at startup (introspection-derived).
-    registerSchema(this.options.schema as never, {
+    registerSchema(this.options.relations, {
       ...(this.options.eav ? { eav: this.options.eav } : {}),
       ...(this.options.fieldMeta ? { fieldMeta: this.options.fieldMeta } : {}),
       ...(this.options.computed ? { computed: this.options.computed } : {}),

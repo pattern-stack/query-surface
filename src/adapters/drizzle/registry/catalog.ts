@@ -18,6 +18,7 @@ import type { PgColumn } from 'drizzle-orm/pg-core';
 import type { EntityName } from '../../../internal/language/types.ts';
 import type { FieldMap } from '../eav/field-map.ts';
 import type { EntityKind } from './define-entity.ts';
+import { columnDataType } from './introspect.ts';
 import { registry } from './registry.ts';
 
 // ---------------------------------------------------------------------------
@@ -78,9 +79,9 @@ export interface ExampleFilter {
 
 export interface RelationshipInfo {
   name: string;
-  kind: 'belongs_to' | 'has_many';
+  kind: 'belongs_to' | 'has_one' | 'has_many';
   target: EntityName;
-  /** The FK column joining the two entities (on the child for has_many). */
+  /** The FK column joining the two entities (on the target for has_one / has_many). */
   fk: string;
 }
 
@@ -105,7 +106,6 @@ export interface EntityCatalog {
 
 interface PgColumnIntrospect {
   name: string;
-  dataType?: string;
   columnType?: string;
   notNull?: boolean;
   enumValues?: readonly string[];
@@ -130,10 +130,13 @@ export function columnTypeFromPg(col: PgColumn): {
     case 'PgBigInt64':
       return { type: 'integer' };
     case 'PgNumeric':
+    case 'PgNumericNumber':
+    case 'PgNumericBigInt':
     case 'PgReal':
     case 'PgDoublePrecision':
       return { type: 'number' };
     case 'PgDate':
+    case 'PgDateString':
       return { type: 'date' };
     case 'PgTimestamp':
     case 'PgTimestampString':
@@ -148,7 +151,7 @@ export function columnTypeFromPg(col: PgColumn): {
     default:
       break;
   }
-  switch (c.dataType) {
+  switch (columnDataType(col)) {
     case 'boolean':
       return { type: 'boolean' };
     case 'number':

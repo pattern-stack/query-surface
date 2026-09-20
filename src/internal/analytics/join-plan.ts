@@ -2,7 +2,7 @@
 //
 // A PURE graph walk over the cardinality graph (AggRegistry.rels). Given a dotted
 // dimension/filter path, it returns a tagged descriptor of HOW that path reaches its
-// column — a belongs_to LEFT-JOIN chain (to-one), a has_many semijoin (filter only),
+// column — a to-one LEFT-JOIN chain (belongs_to / has_one hops), a has_many semijoin (filter only),
 // a plain local column, or a typed reject. It NEVER emits Drizzle/SQL: the descriptor
 // carries only entity + column + fk/pk NAMES. The Drizzle lowering (compile-drizzle.ts,
 // the driven adapter) turns the descriptor into LEFT JOIN / EXISTS SQL and folds scope.
@@ -23,12 +23,16 @@ import type { AggColType, AggRegistry } from './types';
 export type DimRole = 'group' | 'filter';
 export type JoinPlanRejectCode = 'to-many' | 'ambiguous' | 'unreachable' | 'unsupported';
 
-/** One belongs_to hop: LEFT JOIN `to` ON (`from`.`fk` = `to`.`toPk`). */
+/** One to-one hop: LEFT JOIN `to` ON (`from`.`fromCol` = `to`.`toCol`).
+ *  belongs_to (fk on `from`): fromCol = the fk, toCol = `to`'s pk.
+ *  has_one    (fk on `to`):   fromCol = `from`'s pk, toCol = the fk.
+ *  Either way the join is 1:1 — it cannot fan the source rows. */
 export interface JoinHop {
   from: string;
   to: string;
-  fk: string; // FK column (db name) on `from`
-  toPk: string; // PK column (db name) on `to`
+  kind: 'belongs_to' | 'has_one';
+  fromCol: string; // column (db name) on `from`
+  toCol: string; // column (db name) on `to`
 }
 
 export type JoinPlan =
@@ -37,23 +41,22 @@ export type JoinPlan =
   | { kind: 'semijoin'; child: string; fk: string; parentPk: string; column: string }
   | { kind: 'reject'; code: JoinPlanRejectCode; reason: string };
 
-/** Every simple belongs_to-only path from→to (≤ maxDepth). length>1 ⇒ the diamond. */
-export function belongsToPaths(
-  reg: AggRegistry,
-  from: string,
-  to: string,
-  maxDepth = 6,
-): JoinHop[][] {
+/** Every simple to-one path from→to (≤ maxDepth), over belongs_to AND has_one edges.
+ *  length>1 ⇒ the diamond. */
+export function toOnePaths(reg: AggRegistry, from: string, to: string, maxDepth = 6): JoinHop[][] {
   const out: JoinHop[][] = [];
   const dfs = (cur: string, path: JoinHop[], seen: ReadonlySet<string>) => {
     if (path.length >= maxDepth) return;
     const ent = reg[cur];
     if (!ent) return;
     for (const rel of Object.values(ent.rels)) {
-      if (rel.kind !== 'belongs_to') continue;
+      if (rel.kind === 'has_many') continue;
       const tgt = reg[rel.target];
       if (!tgt || seen.has(rel.target)) continue;
-      const hop: JoinHop = { from: cur, to: rel.target, fk: rel.fk, toPk: tgt.pk };
+      const hop: JoinHop =
+        rel.kind === 'belongs_to'
+          ? { from: cur, to: rel.target, kind: 'belongs_to', fromCol: rel.fk, toCol: tgt.pk }
+          : { from: cur, to: rel.target, kind: 'has_one', fromCol: ent.pk, toCol: rel.fk };
       if (rel.target === to) {
         out.push([...path, hop]);
         continue;
@@ -64,6 +67,9 @@ export function belongsToPaths(
   dfs(from, [], new Set([from]));
   return out;
 }
+
+/** @deprecated renamed to {@link toOnePaths} (it now walks has_one edges too). */
+export const belongsToPaths = toOnePaths;
 
 /** A direct has_many child edge source→child (the semijoin shape). */
 function directHasMany(reg: AggRegistry, from: string, child: string): { fk: string } | null {
@@ -132,7 +138,7 @@ export function resolveJoinPlan(
       const hits: { target: string; hops: JoinHop[] }[] = [];
       for (const t of Object.keys(reg)) {
         if (t === sourceEntity) continue;
-        const paths = belongsToPaths(reg, sourceEntity, t);
+        const paths = toOnePaths(reg, sourceEntity, t);
         if (paths.length !== 1) continue; // 0 = unreachable / not-to-one; >1 = diamond (excluded)
         // T must own this name AS A DIMENSION (native OR EAV) — a bare group dim resolves only to a
         // conformed DIMENSION on the target, never to a measure (group-by is dimensions-only).
@@ -172,7 +178,7 @@ export function resolveJoinPlan(
     };
   }
 
-  const toOne = belongsToPaths(reg, sourceEntity, target);
+  const toOne = toOnePaths(reg, sourceEntity, target);
   if (toOne.length === 1) {
     const hops = toOne[0]!;
     return { kind: 'to-one', target, column, hops, traversed: hops.map((h) => h.to) };
@@ -216,7 +222,7 @@ export function resolveJoinPlan(
     return {
       kind: 'reject',
       code: 'to-many',
-      reason: `dimension "${dotted}" is not conformed to ${sourceEntity} grain (${sourceEntity}→${target} is to-many; grouping by it would fan out the measure). Only to-one (belongs_to) dimensions are groupable.`,
+      reason: `dimension "${dotted}" is not conformed to ${sourceEntity} grain (${sourceEntity}→${target} is to-many; grouping by it would fan out the measure). Only to-one (belongs_to / has_one) dimensions are groupable.`,
     };
   }
   return {
@@ -230,7 +236,7 @@ export function resolveJoinPlan(
  *  fields of every entity reachable by an UNAMBIGUOUS to-one path. The graph-derived
  *  conformed set `describe` advertises per metric. Covers BOTH native (registry-tagged)
  *  and EAV (field-map-tagged) dims: an EAV dim on a to-one target is executable — the
- *  lowering composes the 1:1 field_values join THROUGH the belongs_to LEFT JOIN
+ *  lowering composes the 1:1 field_values join THROUGH the to-one LEFT JOIN
  *  (compile-drizzle lowerToOne), so describe/execute parity holds for it. */
 export interface ConformedDim {
   /** what the caller passes in group_by/filter: `col` (own) | `entity.col` (to-one). */
@@ -265,7 +271,7 @@ export function conformedDimensions(reg: AggRegistry, sourceEntity: string): Con
   for (const target of Object.keys(reg)) {
     if (target === sourceEntity) continue;
     // unambiguous to-one only — a diamond target is excluded (the resolver rejects it).
-    if (belongsToPaths(reg, sourceEntity, target).length !== 1) continue;
+    if (toOnePaths(reg, sourceEntity, target).length !== 1) continue;
     for (const [col, f] of Object.entries(reg[target]!.fields)) {
       if (f.role === 'dimension') {
         out.push({

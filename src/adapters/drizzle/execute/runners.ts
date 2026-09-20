@@ -4,7 +4,7 @@
 //   runSearch — narrow + return IDs (+ optional preview rows)
 //   runFetch  — hydrate IDs into full rows (+ optional refinement filter)
 
-import { type SQL, count, sql } from 'drizzle-orm';
+import { type AnyRelations, type SQL, count, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { PgColumn } from 'drizzle-orm/pg-core';
 import { ENGINE_ERROR } from '../../../internal/language/error-messages.ts';
@@ -35,7 +35,7 @@ import { catalogPreview, nativeSelectShape } from './preview.ts';
 // ============================================================================
 
 export async function runSearch(
-  db: NodePgDatabase<Record<string, unknown>>,
+  db: NodePgDatabase<AnyRelations>,
   query: SingleSearchQuery,
   opts: { preview?: boolean; include_sql?: boolean },
   eav?: EavContext,
@@ -242,7 +242,7 @@ export async function runSearch(
 }
 
 export async function runSearchMulti(
-  db: NodePgDatabase<Record<string, unknown>>,
+  db: NodePgDatabase<AnyRelations>,
   queries: SingleSearchQuery[],
   opts: { preview?: boolean; include_sql?: boolean },
   eav?: EavContext,
@@ -264,7 +264,7 @@ export async function runSearchMulti(
 // ============================================================================
 
 export async function runFetch(
-  db: NodePgDatabase<Record<string, unknown>>,
+  db: NodePgDatabase<AnyRelations>,
   req: FetchRequest,
   eav?: EavContext,
   // Fail-closed tenancy-scope resolver for TRAVERSED expand relations (invariant #3).
