@@ -21,6 +21,15 @@ bun add @pattern-stack/query-surface drizzle-orm@1.0.0-rc.4
 # ./mcp  also needs: @modelcontextprotocol/sdk zod
 ```
 
+**npm users:** add `--legacy-peer-deps`. `drizzle-orm@1.0.0-rc.4` declares an optional `effect`
+peer that npm's resolver rejects (`ERESOLVE … peerOptional effect`) — `npm i drizzle-orm@1.0.0-rc.4`
+fails the same way on its own, with this package nowhere in the tree. Bun is unaffected, and the
+workaround goes away when Drizzle 1.0 ships stable.
+
+```bash
+npm install --legacy-peer-deps @pattern-stack/query-surface drizzle-orm@1.0.0-rc.4
+```
+
 Peer: **`drizzle-orm ^1.0.0-rc.4`** (Drizzle 1.0 / relational queries v2). Entry points:
 `@pattern-stack/query-surface` (engine + types), `/nest` (NestJS module + REST), `/mcp`.
 
