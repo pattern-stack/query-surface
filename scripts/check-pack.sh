@@ -17,8 +17,12 @@ cd "$WORK/app"
 cat > package.json <<JSON
 { "name": "qs-consumer", "private": true, "type": "module" }
 JSON
-npm install --no-audit --no-fund --silent "$TGZ" drizzle-orm@1.0.0-rc.4 typescript@5.9.3 @types/node@22 \
-  @nestjs/common@11 @nestjs/swagger@11 rxjs@7 zod@3 reflect-metadata >/dev/null
+# --legacy-peer-deps: drizzle-orm 1.0 RC declares an optional `effect` peer that npm's
+# resolver rejects (`npm i drizzle-orm@1.0.0-rc.4` fails the same way with this package
+# absent). This is the install route the README documents for npm; drop the flag once
+# Drizzle 1.0 is stable. Bun resolves the same graph without it (checked at the end).
+npm install --no-audit --no-fund --silent --legacy-peer-deps "$TGZ" drizzle-orm@1.0.0-rc.4 typescript@5.9.3 @types/node@22 \
+  @nestjs/common@11 @nestjs/core@11 @nestjs/swagger@11 rxjs@7 zod@3 reflect-metadata >/dev/null
 cat > consumer.ts <<'TS'
 import type {
   AggEntity, AggFieldMeta, AggRegistry, AggRelationship, AggregateModel, DerivedMeasureDef,

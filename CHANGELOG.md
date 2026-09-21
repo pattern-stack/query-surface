@@ -16,6 +16,14 @@ All notable changes to `@pattern-stack/query-surface`. Format follows
   resolves 41 root exports out of `dist/`; npm with `--legacy-peer-deps` matches. Neither route
   pulls a runtime dependency.
 
+### Fixed
+- `scripts/check-pack.sh` (CI's packaging gate) broke on the same upstream drizzle resolution
+  failure — it installs the tarball into a fresh project with npm. It now uses
+  `--legacy-peer-deps`, i.e. the exact route the README documents, and installs `@nestjs/core`
+  explicitly since that flag also stops npm auto-installing peers. Drop both when Drizzle 1.0 is
+  stable. The break is time-dependent, not commit-dependent: the same script passed on every run
+  through #52.
+
 _First release published by CI via npm trusted publishing (OIDC) — 0.3.0 was published manually to
 create the package, so it carries no provenance attestation; this one should._
 
