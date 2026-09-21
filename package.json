@@ -1,6 +1,6 @@
 {
   "name": "@pattern-stack/query-surface",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "module",
   "description": "Agent-aware semantic query + aggregation surface (describe/select/fetch/measure/compare) over a host schema \u2014 hexagonal, backend-pluggable.",
   "license": "FSL-1.1-MIT",

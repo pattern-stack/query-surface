@@ -6,6 +6,27 @@ All notable changes to `@pattern-stack/query-surface`. Format follows
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-09-21
+
+### Documentation
+- README: npm consumers need `--legacy-peer-deps`. `drizzle-orm@1.0.0-rc.4` declares an optional
+  `effect` peer that npm's resolver rejects; `npm i drizzle-orm@1.0.0-rc.4` fails identically with
+  this package absent from the tree, so it is an upstream RC issue, not a packaging defect here.
+  Bun is unaffected. Verified against the published 0.3.0 tarball: bun installs 2 packages and
+  resolves 41 root exports out of `dist/`; npm with `--legacy-peer-deps` matches. Neither route
+  pulls a runtime dependency.
+
+### Fixed
+- `scripts/check-pack.sh` (CI's packaging gate) broke on the same upstream drizzle resolution
+  failure — it installs the tarball into a fresh project with npm. It now uses
+  `--legacy-peer-deps`, i.e. the exact route the README documents, and installs `@nestjs/core`
+  explicitly since that flag also stops npm auto-installing peers. Drop both when Drizzle 1.0 is
+  stable. The break is time-dependent, not commit-dependent: the same script passed on every run
+  through #52.
+
+_First release published by CI via npm trusted publishing (OIDC) — 0.3.0 was published manually to
+create the package, so it carries no provenance attestation; this one should._
+
 ## [0.3.0] — 2026-09-20
 
 First release on npm. No engine or API changes since 0.2.0 — this release is licensing, packaging
