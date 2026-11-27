@@ -15,7 +15,7 @@
     "outDir": "./dist",
     "noEmit": true,
     "allowImportingTsExtensions": true,
-    // Vendored working copy (packages/query-surface) — relaxed like the dealbrain build.
+    // Vendored working copy (packages/query-surface) — relaxed like the reference app's build.
     "noUncheckedIndexedAccess": false,
     "noPropertyAccessFromIndexSignature": false,
     "noUnusedLocals": false,

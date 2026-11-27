@@ -1,5 +1,5 @@
 // Characterization harness — boots the query-surface package against the LIVE
-// dealbrain DB and exposes the PUBLIC surface (QueryApplicationService:
+// reference DB and exposes the PUBLIC surface (QueryApplicationService:
 // describe / query / fetch / aggregate / compare).
 //
 // This is the shared helper the area *.char.eval.spec.ts files import. It pins
@@ -7,18 +7,18 @@
 // behavior, not re-derive boot.
 //
 // What it wires:
-//   1. configureQueryRegistry(...) with the SAME 3 dealbrain entities used by
-//      model.dealbrain (accounts / opportunities / observations). compiler.ts
+//   1. configureQueryRegistry(...) with the SAME 3 reference entities used by
+//      model.sales (accounts / opportunities / observations). compiler.ts
 //      reads the MODULE-GLOBAL `registry`, so the retrieval path
 //      (query / fetch / describe) is dead unless this runs first. makeQuerySurface
 //      calls it eagerly in the constructor.
-//   2. options.aggregateModel = () => loadDealbrainModel(db) — the SAME builder
+//   2. options.aggregateModel = () => loadSalesModel(db) — the SAME builder
 //      the aggregate evals use, so aggregate() characterization matches the
 //      Drizzle-native eval superset.
-//   3. options.actorOrganizationId — dealbrain's opportunity field_definitions
+//   3. options.actorOrganizationId — the reference app's opportunity field_definitions
 //      are ORG-owned (user_id NULL, organization_id set), so query/fetch EAV
 //      resolution must load by org ownership. The org id is read from the DB at
-//      boot (DEALBRAIN_ORG below is the live value, asserted at boot to catch a
+//      boot (SALES_ORG below is the live value, asserted at boot to catch a
 //      reseed). EAV fields on query/fetch are GATED to is_visible=true (15 keys),
 //      UNLIKE the aggregate analytics overlay which is org-scoped UNGATED — a
 //      real divergence between the two EAV read paths, see notes.
@@ -26,7 +26,7 @@
 //      pulls a real stored observation embedding from the DB for a known phrase,
 //      so a semantic-rank spec can assert that row ranks #1 with similarity≈1.
 //      Semantic rank needs the `embedding` column to be a REGISTERED Drizzle
-//      column — which the CANONICAL observations table (schema.dealbrain) now
+//      column — which the CANONICAL observations table (schema.sales) now
 //      carries, alongside normalized_text + the provenance/scope columns. The
 //      harness registers that canonical table directly (no extended shim).
 
@@ -34,7 +34,7 @@ import { sql } from 'drizzle-orm';
 import { POC_ACTOR_USER_ID } from '../adapters/drizzle/eav/field-map.ts';
 import { type DrizzleDb, makeDb } from '../adapters/drizzle/execute/drizzle-db.ts';
 import { configureQueryRegistry } from '../adapters/drizzle/registry/registry.ts';
-import { loadDealbrainModel, observationsMeta } from '../adapters/reference/model.dealbrain.ts';
+import { loadSalesModel, observationsMeta } from '../adapters/reference/model.sales.ts';
 import {
   accounts,
   accountsRelations,
@@ -43,7 +43,7 @@ import {
   observationsRelations,
   opportunities,
   opportunitiesRelations,
-} from '../adapters/reference/schema.dealbrain.ts';
+} from '../adapters/reference/schema.sales.ts';
 import type { EntityName } from '../internal/language/types.ts';
 import {
   QueryApplicationService,
@@ -52,7 +52,7 @@ import {
 } from '../query.application-service.ts';
 
 // Back-compat aliases: the observations retrieval surface is now CANONICAL in
-// schema.dealbrain (normalized_text + embedding + provenance/scope columns), so
+// schema.sales (normalized_text + embedding + provenance/scope columns), so
 // the old harness-local extended shim is gone. These re-exports keep eval specs
 // that import `observationsExt` / `observationsExtRelations` (e.g.
 // relevant-aggregate.eval.spec) pointing at the canonical table — one source of
@@ -60,10 +60,10 @@ import {
 export const observationsExt = observations;
 export const observationsExtRelations = observationsRelations;
 
-// The live dealbrain organization that owns the opportunity field_definitions.
+// The live reference organization that owns the opportunity field_definitions.
 // Asserted at boot (makeQuerySurface) so a reseed that changes it fails loudly
 // instead of silently resolving zero EAV fields.
-export const DEALBRAIN_ORG = 'a30c290d-6798-4da7-b3af-7b48c50212b8';
+export const SALES_ORG = 'a30c290d-6798-4da7-b3af-7b48c50212b8';
 
 export interface QuerySurfaceHarness {
   service: QueryApplicationService;
@@ -72,13 +72,13 @@ export interface QuerySurfaceHarness {
 }
 
 /**
- * Boot the query-surface against live dealbrain.
+ * Boot the query-surface against the live reference DB.
  *
  * configureQueryRegistry runs EAGERLY here (the module-global registry must be
- * populated before any compile()), with the same 3 entities as model.dealbrain
+ * populated before any compile()), with the same 3 entities as model.sales
  * — opportunities carries the typed-columns EAV strategy so EAV keys resolve on
  * query/fetch; observations is the CANONICAL table (normalized_text + embedding +
- * provenance/scope columns) shared with model.dealbrain.
+ * provenance/scope columns) shared with model.sales.
  */
 export function makeQuerySurface(
   dburl: string,
@@ -86,9 +86,9 @@ export function makeQuerySurface(
     embed?: (text: string) => Promise<number[]>;
     // Host-resolved measures (the field-management app's semantic layer). Omitted → the built-in
     // default set. When provided, the aggregate model's measures are DATA-DRIVEN + gated.
-    measureSpecs?: import('../adapters/reference/model.dealbrain.ts').DealbrainMeasureSpec[];
+    measureSpecs?: import('../adapters/reference/model.sales.ts').SalesMeasureSpec[];
     // Host-resolved EAV dimensions (groupable select/text fields). Omitted → none.
-    dimensionSpecs?: import('../adapters/reference/model.dealbrain.ts').DealbrainDimensionSpec[];
+    dimensionSpecs?: import('../adapters/reference/model.sales.ts').SalesDimensionSpec[];
     // Host-named measure definitions (slug → MeasureDef), merged onto the auto-derived catalog so an
     // agent can call a measure by a stable slug ({ref:'total_revenue'}) instead of guessing on/agg.
     measureDefs?: import('../internal/analytics/measure-catalog.ts').MeasureCatalog;
@@ -140,11 +140,11 @@ export function makeQuerySurface(
   const service = new QueryApplicationService(db, {
     // actorUserId is REQUIRED by eav() even when org-scoped — the WHERE branches
     // on organizationId (loadFieldMap), so userId only satisfies the guard. The
-    // POC constant is fine: dealbrain's defs are org-owned (user_id NULL).
+    // POC constant is fine: the reference app's defs are org-owned (user_id NULL).
     actorUserId: POC_ACTOR_USER_ID,
-    actorOrganizationId: DEALBRAIN_ORG,
+    actorOrganizationId: SALES_ORG,
     aggregateModel: () =>
-      loadDealbrainModel(db, opts?.measureSpecs, opts?.dimensionSpecs, opts?.measureDefs),
+      loadSalesModel(db, opts?.measureSpecs, opts?.dimensionSpecs, opts?.measureDefs),
     semanticColumns: { observations: { normalized_text: 'embedding' } },
     // Default: the deterministic ILIKE stub (specs are hermetic). A caller (e.g. the demo) may
     // inject a REAL embed provider to exercise true free-text concepts against the stored vectors.

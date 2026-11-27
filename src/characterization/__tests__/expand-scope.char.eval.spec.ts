@@ -11,7 +11,7 @@
 // All assertions go through the PUBLIC surface (service.fetch); fixtures are pulled
 // from the live DB so no hard-coded id drifts.
 //
-//   DBURL=postgres://postgres:password@localhost:54321/dealbrain \
+//   DBURL=postgres://postgres:password@localhost:54321/<db> \
 //     bun test src/characterization/__tests__/expand-scope.char.eval.spec.ts
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';

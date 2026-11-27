@@ -1,4 +1,4 @@
-// ADR-0024 wave 1 — conformed-dimension falsifier against LIVE dealbrain. Proves the
+// ADR-0024 wave 1 — conformed-dimension falsifier against the LIVE reference DB. Proves the
 // graph-derived behavior end-to-end on real data:
 //   • a to-one parent dim (account.*) is groupable/filterable via a belongs_to LEFT JOIN
 //   • a cross-grain boolean filter compiles to a SEMIJOIN (EXISTS), never a fan-out join
@@ -6,20 +6,20 @@
 //   • tenancy scope folds THROUGH a join (fail-closed on an uncovered joined entity)
 //   • the conformed-dimension set is graph-derived per source
 //
-//   DBURL=postgres://postgres:PW@localhost:54321/dealbrain bun test conformed-dimensions.eval
+//   DBURL=postgres://postgres:PW@localhost:54321/<db> bun test conformed-dimensions.eval
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { conformedDimensions } from '../../../../internal/analytics/join-plan';
 import { TENANT_GLOBAL } from '../../../../internal/analytics/types';
-import { type AggregateModel, loadDealbrainModel } from '../../../reference/model.dealbrain';
+import { type AggregateModel, loadSalesModel } from '../../../reference/model.sales';
 import { type DrizzleDb, makeDb } from '../drizzle-db';
 import { runAggregateDrizzle } from '../run-drizzle';
 
 const DBURL = process.env.DBURL;
 const suite = DBURL ? describe : describe.skip;
 
-suite('conformed dimensions — live dealbrain (ADR-0024 wave 1)', () => {
+suite('conformed dimensions — live reference DB (ADR-0024 wave 1)', () => {
   let db: DrizzleDb;
   let close: () => Promise<void>;
   let model: AggregateModel;
@@ -29,7 +29,7 @@ suite('conformed dimensions — live dealbrain (ADR-0024 wave 1)', () => {
 
   beforeAll(async () => {
     ({ db, close } = makeDb(DBURL!));
-    model = await loadDealbrainModel(db);
+    model = await loadSalesModel(db);
   });
   afterAll(async () => {
     await close?.();

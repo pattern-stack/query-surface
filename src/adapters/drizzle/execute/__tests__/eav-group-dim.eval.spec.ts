@@ -1,11 +1,11 @@
 // EAV-FIELDS-AS-CONFORMED-DIMENSIONS — aggregate() group_by an EAV select/text field (ADR-0025 §3,
 // the field-management semantic-layer binding). An EAV dim is a 1:1 field_values LEFT JOIN, grain-safe
 // (groupable like a to-one dim, NEVER a fan-out). Referenced by its safe canonical name (e.g. 'stage'),
-// which maps to the dealbrain key ('StageName') via the host-supplied dimensionSpecs.
+// which maps to the reference key ('StageName') via the host-supplied dimensionSpecs.
 //
 // DETERMINISM: every expected value is recomputed from raw SQL through the SAME pool AT TEST TIME
 // (the Bean Maxx fixture is non-hermetic). Run:
-//   DBURL=postgres://postgres:password@localhost:54321/dealbrain \
+//   DBURL=postgres://postgres:password@localhost:54321/<db> \
 //     bun test src/adapters/drizzle/execute/__tests__/eav-group-dim.eval.spec.ts
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
@@ -37,7 +37,7 @@ suite('EAV fields as conformed group dimensions — aggregate() (ADR-0025 §3)',
     (await h.db.execute(sql.raw(q))).rows as T[];
   const num = (v: unknown) => Number(v);
 
-  // A field_values CTE for a given dealbrain field key — the 1:1 (entity → value) the engine joins.
+  // A field_values CTE for a given reference field key — the 1:1 (entity → value) the engine joins.
   const fv = (key: string, col: 'value_text' | 'value_number') =>
     `(select fv.entity_id eid, fv.${col} v from field_values fv
         join field_definitions fd on fd.id = fv.field_definition_id where fd.key = '${key}')`;
@@ -144,7 +144,7 @@ suite('EAV fields as conformed group dimensions — aggregate() (ADR-0025 §3)',
   });
 
   it('R4 an UNDECLARED EAV field is NOT groupable (closed-by-default): rejects, never silently drops', async () => {
-    // 'champion_status' exists in dealbrain but is NOT in dimensionSpecs here → not conformed → reject.
+    // 'champion_status' exists in the reference DB but is NOT in dimensionSpecs here → not conformed → reject.
     await expect(
       h.service.measure('opportunities', {
         group_by: ['champion_status'],

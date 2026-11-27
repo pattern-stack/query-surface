@@ -2,7 +2,7 @@
 // verb through the SAME path the service uses (runCompare → runAggregateDrizzle) and
 // pretty-prints results. NOT a test suite; a usability + correctness probe by USE.
 //
-//   DBURL=postgres://postgres:password@localhost:54321/dealbrain \
+//   DBURL=postgres://postgres:password@localhost:54321/<db> \
 //     bun scripts/compare-qa.ts            # run all questions
 //   ... bun scripts/compare-qa.ts q7       # run just one
 //
@@ -12,17 +12,17 @@
 import { type CompareRequest, runCompare, stitchCompare } from '../src/engine/aggregate/compare';
 import { makeDb } from '../src/engine/aggregate/drizzle-db';
 import type { AggregateInput } from '../src/engine/aggregate/measure-catalog';
-import { loadDealbrainModel } from '../src/engine/aggregate/model.dealbrain';
+import { loadSalesModel } from '../src/engine/aggregate/model.sales';
 import { runAggregateDrizzle } from '../src/engine/aggregate/run-drizzle';
 
 const DBURL = process.env.DBURL;
 if (!DBURL) {
-  console.error('Set DBURL, e.g. DBURL=postgres://postgres:password@localhost:54321/dealbrain');
+  console.error('Set DBURL, e.g. DBURL=postgres://postgres:password@localhost:54321/<db>');
   process.exit(1);
 }
 
 const { db, close } = makeDb(DBURL);
-const model = await loadDealbrainModel(db);
+const model = await loadSalesModel(db);
 
 const run = (entity: string, req: CompareRequest) =>
   runCompare(entity, req, (agg: Omit<AggregateInput, 'entity'>) =>

@@ -1,7 +1,7 @@
 // CHARACTERIZATION NET — scope-fold + fail-closed / soft-drop (the SAFETY
 // CONTRACT the upcoming dialect-neutral query IR must preserve).
 //
-// This pins CURRENT behavior against the live dealbrain DB; it is the safety gate
+// This pins CURRENT behavior against the live reference DB; it is the safety gate
 // for the IR/QueryBackend extraction and becomes that port's contract test. It
 // does NOT improve or fix anything — where the engine looks wrong, the row is
 // pinned AS-IS and tagged // SUSPECTED-DIVERGENCE.
@@ -25,15 +25,15 @@
 // a local QueryApplicationService is constructed — flagged inline.
 //
 //   cd packages/query-surface && \
-//   DBURL=postgres://postgres:password@localhost:54321/dealbrain \
+//   DBURL=postgres://postgres:password@localhost:54321/<db> \
 //   bun test src/characterization/scope-failclosed.char.eval.spec.ts
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { POC_ACTOR_USER_ID } from '../../adapters/drizzle/eav/field-map.ts';
-import { loadDealbrainModel } from '../../adapters/reference/model.dealbrain.ts';
+import { loadSalesModel } from '../../adapters/reference/model.sales.ts';
 import { QueryApplicationService, UNSCOPED } from '../../query.application-service.ts';
-import { DEALBRAIN_ORG, type QuerySurfaceHarness, makeQuerySurface } from '../harness.ts';
+import { type QuerySurfaceHarness, SALES_ORG, makeQuerySurface } from '../harness.ts';
 
 const DBURL = process.env.DBURL;
 const suite = DBURL ? describe : describe.skip;
@@ -58,7 +58,7 @@ suite('scope-failclosed — characterization', () => {
   const scopedService = (scope: (e: string) => unknown) =>
     new QueryApplicationService(h.db, {
       actorUserId: POC_ACTOR_USER_ID,
-      actorOrganizationId: DEALBRAIN_ORG,
+      actorOrganizationId: SALES_ORG,
       // biome-ignore lint/suspicious/noExplicitAny: ScopeResolver is keyed by EntityName; the test names entities as raw strings
       scope: scope as any,
     });
@@ -179,7 +179,7 @@ suite('scope-failclosed — characterization', () => {
   // ==========================================================================
 
   it('F8 aggregate(): a filter column on NO queried source HARD-THROWS (fail-closed, public path)', async () => {
-    // The harness wires aggregateModel = loadDealbrainModel. A typo'd/unregistered
+    // The harness wires aggregateModel = loadSalesModel. A typo'd/unregistered
     // filter column is refused (not silently dropped → never answers a DIFFERENT
     // question). Distinct error text from F5/F6 (see the F5 divergence note).
     expect(
@@ -245,18 +245,18 @@ suite('scope-failclosed — characterization', () => {
   // ==========================================================================
   // (e) composite ratio NULL-policy: zero/absent denominator → NULL ratio + the
   //     surfaced warning (run-drizzle counts NULL ratios per composite). The
-  //     dealbrain analytics catalog ships only atomic measures, so a ratio is
+  //     reference analytics catalog ships only atomic measures, so a ratio is
   //     registered locally over the two real EAV legs (weighted_amount /
   //     deal_probability) — same legs the existing scope spec uses.
   // ==========================================================================
 
   it('F11 composite ratio: absent/zero denominator → NULL ratio + a warning counting those groups', async () => {
-    // Local model = dealbrain model + one extra ratio in the catalog. weighted_amount
+    // Local model = reference model + one extra ratio in the catalog. weighted_amount
     // (sum, zero-on-empty numerator) / deal_probability (avg, NULL-on-absent
     // denominator). Grouped by account_id: a group whose opps carry NO deal_probability
     // has a NULL avg → NULLIF(coalesce(den,0),0) → NULL ratio.
     const withRatio = async () => {
-      const m = await loadDealbrainModel(h.db);
+      const m = await loadSalesModel(h.db);
       // biome-ignore lint/suspicious/noExplicitAny: appending a host ratio onto the derived catalog (mirrors host registration)
       (m as any).catalog = {
         ...m.catalog,
@@ -267,7 +267,7 @@ suite('scope-failclosed — characterization', () => {
     const svc = new QueryApplicationService(h.db, {
       scope: UNSCOPED,
       actorUserId: POC_ACTOR_USER_ID,
-      actorOrganizationId: DEALBRAIN_ORG,
+      actorOrganizationId: SALES_ORG,
       aggregateModel: withRatio,
     });
     const res = await svc.measure('opportunities', {
@@ -306,7 +306,7 @@ suite('scope-failclosed — characterization', () => {
   it('F12 composite ratio control: groups WITH a denominator yield a NON-null numeric ratio', async () => {
     // The complement of F11 — proves the NULL is denominator-driven, not a blanket null.
     const withRatio = async () => {
-      const m = await loadDealbrainModel(h.db);
+      const m = await loadSalesModel(h.db);
       // biome-ignore lint/suspicious/noExplicitAny: see F11
       (m as any).catalog = {
         ...m.catalog,
@@ -317,7 +317,7 @@ suite('scope-failclosed — characterization', () => {
     const svc = new QueryApplicationService(h.db, {
       scope: UNSCOPED,
       actorUserId: POC_ACTOR_USER_ID,
-      actorOrganizationId: DEALBRAIN_ORG,
+      actorOrganizationId: SALES_ORG,
       aggregateModel: withRatio,
     });
     const res = await svc.measure('opportunities', {

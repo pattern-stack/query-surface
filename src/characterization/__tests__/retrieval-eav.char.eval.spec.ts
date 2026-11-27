@@ -6,7 +6,7 @@
 // to preserve. This is NOT aspirational — where the engine looks buggy, the
 // behavior is still pinned AS-IS and tagged // SUSPECTED-DIVERGENCE.
 //
-// Area scope (Shape A only — dealbrain's only EAV shape):
+// Area scope (Shape A only — the reference app's only EAV shape):
 //   opportunities carries `eav: { kind:'typed-columns', valueTable: field_values,
 //   entityTypeValue:'opportunity' }`. A field key like `Amount` (money) or
 //   `Probability` (percentage) resolves to a typed value column
@@ -16,7 +16,7 @@
 //
 // Run WITH the live DB:
 //   cd packages/query-surface && \
-//   DBURL=postgres://postgres:password@localhost:54321/dealbrain \
+//   DBURL=postgres://postgres:password@localhost:54321/<db> \
 //   bun test src/characterization/retrieval-eav.char.eval.spec.ts
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
@@ -29,7 +29,7 @@ const suite = DBURL ? describe : describe.skip;
 // The org that owns Bean Maxx's opportunity field_definitions (org-owned defs,
 // user_id NULL). Used to scope the ground-truth field_definition_id lookups so
 // the SQL truth matches the engine's actor-scoped EAV resolution. Equals
-// harness DEALBRAIN_ORG.
+// harness SALES_ORG.
 const ORG = 'a30c290d-6798-4da7-b3af-7b48c50212b8';
 const defId = (key: string) =>
   `(select id from field_definitions where entity_type='opportunity' and key='${key}' and organization_id='${ORG}')`;
@@ -98,7 +98,7 @@ suite('retrieval — EAV (Shape A typed-columns) — characterization', () => {
 
   it('percentage EAV (`Probability`) is stored on a 0..100 scale — filter compares against the stored scale', async () => {
     // Bean Maxx stores Probability as a whole-number percentage (0, 35, 55, 80, 100
-    // — NOT the old dealbrain 0..1 fraction), so a caller filters by 50 (not 0.5) to
+    // — NOT the old reference 0..1 fraction), so a caller filters by 50 (not 0.5) to
     // mean "≥ 50%". The engine compares against the raw stored value with NO scale
     // normalization — the caller must know the stored scale. Intent preserved: "≥ 50%".
     const [{ n: ge }] = (await truth(

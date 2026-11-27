@@ -16,5 +16,5 @@ export const QUERY_SURFACE_DRIZZLE = Symbol.for('QUERY_SURFACE_DRIZZLE');
 export const QUERY_SURFACE_OPTIONS = Symbol.for('QUERY_SURFACE_OPTIONS');
 
 /** The host's real auth guard (a `CanActivate`) for the package REST routes —
- *  e.g. dealbrain binds its ApiKeyGuard. Consumed by `QuerySurfaceAuthGuard`. */
+ *  e.g. a consumer app binds its ApiKeyGuard. Consumed by `QuerySurfaceAuthGuard`. */
 export const QUERY_SURFACE_AUTH_GUARD = Symbol.for('QUERY_SURFACE_AUTH_GUARD');

@@ -1,4 +1,4 @@
-// Real Drizzle schema + defineRelations() for the dealbrain analytics entities.
+// Real Drizzle schema + defineRelations() for the reference analytics entities.
 // The package's buildRegistry() derives the belongs_to/has_many cardinality
 // graph from these relations — same source of truth the retrieval surface uses.
 //
@@ -70,28 +70,25 @@ export const fieldValues = pgTable('field_values', {
 
 // defineRelations() — the cardinality graph buildRegistry introspects. The many()
 // sides omit from/to: Drizzle resolves them off the reverse one().
-export const dealbrainRelations = defineRelations(
-  { accounts, opportunities, observations },
-  (r) => ({
-    accounts: {
-      opportunities: r.many.opportunities(),
-      observations: r.many.observations(),
-    },
-    opportunities: {
-      account: r.one.accounts({ from: r.opportunities.accountId, to: r.accounts.id }),
-      observations: r.many.observations(),
-    },
-    observations: {
-      opportunity: r.one.opportunities({
-        from: r.observations.opportunityId,
-        to: r.opportunities.id,
-      }),
-      account: r.one.accounts({ from: r.observations.accountId, to: r.accounts.id }),
-    },
-  }),
-);
+export const salesRelations = defineRelations({ accounts, opportunities, observations }, (r) => ({
+  accounts: {
+    opportunities: r.many.opportunities(),
+    observations: r.many.observations(),
+  },
+  opportunities: {
+    account: r.one.accounts({ from: r.opportunities.accountId, to: r.accounts.id }),
+    observations: r.many.observations(),
+  },
+  observations: {
+    opportunity: r.one.opportunities({
+      from: r.observations.opportunityId,
+      to: r.opportunities.id,
+    }),
+    account: r.one.accounts({ from: r.observations.accountId, to: r.accounts.id }),
+  },
+}));
 
 // Per-table slices, for EntityRegistration.relations.
-export const accountsRelations = dealbrainRelations.accounts.relations;
-export const opportunitiesRelations = dealbrainRelations.opportunities.relations;
-export const observationsRelations = dealbrainRelations.observations.relations;
+export const accountsRelations = salesRelations.accounts.relations;
+export const opportunitiesRelations = salesRelations.opportunities.relations;
+export const observationsRelations = salesRelations.observations.relations;

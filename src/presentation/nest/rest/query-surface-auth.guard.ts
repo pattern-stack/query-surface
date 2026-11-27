@@ -5,7 +5,7 @@ import { QUERY_SURFACE_AUTH_GUARD } from '../tokens.ts';
 /**
  * Delegating guard: the package controller declares `@UseGuards(...)` with a
  * class it owns, while authentication itself stays host policy — the host
- * binds its real guard (e.g. dealbrain's ApiKeyGuard) to
+ * binds its real guard (e.g. the reference app's ApiKeyGuard) to
  * `QUERY_SURFACE_AUTH_GUARD`. Same seam style as integrations'
  * `I_TRPC_AUTH_MIDDLEWARE`.
  */

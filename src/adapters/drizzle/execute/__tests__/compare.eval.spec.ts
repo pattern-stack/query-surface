@@ -1,8 +1,8 @@
-// compare() against live dealbrain — variant-vs-variant (observation `type` as the
+// compare() against the live reference DB — variant-vs-variant (observation `type` as the
 // variant axis: 'commitment' vs 'risk'), the same machinery PoP uses with time filters.
 // The variant-runner here calls runAggregateDrizzle — exactly what the service injects.
 //
-//   DBURL=postgres://postgres:PW@localhost:54321/dealbrain bun test compare.eval
+//   DBURL=postgres://postgres:PW@localhost:54321/<db> bun test compare.eval
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
@@ -13,14 +13,14 @@ import {
 } from '../../../../internal/analytics/compare';
 import type { AggregateInput } from '../../../../internal/analytics/measure-catalog';
 import { QueryApplicationService, UNSCOPED } from '../../../../query.application-service';
-import { type AggregateModel, loadDealbrainModel } from '../../../reference/model.dealbrain';
+import { type AggregateModel, loadSalesModel } from '../../../reference/model.sales';
 import { type DrizzleDb, makeDb } from '../drizzle-db';
 import { runAggregateDrizzle } from '../run-drizzle';
 
 const DBURL = process.env.DBURL;
 const suite = DBURL ? describe : describe.skip;
 
-suite('compare() — live dealbrain (variant-vs-variant on observation type)', () => {
+suite('compare() — live reference DB (variant-vs-variant on observation type)', () => {
   let db: DrizzleDb;
   let close: () => Promise<void>;
   let model: AggregateModel;
@@ -39,7 +39,7 @@ suite('compare() — live dealbrain (variant-vs-variant on observation type)', (
 
   beforeAll(async () => {
     ({ db, close } = makeDb(DBURL!));
-    model = await loadDealbrainModel(db);
+    model = await loadSalesModel(db);
   });
   afterAll(async () => {
     await close?.();
@@ -383,7 +383,7 @@ suite('compare() — live dealbrain (variant-vs-variant on observation type)', (
       compare: { baseline: 'commitment', derive: ['delta'] },
     };
     const scoped = new QueryApplicationService(db, {
-      aggregateModel: () => loadDealbrainModel(db),
+      aggregateModel: () => loadSalesModel(db),
       scope: (entity) =>
         entity === 'observations' ? { on: 'account_id', op: 'eq', value: acct } : undefined,
     });
@@ -411,7 +411,7 @@ suite('compare() — live dealbrain (variant-vs-variant on observation type)', (
     // and an UNSCOPED service returns many accounts — proving the scope genuinely narrowed.
     const unscoped = new QueryApplicationService(db, {
       scope: UNSCOPED,
-      aggregateModel: () => loadDealbrainModel(db),
+      aggregateModel: () => loadSalesModel(db),
     });
     const all = await unscoped.compare('observations' as never, req);
     if (all.delivery !== 'stitched') throw new Error('unreachable');

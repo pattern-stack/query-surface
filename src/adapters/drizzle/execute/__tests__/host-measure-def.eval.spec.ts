@@ -7,7 +7,7 @@
 // same atomic); (E2) describeMeasures advertises the slug (discoverable); (E3) a slug that shadows an
 // auto-derived key is refused at model load; (E4) a def over an unregistered field is refused.
 //
-//   DBURL=postgres://postgres:password@localhost:54321/dealbrain \
+//   DBURL=postgres://postgres:password@localhost:54321/<db> \
 //     bun test src/adapters/drizzle/execute/__tests__/host-measure-def.eval.spec.ts
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
@@ -15,7 +15,7 @@ import {
   type QuerySurfaceHarness,
   makeQuerySurface,
 } from '../../../../characterization/harness.ts';
-import { loadDealbrainModel } from '../../../reference/model.dealbrain';
+import { loadSalesModel } from '../../../reference/model.sales';
 
 const DBURL = process.env.DBURL;
 const suite = DBURL ? describe : describe.skip;
@@ -191,7 +191,7 @@ suite('host measure defs — call a measure by its stable slug ({ref})', () => {
 
   it('E3 a slug that shadows an auto-derived catalog key is refused at model load', async () => {
     await expect(
-      loadDealbrainModel(h.db, undefined, DIMENSION_SPECS, {
+      loadSalesModel(h.db, undefined, DIMENSION_SPECS, {
         'ExpectedRevenue.sum': { ...MEASURE_DEFS.total_revenue },
       }),
     ).rejects.toThrow(/collides/i);
@@ -199,7 +199,7 @@ suite('host measure defs — call a measure by its stable slug ({ref})', () => {
 
   it('E4 a def over an unregistered field is refused', async () => {
     await expect(
-      loadDealbrainModel(h.db, undefined, DIMENSION_SPECS, {
+      loadSalesModel(h.db, undefined, DIMENSION_SPECS, {
         bogus_measure: {
           kind: 'atomic',
           on: 'not_a_registered_field',

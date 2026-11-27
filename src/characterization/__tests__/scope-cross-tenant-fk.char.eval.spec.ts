@@ -22,16 +22,16 @@
 //     an A-scoped read. A NAIVE join (FK-equality only, no scope in the `ON`) WOULD count it under
 //     sB — that +1 is exactly the cross-tenant leak the fold prevents.
 //
-//   DBURL=postgres://postgres:password@localhost:54321/dealbrain \
+//   DBURL=postgres://postgres:password@localhost:54321/<db> \
 //     bun test src/characterization/__tests__/scope-cross-tenant-fk.char.eval.spec.ts
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { POC_ACTOR_USER_ID } from '../../adapters/drizzle/eav/field-map.ts';
-import { loadDealbrainModel } from '../../adapters/reference/model.dealbrain.ts';
+import { loadSalesModel } from '../../adapters/reference/model.sales.ts';
 import type { EntityName, FilterExpression } from '../../internal/language/types.ts';
 import { QueryApplicationService, type ScopeResolver } from '../../query.application-service.ts';
-import { DEALBRAIN_ORG, type QuerySurfaceHarness, makeQuerySurface } from '../harness.ts';
+import { type QuerySurfaceHarness, SALES_ORG, makeQuerySurface } from '../harness.ts';
 
 const DBURL = process.env.DBURL;
 const suite = DBURL ? describe : describe.skip;
@@ -49,7 +49,7 @@ suite(
       h = makeQuerySurface(DBURL!);
     });
     afterAll(async () => {
-      // Guarantee teardown even on a failing assertion — the dealbrain dev DB is shared.
+      // Guarantee teardown even on a failing assertion — the reference dev DB is shared.
       await h.db.execute(sql.raw(`delete from observations where id = '${SENTINEL_OBS}'`));
       await h.close();
     });
@@ -61,9 +61,9 @@ suite(
     const svc = (scope: ScopeResolver) =>
       new QueryApplicationService(h.db, {
         actorUserId: POC_ACTOR_USER_ID,
-        actorOrganizationId: DEALBRAIN_ORG,
+        actorOrganizationId: SALES_ORG,
         scope,
-        aggregateModel: () => loadDealbrainModel(h.db),
+        aggregateModel: () => loadSalesModel(h.db),
       });
 
     let A: string; // pseudo-tenant A (the read's tenant)

@@ -33,7 +33,7 @@ function cat(entity: string, fields: CatalogField[], relationships: Rel[] = []):
   } as unknown as EntityCatalog;
 }
 
-// Three curated entities mirroring the dealbrain shape: opportunities (all-EAV,
+// Three curated entities mirroring the reference shape: opportunities (all-EAV,
 // only `id` native) with a belongs_to account and has_many opportunityContacts;
 // accounts (all-EAV) carrying tenant FKs + a provider_metadata blob; and the
 // opportunity_contacts join with a small native allowlist.

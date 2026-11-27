@@ -48,7 +48,7 @@ export type RelDescriptor =
  * map (key → field_definition_id + data_type) is loaded at runtime (field-map.ts).
  * Together they make the EAV seam invisible to the agent regardless of shape.
  *
- *  - 'typed-columns' (Shape A, dealbrain): value lives in one of four typed
+ *  - 'typed-columns' (Shape A, the reference app): value lives in one of four typed
  *    columns picked by valueColumnForDataType(); resolution returns a real
  *    PgColumn (rides the kind:'column' path).
  *  - 'jsonb-value' (Shape B, codegen-patterns): value lives in a single jsonb

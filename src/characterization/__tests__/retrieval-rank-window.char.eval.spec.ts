@@ -16,7 +16,7 @@
 // and captured in comments next to each assertion.
 //
 // Run WITH the DB:
-//   cd packages/query-surface && DBURL=postgres://postgres:password@localhost:54321/dealbrain \
+//   cd packages/query-surface && DBURL=postgres://postgres:password@localhost:54321/<db> \
 //     bun test src/characterization/retrieval-rank-window.char.eval.spec.ts
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';

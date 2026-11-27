@@ -7,7 +7,7 @@
 // walks all five verbs — each showing the request, the compiled SQL, the bound params, the rows,
 // the timing, and (for relevance) the mandatory citation.
 //
-//   DBURL=postgres://postgres:password@localhost:54321/dealbrain \
+//   DBURL=postgres://postgres:password@localhost:54321/<db> \
 //     bun run scripts/qs-showcase/server.ts            # → http://localhost:7879
 //
 // HEADLINE: measure('observations', group_by:['opportunities.stage']) — observations counted at
@@ -28,7 +28,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { format as formatSql } from 'sql-formatter';
-import type { DealbrainMeasureSpec } from '../../src/adapters/reference/model.dealbrain.ts';
+import type { SalesMeasureSpec } from '../../src/adapters/reference/model.sales.ts';
 import { makeQuerySurface } from '../../src/characterization/harness.ts';
 import type {
   AggregateRequest,
@@ -41,7 +41,7 @@ import type {
 
 const DBURL = process.env.DBURL;
 if (!DBURL) {
-  console.error('Set DBURL, e.g. DBURL=postgres://postgres:password@localhost:54321/dealbrain');
+  console.error('Set DBURL, e.g. DBURL=postgres://postgres:password@localhost:54321/<db>');
   process.exit(1);
 }
 const PORT = Number(process.env.PORT ?? 7879);
@@ -56,7 +56,7 @@ const DIMENSION_SPECS = [
 
 // Base measure specs (mirror the engine's DEFAULT_MEASURE_SPECS). The measure book's field-aggregate
 // definitions are MERGED onto these (by field key) at rebuild — so the engine catalog grows live.
-type MeasureSpec = DealbrainMeasureSpec;
+type MeasureSpec = SalesMeasureSpec;
 const BASE_SPECS: MeasureSpec[] = [
   { key: 'Amount', aggs: ['sum', 'avg', 'min', 'max'], additivity: 'additive' },
   { key: 'ExpectedRevenue', aggs: ['sum', 'avg', 'min', 'max'], additivity: 'additive' },

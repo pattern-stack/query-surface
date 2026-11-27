@@ -9,13 +9,13 @@
 // an Express server (that would need @nestjs/testing + @nestjs/platform-express + supertest as
 // devDeps, none installed); the HTTP transport itself is Nest plumbing, not compare logic.
 //
-//   DBURL=postgres://postgres:password@localhost:54321/dealbrain bun test compare.rest.eval
+//   DBURL=postgres://postgres:password@localhost:54321/<db> bun test compare.rest.eval
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { type ArgumentMetadata, BadRequestException, NotFoundException } from '@nestjs/common';
 import { type DrizzleDb, makeDb } from '../../../adapters/drizzle/execute/drizzle-db';
-import { loadDealbrainModel } from '../../../adapters/reference/model.dealbrain';
-import { dealbrainRelations } from '../../../adapters/reference/schema.dealbrain';
+import { loadSalesModel } from '../../../adapters/reference/model.sales';
+import { salesRelations } from '../../../adapters/reference/schema.sales';
 import { QuerySurfaceService } from '../query-surface.service';
 import { QueryController } from '../rest/query.controller';
 import { compareRequestSchema } from '../rest/query.dto';
@@ -31,7 +31,7 @@ import {
 const DBURL = process.env.DBURL;
 const suite = DBURL ? describe : describe.skip;
 
-suite('compare() — REST presentation chain (live dealbrain)', () => {
+suite('compare() — REST presentation chain (live reference DB)', () => {
   let db: DrizzleDb;
   let close: () => Promise<void>;
   let controller: QueryController;
@@ -41,12 +41,12 @@ suite('compare() — REST presentation chain (live dealbrain)', () => {
   beforeAll(async () => {
     ({ db, close } = makeDb(DBURL!));
     const svc = new QuerySurfaceService(db, {
-      relations: dealbrainRelations,
-      // dealbrain test tables carry no tenancy column → declare tenant-global so compare
+      relations: salesRelations,
+      // reference test tables carry no tenancy column → declare tenant-global so compare
       // runs unscoped (fail-closed would otherwise deny an uncovered source).
       scopeFor: () => () => undefined,
       tenantGlobalEntities: ['observations', 'opportunities', 'accounts'],
-      aggregateModel: () => loadDealbrainModel(db),
+      aggregateModel: () => loadSalesModel(db),
       getRequester: () => ({ userId: 'rest-eval' }),
     } as never);
     svc.onModuleInit(); // registerSchema, exactly as Nest would on boot

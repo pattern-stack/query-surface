@@ -118,5 +118,5 @@ Engine work (ADR-0028), ADR-0027 waves (#12–14), #35/#36/#37, relicensing the 
   it merges), `herdr agent start` + `herdr agent prompt` with that PR's table row + the hygiene
   rule + the per-PR verify list; a coordinator pane uses `herdr agent wait` and merges in order:
   #44 → A, B, C, D (any order) → D's `ci.yml` follow-up → E (last; it records final numbers).
-- Only PR-C needs `DBURL` (dealbrain dev DB on `:54321`, up as of today).
+- Only PR-C needs `DBURL` (reference dev DB on `:54321`, up as of today).
 - Phase 2: coordinator opens PR-F; steps 2–4 are the owner's.

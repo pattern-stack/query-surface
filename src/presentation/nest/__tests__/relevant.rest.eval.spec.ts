@@ -17,14 +17,14 @@
 // non-hermetic — counts drift on reseed, identities don't). similarity = 1 - (embedding <=> vector),
 // the EXACT formula at run-drizzle.simSql / compiler.simExpr.
 //
-//   DBURL=postgres://postgres:password@localhost:54321/dealbrain bun test relevant.rest.eval
+//   DBURL=postgres://postgres:password@localhost:54321/<db> bun test relevant.rest.eval
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { type ArgumentMetadata, BadRequestException } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import { type DrizzleDb, makeDb } from '../../../adapters/drizzle/execute/drizzle-db';
-import { loadDealbrainModel } from '../../../adapters/reference/model.dealbrain';
-import { dealbrainRelations } from '../../../adapters/reference/schema.dealbrain';
+import { loadSalesModel } from '../../../adapters/reference/model.sales';
+import { salesRelations } from '../../../adapters/reference/schema.sales';
 import { QuerySurfaceService } from '../query-surface.service';
 import { QueryController } from '../rest/query.controller';
 import { aggregateRequestSchema, querySearchRequestSchema } from '../rest/query.dto';
@@ -45,7 +45,7 @@ const suite = DBURL ? describe : describe.skip;
 // fresh below, never assumed — so the test is self-consistent across reseeds.
 const ANCHOR_PHRASE = 'conditional, not-yet-agreed concession';
 
-suite('relevant leaf + citation — REST presentation chain (live dealbrain)', () => {
+suite('relevant leaf + citation — REST presentation chain (live reference DB)', () => {
   let db: DrizzleDb;
   let close: () => Promise<void>;
   let controller: QueryController;
@@ -84,12 +84,12 @@ suite('relevant leaf + citation — REST presentation chain (live dealbrain)', (
     };
 
     const svc = new QuerySurfaceService(db, {
-      relations: dealbrainRelations,
-      // dealbrain test tables carry no tenancy column → tenant-global so the relevance path runs
+      relations: salesRelations,
+      // reference test tables carry no tenancy column → tenant-global so the relevance path runs
       // unscoped (fail-closed would otherwise deny an uncovered source).
       scopeFor: () => () => undefined,
       tenantGlobalEntities: ['observations', 'opportunities', 'accounts'],
-      aggregateModel: () => loadDealbrainModel(db),
+      aggregateModel: () => loadSalesModel(db),
       semanticColumns: { observations: { normalized_text: 'embedding' } },
       embed,
       getRequester: () => ({ userId: 'rest-eval' }),

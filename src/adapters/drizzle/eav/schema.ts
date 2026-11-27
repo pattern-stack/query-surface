@@ -1,6 +1,6 @@
-// EAV substrate — Shape A (dealbrain typed-column `field_values`).
+// EAV substrate — Shape A (reference typed-column `field_values`).
 //
-// Mirrors dealbrain proper's `field_definitions` + `field_values` (the layout
+// Mirrors the reference app's `field_definitions` + `field_values` (the layout
 // the live CRM runs; packages/db/src/server/schema.ts). These are NOT domain
 // query entities — they are not in `EntityName`, not searchable, not exposed
 // by /search. They are the backing tables the FilterCompiler JOINs to when it
@@ -27,7 +27,7 @@ import {
 } from 'drizzle-orm/pg-core';
 
 // One row per (user, entity_type, key): the schema record describing a custom
-// or sync-discovered field. Lean subset of dealbrain's 30-column table — only
+// or sync-discovered field. Lean subset of the reference app's 30-column table — only
 // the columns the resolver, query_describe, and the seed need.
 export const fieldDefinitions = pgTable(
   'field_definitions',

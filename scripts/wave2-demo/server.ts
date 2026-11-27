@@ -5,7 +5,7 @@
 // primitives so you can see the WHOLE story: the metric, the cohort that defined it, the SQL that
 // computed it, the evidence rows behind it, and the host-supplied catalog it all derives from.
 //
-//   DBURL=postgres://postgres:password@localhost:54321/dealbrain \
+//   DBURL=postgres://postgres:password@localhost:54321/<db> \
 //     bun run scripts/wave2-demo/server.ts            # → http://localhost:7878
 //
 // EMBED CAVEAT: the harness embed() is the deterministic ILIKE stub — the `query` must be a phrase
@@ -65,7 +65,7 @@ function displayParams(
 
 const DBURL = process.env.DBURL;
 if (!DBURL) {
-  console.error('Set DBURL, e.g. DBURL=postgres://postgres:password@localhost:54321/dealbrain');
+  console.error('Set DBURL, e.g. DBURL=postgres://postgres:password@localhost:54321/<db>');
   process.exit(1);
 }
 
@@ -74,7 +74,7 @@ const HTML = readFileSync(join(import.meta.dir, 'index.html'), 'utf8');
 
 // REAL embed provider (optional) — turns the demo's `query` into a TRUE free-text concept instead
 // of the ILIKE stub's verbatim-phrase lookup. Must use the SAME model that produced the stored
-// Bean Maxx vectors (dealbrain: OpenAI text-embedding-3-small, 1536-d) or cosine is meaningless.
+// Bean Maxx vectors (the reference app: OpenAI text-embedding-3-small, 1536-d) or cosine is meaningless.
 // Enabled when OPENAI_API_KEY is set; otherwise the harness stub is used. A small cache keeps
 // repeat concepts free.
 const EMBED_MODEL = process.env.EMBED_MODEL ?? 'text-embedding-3-small';

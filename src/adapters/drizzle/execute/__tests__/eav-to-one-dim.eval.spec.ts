@@ -15,19 +15,19 @@
 // (the Bean Maxx fixture is non-hermetic). The truth field_values CTE is keyed by
 // field_definitions.key + entity_type='opportunity' + organization_id (the org the engine resolves
 // the defId under at model load), matching the engine's join exactly. Run:
-//   DBURL=postgres://postgres:password@localhost:54321/dealbrain \
+//   DBURL=postgres://postgres:password@localhost:54321/<db> \
 //     bun test src/adapters/drizzle/execute/__tests__/eav-to-one-dim.eval.spec.ts
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import {
-  DEALBRAIN_ORG,
   type QuerySurfaceHarness,
+  SALES_ORG,
   makeQuerySurface,
 } from '../../../../characterization/harness.ts';
 import { conformedDimensions } from '../../../../internal/analytics/join-plan';
 import { TENANT_GLOBAL } from '../../../../internal/analytics/types';
-import { type AggregateModel, loadDealbrainModel } from '../../../reference/model.dealbrain';
+import { type AggregateModel, loadSalesModel } from '../../../reference/model.sales';
 import { runAggregateDrizzle } from '../run-drizzle';
 
 const DBURL = process.env.DBURL;
@@ -47,7 +47,7 @@ suite('EAV dimension via to-one (describe/execute parity — the over-promise bu
     h = makeQuerySurface(DBURL!, { dimensionSpecs: DIMENSION_SPECS });
     // The SAME model the service uses, loaded against the SAME pool — so the scopeFor specs
     // (which the public service can't parameterize per-call) run on the identical registry.
-    model = await loadDealbrainModel(h.db, undefined, DIMENSION_SPECS);
+    model = await loadSalesModel(h.db, undefined, DIMENSION_SPECS);
   });
   afterAll(async () => {
     await h.close();
@@ -62,7 +62,7 @@ suite('EAV dimension via to-one (describe/execute parity — the over-promise bu
   const fv = (key: string) =>
     `(select fv.entity_id eid, fv.value_text v from field_values fv
         where fv.field_definition_id = (select id from field_definitions
-          where key='${key}' and entity_type='opportunity' and organization_id='${DEALBRAIN_ORG}'))`;
+          where key='${key}' and entity_type='opportunity' and organization_id='${SALES_ORG}'))`;
 
   // ── E1 describe/execute parity — the bug, pinned closed ─────────────────────────────────────
   it('E1 describe advertises opportunities.stage AND it EXECUTES (set-identity vs truth)', async () => {
@@ -364,7 +364,7 @@ suite('EAV dimension via to-one (describe/execute parity — the over-promise bu
   it('E13 group_by a SNAKE-keyed EAV MEASURE hits the ROLE GATE with the clear reason (own-entity + to-one)', async () => {
     // snake keys pass the identifier guard, so they reach lowerGroupDim's role gate — THIS is the
     // case the new gate exists for (a measure the lowering COULD resolve but must not group).
-    const m = await loadDealbrainModel(
+    const m = await loadSalesModel(
       h.db,
       [{ key: 'age_days', aggs: ['avg', 'max'], additivity: 'non' }],
       DIMENSION_SPECS,
