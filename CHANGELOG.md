@@ -6,6 +6,22 @@ All notable changes to `@pattern-stack/query-surface`. Format follows
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-11-26
+
+### Breaking
+- **Zod 4.** The optional `zod` peer is `^4.0.0` (was `^3.23.0`). The `./nest` and `./mcp` entry points build their
+  schemas with Zod 4, and their published types are Zod 4's (`z.core`, the object form of `z.enum`), so a consumer
+  on Zod 3 no longer type-checks against them. The root entry point does not use Zod and is unaffected. Move the app
+  to `zod@^4`. `@pattern-stack/codegen` 0.35.0 makes the same move.
+
+### Changed
+- `ZodValidationPipe` is generic over the schema's output (`new ZodValidationPipe(schema)` types `transform`'s result
+  as the schema's output; untyped, it stays `any`, as it was on Zod 3, where Zod 4's `ZodSchema` would give
+  `unknown`).
+- `z.record(v)` → `z.record(z.string(), v)` in the REST DTOs (Zod 4's form).
+- Dev: `zod` 4.6.7; the MCP SDK shares that copy (its own range is `^3.25 || ^4.0`), so its `AnySchema` and our
+  schemas are one type. `scripts/check-pack.sh` installs `zod@4` in the fresh consumer.
+
 ## [0.3.1] — 2026-09-21
 
 ### Documentation

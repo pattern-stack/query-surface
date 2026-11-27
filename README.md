@@ -17,8 +17,8 @@ cardinality graph, EAV strategy, field tags); the reference instance
 
 ```bash
 bun add @pattern-stack/query-surface drizzle-orm@1.0.0-rc.4
-# ./nest also needs: @nestjs/common @nestjs/swagger rxjs zod
-# ./mcp  also needs: @modelcontextprotocol/sdk zod
+# ./nest also needs: @nestjs/common @nestjs/swagger rxjs zod@4
+# ./mcp  also needs: @modelcontextprotocol/sdk zod@4
 ```
 
 **npm users:** add `--legacy-peer-deps`. `drizzle-orm@1.0.0-rc.4` declares an optional `effect`

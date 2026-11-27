@@ -1,6 +1,6 @@
 {
   "name": "@pattern-stack/query-surface",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "type": "module",
   "description": "Agent-aware semantic query + aggregation surface (describe/select/fetch/measure/compare) over a host schema \u2014 hexagonal, backend-pluggable.",
   "license": "FSL-1.1-MIT",
@@ -76,7 +76,7 @@
     "drizzle-orm": "^1.0.0-rc.4",
     "rxjs": "^7.0.0",
     "typescript": "^5",
-    "zod": "^3.23.0"
+    "zod": "^4.0.0"
   },
   "peerDependenciesMeta": {
     "@modelcontextprotocol/sdk": {
@@ -111,6 +111,6 @@
     "rxjs": "^7.0.0",
     "sql-formatter": "^15.8.1",
     "typescript": "^5.6.0",
-    "zod": "^3.23.0"
+    "zod": "^4.6.7"
   }
 }
