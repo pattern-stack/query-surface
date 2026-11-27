@@ -4,7 +4,7 @@ import {
   Injectable,
   type PipeTransform,
 } from '@nestjs/common';
-import type { ZodError, ZodSchema } from 'zod';
+import type { ZodError, ZodType } from 'zod';
 
 /**
  * Package-local Zod validation pipe — same error contract as the dealbrain
@@ -12,10 +12,13 @@ import type { ZodError, ZodSchema } from 'zod';
  * duplicated here so the package presentation has no host imports.
  */
 @Injectable()
-export class ZodValidationPipe implements PipeTransform {
-  constructor(private schema: ZodSchema) {}
+// Typed by the schema's output. `any` by default, as the pipe was typed before Zod 4 (Zod 3's `ZodSchema` was
+// `ZodType<any>`; Zod 4's is `ZodType<unknown>`), so an untyped pipe keeps its callers' types.
+// biome-ignore lint/suspicious/noExplicitAny: the default keeps the pre-Zod-4 typing of `transform`'s result.
+export class ZodValidationPipe<Output = any> implements PipeTransform<unknown, Output> {
+  constructor(private schema: ZodType<Output>) {}
 
-  transform(value: unknown, _metadata: ArgumentMetadata) {
+  transform(value: unknown, _metadata: ArgumentMetadata): Output {
     const result = this.schema.safeParse(value);
 
     if (!result.success) {

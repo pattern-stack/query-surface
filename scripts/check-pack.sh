@@ -22,7 +22,7 @@ JSON
 # absent). This is the install route the README documents for npm; drop the flag once
 # Drizzle 1.0 is stable. Bun resolves the same graph without it (checked at the end).
 npm install --no-audit --no-fund --silent --legacy-peer-deps "$TGZ" drizzle-orm@1.0.0-rc.4 typescript@5.9.3 @types/node@22 \
-  @nestjs/common@11 @nestjs/core@11 @nestjs/swagger@11 rxjs@7 zod@3 reflect-metadata >/dev/null
+  @nestjs/common@11 @nestjs/core@11 @nestjs/swagger@11 rxjs@7 zod@4 reflect-metadata >/dev/null
 cat > consumer.ts <<'TS'
 import type {
   AggEntity, AggFieldMeta, AggRegistry, AggRelationship, AggregateModel, DerivedMeasureDef,

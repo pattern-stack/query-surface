@@ -304,7 +304,7 @@ export const querySearchResultDocSchema = z.object({
   total: z.number().int(),
   has_more: z.boolean(),
   preview: z
-    .array(z.record(z.unknown()))
+    .array(z.record(z.string(), z.unknown()))
     .optional()
     .describe(
       'Preview rows (when preview=true). Text-op matches add a _snippets entry per matched column.',
@@ -315,7 +315,7 @@ export const querySearchResultDocSchema = z.object({
 
 export const queryFetchResponseDocSchema = z.object({
   entity: z.string(),
-  rows: z.array(z.record(z.unknown())),
+  rows: z.array(z.record(z.string(), z.unknown())),
   count: z.number().int(),
   sql: z.string().optional(),
   params: z.array(z.unknown()).optional(),
@@ -329,7 +329,7 @@ export const aggregateRequestDocSchema = aggregateRequestSchema.extend({
 export const aggregateResponseDocSchema = z.object({
   entity: z.string(),
   rows: z
-    .array(z.record(z.unknown()))
+    .array(z.record(z.string(), z.unknown()))
     .describe('Grouped rows: each group-by column + each measure alias.'),
   row_count: z.number().int(),
   group_count: z
@@ -358,7 +358,7 @@ export const compareResponseDocSchema = z.discriminatedUnion('delivery', [
     measures: z.array(z.string()),
     derives: z.array(z.enum(['delta', 'pct_change', 'index'])),
     rows: z
-      .array(z.record(z.unknown()))
+      .array(z.record(z.string(), z.unknown()))
       .describe('Aligned rows: group keys + <measure>__<variant> (+ __<derive>) columns.'),
     warnings: z.array(z.string()).optional(),
   }),
@@ -369,7 +369,7 @@ export const compareResponseDocSchema = z.discriminatedUnion('delivery', [
     variants: z.array(
       z.object({
         label: z.string(),
-        rows: z.array(z.record(z.unknown())),
+        rows: z.array(z.record(z.string(), z.unknown())),
         row_count: z.number().int(),
       }),
     ),
