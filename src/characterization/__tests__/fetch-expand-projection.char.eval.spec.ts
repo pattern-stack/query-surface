@@ -14,7 +14,7 @@
 //      (FetchUseCase → projectRowDeep). So the *service* never emits
 //      organization_id/user_id/provider_metadata for a DIFFERENT reason than the
 //      projection: those columns are simply NOT REGISTERED Drizzle columns in the
-//      dealbrain test model, so nativeSelectShape never selects them. We pin BOTH
+//      reference test model, so nativeSelectShape never selects them. We pin BOTH
 //      guards: (a) the service-level "non-registration" floor against the live DB,
 //      and (b) projectRowDeep itself (deep-imported from ../nest/projection,
 //      since the service path can't reach it) as the contract that WOULD strip
@@ -82,7 +82,7 @@ suite('fetch + expand + projection — characterization', () => {
       expect(res.rows.map((r) => String(r.id)).sort()).toEqual([...ids].sort());
 
       // The flat row carries ONLY the registered Drizzle columns of observationsExt
-      // (schema.dealbrain cols + embedding/normalized_text). This is the actual
+      // (schema.sales cols + embedding/normalized_text). This is the actual
       // wire shape today.
       const byId = new Map(res.rows.map((r) => [String(r.id), r]));
       for (const tr of t) {
@@ -149,7 +149,7 @@ suite('fetch + expand + projection — characterization', () => {
       expect(account).toBeTruthy();
       expect(String(account.id)).toBe(String(t[0].account_id));
       expect(account.name).toBe(t[0].account_name);
-      // The accounts table is registered with ONLY {id, name} (schema.dealbrain),
+      // The accounts table is registered with ONLY {id, name} (schema.sales),
       // so website / organization_id / user_id / provider_metadata — which DO
       // exist on the live accounts table — are absent from the expanded child by
       // virtue of NON-REGISTRATION (the service-level floor; see the projectRowDeep
@@ -209,7 +209,7 @@ suite('fetch + expand + projection — characterization', () => {
         expect(Number(opp.Amount)).toBe(Number(av[0].amount));
       }
       // `Name` is the curated deal-name EAV key in Bean Maxx (was `dealname` in the
-      // old dealbrain seed) → present inline.
+      // old reference seed) → present inline.
       expect(opp).toHaveProperty('Name');
     });
 
@@ -263,7 +263,7 @@ suite('fetch + expand + projection — characterization', () => {
   //   The public service returns the raw shape by design (FetchUseCase, the nest
   //   layer, is what projects). So these pin projectRowDeep directly, but built
   //   from the SAME catalogs the harness's registry produces (buildEntityCatalog),
-  //   not synthetic stubs — so the index reflects the real dealbrain shape.
+  //   not synthetic stubs — so the index reflects the real reference-app shape.
   // ==========================================================================
 
   describe('projectRowDeep (nest layer) — the tenant-leak guard', () => {

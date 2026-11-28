@@ -4,17 +4,17 @@
 // while group_by took `split('.')[1]`. This pins: `on:"observations.id"` ≡ `source:"observations",
 // on:"id"`, with and without an explicit source, and a json subpath rides along.
 //
-//   DBURL=postgres://postgres:PW@localhost:54321/dealbrain bun test measure-on-relation.eval
+//   DBURL=postgres://postgres:PW@localhost:54321/<db> bun test measure-on-relation.eval
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
-import { type AggregateModel, loadDealbrainModel } from '../../../reference/model.dealbrain';
+import { type AggregateModel, loadSalesModel } from '../../../reference/model.sales';
 import { type DrizzleDb, makeDb } from '../drizzle-db';
 import { runAggregateDrizzle } from '../run-drizzle';
 
 const DBURL = process.env.DBURL;
 const suite = DBURL ? describe : describe.skip;
 
-suite('measure on:"relation.field" — resolves the field, ≡ source+bare (live dealbrain)', () => {
+suite('measure on:"relation.field" — resolves the field, ≡ source+bare (live reference DB)', () => {
   let db: DrizzleDb;
   let close: () => Promise<void>;
   let model: AggregateModel;
@@ -24,7 +24,7 @@ suite('measure on:"relation.field" — resolves the field, ≡ source+bare (live
 
   beforeAll(async () => {
     ({ db, close } = makeDb(DBURL!));
-    model = await loadDealbrainModel(db);
+    model = await loadSalesModel(db);
   });
   afterAll(async () => {
     await close?.();

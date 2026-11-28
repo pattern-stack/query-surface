@@ -26,15 +26,15 @@
 // ∈ [0,1] (the EXACT simExpr the engine emits). NEVER SELECT DISTINCT over the vector(1536) column.
 //
 // Run WITH the DB:
-//   DBURL=postgres://postgres:password@localhost:54321/dealbrain \
+//   DBURL=postgres://postgres:password@localhost:54321/<db> \
 //     bun test src/characterization/__tests__/relevant-filter.char.eval.spec.ts
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { POC_ACTOR_USER_ID } from '../../adapters/drizzle/eav/field-map.ts';
-import { loadDealbrainModel } from '../../adapters/reference/model.dealbrain.ts';
+import { loadSalesModel } from '../../adapters/reference/model.sales.ts';
 import { QueryApplicationService, UNSCOPED } from '../../query.application-service.ts';
-import { DEALBRAIN_ORG, type QuerySurfaceHarness, makeQuerySurface } from '../harness.ts';
+import { type QuerySurfaceHarness, SALES_ORG, makeQuerySurface } from '../harness.ts';
 
 const DBURL = process.env.DBURL;
 const suite = DBURL ? describe : describe.skip;
@@ -383,9 +383,9 @@ suite('relevance-as-filter (query/fetch) — characterization', () => {
     const spy = new QueryApplicationService(h.db, {
       scope: UNSCOPED,
       actorUserId: POC_ACTOR_USER_ID,
-      actorOrganizationId: DEALBRAIN_ORG,
+      actorOrganizationId: SALES_ORG,
       // citation runs a row-grain companion query over the analytics model, so the spy needs it too.
-      aggregateModel: () => loadDealbrainModel(h.db),
+      aggregateModel: () => loadSalesModel(h.db),
       semanticColumns: { observations: { normalized_text: 'embedding' } },
       embed: spyEmbed,
     });
@@ -434,14 +434,14 @@ suite('relevance-as-filter (query/fetch) — characterization', () => {
     // must fail closed.
     const gappy = new QueryApplicationService(h.db, {
       actorUserId: POC_ACTOR_USER_ID,
-      actorOrganizationId: DEALBRAIN_ORG,
-      aggregateModel: () => loadDealbrainModel(h.db),
+      actorOrganizationId: SALES_ORG,
+      aggregateModel: () => loadSalesModel(h.db),
       semanticColumns: { observations: { normalized_text: 'embedding' } },
       embed: stubEmbed,
       scope: (e) =>
         e === 'observations'
           ? undefined // ← the gap: no tenancy predicate for the semantic entity
-          : { on: 'organization_id', op: 'eq', value: DEALBRAIN_ORG },
+          : { on: 'organization_id', op: 'eq', value: SALES_ORG },
       // tenantGlobalEntities omitted → observations is NOT declared global → the gap fails closed.
     });
 

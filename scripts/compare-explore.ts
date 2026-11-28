@@ -1,9 +1,9 @@
-// Hands-on exploration of compare() against live dealbrain. NOT a test — it fires real
+// Hands-on exploration of compare() against the live reference DB. NOT a test — it fires real
 // compare requests through the SAME path the service uses (runCompare → runAggregateDrizzle)
 // and pretty-prints the stitched/separate output so you can eyeball PoP, churn, N-variant,
 // and the client-stitch-parity claim by hand.
 //
-//   DBURL=postgres://postgres:password@localhost:54321/dealbrain \
+//   DBURL=postgres://postgres:password@localhost:54321/<db> \
 //     bun packages/query-surface/scripts/compare-explore.ts
 //
 // Optional: pass a scenario name to run just one — e.g. `... compare-explore.ts pop`.
@@ -11,17 +11,17 @@
 import { type CompareRequest, runCompare, stitchCompare } from '../src/engine/aggregate/compare';
 import { makeDb } from '../src/engine/aggregate/drizzle-db';
 import type { AggregateInput } from '../src/engine/aggregate/measure-catalog';
-import { loadDealbrainModel } from '../src/engine/aggregate/model.dealbrain';
+import { loadSalesModel } from '../src/engine/aggregate/model.sales';
 import { runAggregateDrizzle } from '../src/engine/aggregate/run-drizzle';
 
 const DBURL = process.env.DBURL;
 if (!DBURL) {
-  console.error('Set DBURL, e.g. DBURL=postgres://postgres:password@localhost:54321/dealbrain');
+  console.error('Set DBURL, e.g. DBURL=postgres://postgres:password@localhost:54321/<db>');
   process.exit(1);
 }
 
 const { db, close } = makeDb(DBURL);
-const model = await loadDealbrainModel(db);
+const model = await loadSalesModel(db);
 
 // The variant runner the orchestrator drives — exactly what the service injects.
 const run = (entity: string, req: CompareRequest) =>

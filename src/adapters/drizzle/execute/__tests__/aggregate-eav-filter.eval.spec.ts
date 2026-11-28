@@ -4,11 +4,11 @@
 // truth), composes with EAV group/measure, AND a cross-source EAV filter still REJECTS (conformance
 // preserved — EAV-ness is orthogonal to the conformed-dimension rule).
 //
-//   DBURL=postgres://postgres:PW@localhost:54321/dealbrain bun test aggregate-eav-filter.eval
+//   DBURL=postgres://postgres:PW@localhost:54321/<db> bun test aggregate-eav-filter.eval
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
-import { type AggregateModel, loadDealbrainModel } from '../../../reference/model.dealbrain';
+import { type AggregateModel, loadSalesModel } from '../../../reference/model.sales';
 import { type DrizzleDb, makeDb } from '../drizzle-db';
 import { runAggregateDrizzle } from '../run-drizzle';
 
@@ -19,7 +19,7 @@ const suite = DBURL ? describe : describe.skip;
 const STAGE_DEF = `(select id from field_definitions where entity_type='opportunity' and key='StageName')`;
 
 suite(
-  'aggregate EAV-dim filter — narrows, composes, conformance preserved (live dealbrain)',
+  'aggregate EAV-dim filter — narrows, composes, conformance preserved (live reference DB)',
   () => {
     let db: DrizzleDb;
     let close: () => Promise<void>;
@@ -31,7 +31,7 @@ suite(
     beforeAll(async () => {
       ({ db, close } = makeDb(DBURL!));
       // load WITH a `stage` EAV dimension (← field_def StageName) — the default specs register none.
-      model = await loadDealbrainModel(db, undefined, [{ name: 'stage', key: 'StageName' }]);
+      model = await loadSalesModel(db, undefined, [{ name: 'stage', key: 'StageName' }]);
     });
     afterAll(async () => {
       await close?.();

@@ -18,7 +18,7 @@
 // single rows AND the split null bucket). This NULL split is pre-existing multi-source behavior,
 // orthogonal to Amendment 4.
 //
-//   DBURL=postgres://postgres:password@localhost:54321/dealbrain \
+//   DBURL=postgres://postgres:password@localhost:54321/<db> \
 //     bun test src/adapters/drizzle/execute/__tests__/conformed-multisource.eval.spec.ts
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';

@@ -1,6 +1,6 @@
 // CHARACTERIZATION NET — describe() field catalog + projection curation.
 //
-// Pins what the engine produces TODAY from the LIVE dealbrain DB for:
+// Pins what the engine produces TODAY from the LIVE reference DB for:
 //   - describe('accounts'|'opportunities'|'observations'): native column field
 //     types/nullable/searchable, relationships (name/kind/target), the EAV
 //     fields surfaced for opportunities (data_type → ColumnType), native⊕EAV
@@ -54,7 +54,7 @@ suite('describe-catalog — characterization', () => {
       const byKey = new Map(cat.fields.map((f) => [f.key, f]));
 
       // The catalog reflects only the columns the registered Drizzle table
-      // declares (schema.dealbrain's `accounts` = id + name), NOT the full DB
+      // declares (schema.sales's `accounts` = id + name), NOT the full DB
       // table (which also has user_id/website/organization_id/etc). So the
       // catalog is a registration-scoped projection, not a live-schema mirror.
       expect(byKey.get('id')).toMatchObject({ type: 'uuid', eav: false, nullable: false });
@@ -181,7 +181,7 @@ suite('describe-catalog — characterization', () => {
         .map((f) => f.key)
         .sort();
 
-      // GROUND TRUTH: visible opportunity defs for the dealbrain org.
+      // GROUND TRUTH: visible opportunity defs for the reference org.
       // truth: select key from field_definitions where
       //   organization_id='a30c290d-6798-4da7-b3af-7b48c50212b8'
       //   and entity_type='opportunity' and is_visible=true

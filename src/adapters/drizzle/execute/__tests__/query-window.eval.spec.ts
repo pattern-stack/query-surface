@@ -2,7 +2,7 @@
 // "selection within query" face: agg() OVER (PARTITION BY …) annotates rows,
 // grain preserved, returned as a normal (fetchable) query result.
 //
-//   DBURL=postgres://postgres:PW@localhost:54321/dealbrain bun test query-window.eval
+//   DBURL=postgres://postgres:PW@localhost:54321/<db> bun test query-window.eval
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
@@ -16,14 +16,14 @@ import {
   observationsRelations,
   opportunities,
   opportunitiesRelations,
-} from '../../../reference/schema.dealbrain';
+} from '../../../reference/schema.sales';
 import { configureQueryRegistry } from '../../registry/registry';
 import { type DrizzleDb, makeDb } from '../drizzle-db';
 
 const DBURL = process.env.DBURL;
 const suite = DBURL ? describe : describe.skip;
 
-suite('query() window measures — live dealbrain', () => {
+suite('query() window measures — live reference DB', () => {
   let db: DrizzleDb;
   let close: () => Promise<void>;
   let svc: QueryApplicationService;

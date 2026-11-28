@@ -1,6 +1,6 @@
 // The Drizzle-native model: the package's real registry (cardinality graph + EAV
 // strategy + FieldMeta analytics tags, from Drizzle defineRelations()) PLUS an EAV
-// measure overlay (tags can't ride dealbrain's field_definitions). The analytics
+// measure overlay (tags can't ride the reference app's field_definitions). The analytics
 // manifest is DERIVED from the registry (analyticsFromRegistry) — the field tags
 // are live, not hand-built.
 
@@ -29,13 +29,13 @@ import {
   observationsRelations,
   opportunities,
   opportunitiesRelations,
-} from './schema.dealbrain';
+} from './schema.sales';
 
-/** The dealbrain reference instance is a plain AggregateModel — the alias is
- *  retained as the reference instance's local name (loadDealbrainModel's return
+/** The reference instance is a plain AggregateModel — the alias is
+ *  retained as the reference instance's local name (loadSalesModel's return
  *  type). Callers outside this adapter use AggregateModel directly; re-exported
  *  here for the eval specs that load this fixture. */
-export type DealbrainModel = AggregateModel;
+export type SalesModel = AggregateModel;
 export type { AggregateModel };
 
 // Native dimension tags ride on FieldMeta (keyed by column PROPERTY name).
@@ -47,7 +47,7 @@ const opportunitiesMeta: FieldMetaMap = {
 }; // measures (Amount, ExpectedRevenue, Probability — by allowed aggs) are EAV → overlay below
 /** The deal-type taxonomy — observation semantic types. Used as the STATIC
  *  fallback for observations.type.selectOptions when the data-driven SELECT
- *  DISTINCT (loadDealbrainModel) can't run (e.g. no live DB). The live corpus
+ *  DISTINCT (loadSalesModel) can't run (e.g. no live DB). The live corpus
  *  also carries org-scope playbook types (workflow_playbook, role_policy, …),
  *  which the data-driven path surfaces; this list is the deal-scope core. */
 export const OBSERVATION_TYPE_TAXONOMY = [
@@ -77,7 +77,7 @@ export const OBSERVATION_TYPE_TAXONOMY = [
 
 /** Observations FieldMeta. `type.selectOptions` is overridden DATA-DRIVEN at
  *  model-load (SELECT DISTINCT type) when the DB is available — see
- *  loadDealbrainModel; this declaration carries the static taxonomy default plus
+ *  loadSalesModel; this declaration carries the static taxonomy default plus
  *  the retrieval-surface semantics (searchable text, hidden embedding/tenancy
  *  columns, provenance + scope dimensions). */
 export const observationsMeta: FieldMetaMap = {
@@ -136,31 +136,31 @@ export const observationsMeta: FieldMetaMap = {
  *  the surfaced name from the field and forced per-measure curation. `additivity` is the field's
  *  summable-ness (the doctor refuses SUM on a `non` percentage). Host-resolvable (field-management
  *  app) or the built-in default set. */
-export interface DealbrainMeasureSpec {
-  key: string; // the dealbrain EAV field_definitions.key AND the surfaced field name (e.g. 'Amount')
+export interface SalesMeasureSpec {
+  key: string; // the reference EAV field_definitions.key AND the surfaced field name (e.g. 'Amount')
   aggs: ('sum' | 'avg' | 'count' | 'count_distinct' | 'min' | 'max')[];
   additivity?: 'additive' | 'semi' | 'non'; // summable-ness; default 'additive'
 }
 
-const DEFAULT_MEASURE_SPECS: DealbrainMeasureSpec[] = [
+const DEFAULT_MEASURE_SPECS: SalesMeasureSpec[] = [
   { key: 'Amount', aggs: ['sum', 'avg', 'min', 'max'], additivity: 'additive' },
   { key: 'ExpectedRevenue', aggs: ['sum', 'avg', 'min', 'max'], additivity: 'additive' },
   { key: 'Probability', aggs: ['avg', 'min', 'max'], additivity: 'non' }, // percentage → not summable
 ];
 
 /** An EAV field exposed as a groupable DIMENSION (the host's resolved semantic layer). Referenced
- *  in group_by by its SAFE canonical `name` (e.g. 'stage'); the dealbrain `key` (e.g. 'StageName')
+ *  in group_by by its SAFE canonical `name` (e.g. 'stage'); the reference app's `key` (e.g. 'StageName')
  *  is used only to resolve the EAV value binding. A select/text field is a 1:1 field_values join →
  *  grain-safe (groupable like a to-one dim, never a fan-out). */
-export interface DealbrainDimensionSpec {
+export interface SalesDimensionSpec {
   name: string; // safe canonical name used in group_by (e.g. 'stage')
-  key: string; // the dealbrain field_definitions.key (e.g. 'StageName')
+  key: string; // the reference field_definitions.key (e.g. 'StageName')
 }
 
-export async function loadDealbrainModel(
+export async function loadSalesModel(
   db: DrizzleDb,
-  measureSpecs: DealbrainMeasureSpec[] = DEFAULT_MEASURE_SPECS,
-  dimensionSpecs: DealbrainDimensionSpec[] = [],
+  measureSpecs: SalesMeasureSpec[] = DEFAULT_MEASURE_SPECS,
+  dimensionSpecs: SalesDimensionSpec[] = [],
   // Host-named measure definitions (instances-by-data) — merged onto the auto-derived `Field.agg`
   // catalog AFTER it's built, so an agent can call a measure by a STABLE SLUG (e.g. {ref:'total_revenue'})
   // instead of guessing on/agg. Each atomic def's underlying field must already be a registered
@@ -168,7 +168,7 @@ export async function loadDealbrainModel(
   // name atomic catalog entries. Validated here — a bad def is a model-load error, not a query-time
   // surprise. A slug that collides with an auto-derived key is refused (no silent shadowing).
   measureDefs: MeasureCatalog = {},
-): Promise<DealbrainModel> {
+): Promise<SalesModel> {
   // DATA-DRIVEN type taxonomy: SELECT DISTINCT type at model-load (the same
   // pattern the EAV field-defs use below), so observations.type.selectOptions
   // reflects the LIVE corpus — which carries more types than the deal-scope core
@@ -271,7 +271,7 @@ export async function loadDealbrainModel(
         ]),
       ),
       // EAV DIMENSIONS — a select/text field exposed as a groupable dim (1:1 field_values join,
-      // grain-safe). Keyed by the safe canonical name; the EAV binding resolves the dealbrain key.
+      // grain-safe). Keyed by the safe canonical name; the EAV binding resolves the reference key.
       ...Object.fromEntries(
         dimensionSpecs.map((s) => [
           s.name,
@@ -287,7 +287,7 @@ export async function loadDealbrainModel(
   };
 
   const analytics = analyticsFromRegistry(registry, eavOverlay);
-  // The measure catalog is DERIVED from the analytics tags (B2) — for dealbrain that's the
+  // The measure catalog is DERIVED from the analytics tags (B2) — for the reference app that's the
   // field.agg combos: Amount.{sum,avg,min,max}, ExpectedRevenue.{…}, Probability.{avg,min,max}.
   const catalog = measuresFromRegistry(analytics);
   // Merge host-named measure defs onto the auto-derived catalog. A slug may never shadow an existing
@@ -297,7 +297,7 @@ export async function loadDealbrainModel(
   for (const slug of Object.keys(measureDefs)) {
     if (catalog[slug]) {
       throw new Error(
-        `loadDealbrainModel: measure slug "${slug}" collides with an existing catalog measure`,
+        `loadSalesModel: measure slug "${slug}" collides with an existing catalog measure`,
       );
     }
   }

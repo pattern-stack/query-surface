@@ -2,7 +2,7 @@
 //
 // CHARACTERIZATION net: pins what the engine does TODAY for dotted-path filters,
 // sorts, and projections through the relational graph. The graph (from
-// schema.dealbrain defineRelations()):
+// schema.sales defineRelations()):
 //   accounts        has_many opportunities, has_many observations
 //   opportunities   belongs_to account (fk account_id), has_many observations
 //   observations    belongs_to opportunity (fk opportunity_id),
@@ -19,7 +19,7 @@
 // number is checked against a raw-SQL ground truth (the `truth` query is the
 // comment above each expect).
 //
-//   DBURL=postgres://postgres:password@localhost:54321/dealbrain \
+//   DBURL=postgres://postgres:password@localhost:54321/<db> \
 //     bun test src/characterization/retrieval-joins.char.eval.spec.ts
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
@@ -140,7 +140,7 @@ suite('retrieval (belongs_to JOIN + has_many EXISTS) — characterization', () =
     // DIRECT belongs_to (fk account_id) — so the dotted 'account.name' compiles
     // to a join on obs.account_id, never through opportunity.
     //
-    // DIVERGENCE FROM OLD DEALBRAIN — the diamond no longer DISAGREES. In Bean
+    // DIVERGENCE FROM THE OLD REFERENCE DB — the diamond no longer DISAGREES. In Bean
     // Maxx, every non-orphan observation carries BOTH a direct account_id AND an
     // opportunity_id pointing to the SAME account (29039/29092 populated on both,
     // 53 orphans NULL on both, 0 cross-linked). So the direct leg and the

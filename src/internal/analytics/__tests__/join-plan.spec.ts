@@ -1,6 +1,6 @@
 // Pure unit tests for the dialect-neutral join-plan resolver (ADR-0024 wave 1). No DB —
 // the resolver walks the cardinality graph (AggRegistry.rels) and decides reachability +
-// cardinality + the join shape. Mirrors the dealbrain reference graph, including the
+// cardinality + the join shape. Mirrors the reference graph, including the
 // observations→accounts DIAMOND (direct obs.account_id AND obs→opp→account) the
 // characterization net proved the retrieval path silently mis-resolves.
 

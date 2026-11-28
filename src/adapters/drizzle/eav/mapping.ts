@@ -1,13 +1,13 @@
-// EAV value-column mapping — Shape A (dealbrain typed columns).
+// EAV value-column mapping — Shape A (reference typed columns).
 //
 // Single source of truth for "which `field_values` column holds a value of
 // data_type X". Shared by the READ resolver (compiler picks the column to
 // filter/select) and the WRITE/seed path (`toFieldValueColumns` coerces a
 // value into the right column).
 //
-// Borrowed from dealbrain proper's `toFieldValueColumns` / `extractTypedValue`
+// Borrowed from the reference app's `toFieldValueColumns` / `extractTypedValue`
 // (apps/backend/src/domain/field-values/field-value.entity.ts). The data_type
-// vocabulary and the mapping below are verified against the live dealbrain
+// vocabulary and the mapping below are verified against the live reference DB
 // `field_definitions.data_type` distribution:
 //   value_text    : text, longtext, select, reference, email, url, id
 //   value_number  : number, money, percentage
@@ -16,7 +16,7 @@
 
 export type EavValueColumn = 'valueText' | 'valueNumber' | 'valueDate' | 'valueBoolean';
 
-// Covers BOTH data_type vocabularies — dealbrain Shape A (money/percentage/
+// Covers BOTH data_type vocabularies — the reference app's Shape A (money/percentage/
 // select/longtext/…) and codegen-patterns Shape B (integer/decimal/picklist/…).
 // For Shape A it names the typed value column; for Shape B the resolver only
 // uses coercionCategory() (derived from this), since jsonb has one value column.
@@ -81,7 +81,7 @@ const EMPTY: FieldValueColumns = {
 
 /**
  * WRITE path: coerce an untyped value into the correct typed value column.
- * Mirror of dealbrain's `toFieldValueColumns`. Used by the seed.
+ * Mirror of the reference app's `toFieldValueColumns`. Used by the seed.
  */
 export function toFieldValueColumns(value: unknown, dataType: string): FieldValueColumns {
   if (value == null) return { ...EMPTY };
@@ -102,7 +102,7 @@ export function toFieldValueColumns(value: unknown, dataType: string): FieldValu
 
 /**
  * READ path: extract the typed value from the populated value column.
- * Mirror of dealbrain's `extractTypedValue`. Used to merge EAV cells back into
+ * Mirror of the reference app's `extractTypedValue`. Used to merge EAV cells back into
  * hydrated rows on fetch so an opportunity row carries StageName/Amount/etc.
  * inline — indistinguishable from real columns. numeric is decoded to a JS
  * number here (drizzle hands it back as a string).

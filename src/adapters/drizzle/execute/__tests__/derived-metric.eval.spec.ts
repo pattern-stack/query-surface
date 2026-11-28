@@ -13,7 +13,7 @@
 // advertises it as kind:'derived'; (D5) a non-atomic/unknown leg is refused at model load;
 // (D6) the derived legs never leak as public output columns.
 //
-//   DBURL=postgres://postgres:password@localhost:54321/dealbrain \
+//   DBURL=postgres://postgres:password@localhost:54321/<db> \
 //     bun test src/adapters/drizzle/execute/__tests__/derived-metric.eval.spec.ts
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
@@ -21,7 +21,7 @@ import {
   type QuerySurfaceHarness,
   makeQuerySurface,
 } from '../../../../characterization/harness.ts';
-import { loadDealbrainModel } from '../../../reference/model.dealbrain';
+import { loadSalesModel } from '../../../reference/model.sales';
 
 const DBURL = process.env.DBURL;
 const suite = DBURL ? describe : describe.skip;
@@ -282,7 +282,7 @@ suite('derived composite metric — arithmetic over atomic measure legs (ADR-002
 
   it('D5 a derived def whose leg is non-atomic (a ratio) is refused at model load', async () => {
     await expect(
-      loadDealbrainModel(h.db, undefined, DIMENSION_SPECS, {
+      loadSalesModel(h.db, undefined, DIMENSION_SPECS, {
         win_share: {
           kind: 'ratio',
           numerator: 'ExpectedRevenue.sum',
@@ -298,7 +298,7 @@ suite('derived composite metric — arithmetic over atomic measure legs (ADR-002
 
   it('D5b a derived def naming an unknown leg is refused at model load', async () => {
     await expect(
-      loadDealbrainModel(h.db, undefined, DIMENSION_SPECS, {
+      loadSalesModel(h.db, undefined, DIMENSION_SPECS, {
         bad_derived: {
           kind: 'derived',
           expr: { op: '-', left: { ref: 'not_a_measure' }, right: { ref: 'Amount.sum' } },
@@ -309,7 +309,7 @@ suite('derived composite metric — arithmetic over atomic measure legs (ADR-002
 
   it('D5c a derived def with no atomic ref (pure literals) is refused at model load', async () => {
     await expect(
-      loadDealbrainModel(h.db, undefined, DIMENSION_SPECS, {
+      loadSalesModel(h.db, undefined, DIMENSION_SPECS, {
         bad_derived: {
           kind: 'derived',
           expr: { op: '+', left: { lit: 1 }, right: { lit: 2 } },

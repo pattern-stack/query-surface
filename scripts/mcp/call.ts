@@ -12,7 +12,7 @@ import { createQuerySurfaceMcpServer } from '../../src/presentation/mcp/index.ts
 
 const DBURL = process.env.DBURL;
 if (!DBURL) {
-  console.error('Set DBURL=postgres://postgres:password@localhost:54321/dealbrain');
+  console.error('Set DBURL=postgres://postgres:password@localhost:54321/<db>');
   process.exit(1);
 }
 const raw = process.argv[2];

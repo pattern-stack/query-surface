@@ -1,7 +1,7 @@
-// Local MCP boot — serves the query-surface primitives over stdio against the dealbrain reference
+// Local MCP boot — serves the query-surface primitives over stdio against the reference
 // fixture, so a local agent (e.g. a Haiku-level model) can drive the surface end to end.
 //
-//   DBURL=postgres://postgres:password@localhost:54321/dealbrain \
+//   DBURL=postgres://postgres:password@localhost:54321/<db> \
 //     bun run scripts/mcp/serve.ts
 //
 // Then point any MCP client at `bun run scripts/mcp/serve.ts` (stdio transport). Optional:
@@ -16,7 +16,7 @@ import { createQuerySurfaceMcpServer } from '../../src/presentation/mcp/index.ts
 
 const DBURL = process.env.DBURL;
 if (!DBURL) {
-  console.error('Set DBURL, e.g. DBURL=postgres://postgres:password@localhost:54321/dealbrain');
+  console.error('Set DBURL, e.g. DBURL=postgres://postgres:password@localhost:54321/<db>');
   process.exit(1);
 }
 

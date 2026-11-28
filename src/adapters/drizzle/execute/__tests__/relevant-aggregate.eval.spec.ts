@@ -1,5 +1,5 @@
 // Wave-2 RELEVANCE-AS-FILTER (ADR-0024 §A / Amendment 2) — aggregate() FALSIFIER against LIVE
-// dealbrain. Proves the `op:'relevant'` leaf collapses through aggregate() correctly end-to-end:
+// reference DB. Proves the `op:'relevant'` leaf collapses through aggregate() correctly end-to-end:
 //   • THRESHOLD COHORT IDENTITY  — a grouped count over a threshold cohort == the SQL cohort
 //     (member rows partitioned across groups), and citation.match_count == the exact cutoff count
 //   • TOP_K DUAL-MODE            — GLOBAL (no group_by/per → k rows total, ruling a) vs PER-GROUP
@@ -23,7 +23,7 @@
 // EXACT formula at compiler.ts simExpr). NEVER SELECT DISTINCT over the vector(1536) column (OOM
 // guardrail); every ranked/LIMIT scan adds a deterministic id ASC secondary sort.
 //
-//   DBURL=postgres://postgres:PW@localhost:54321/dealbrain bun test relevant-aggregate.eval
+//   DBURL=postgres://postgres:PW@localhost:54321/<db> bun test relevant-aggregate.eval
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
@@ -35,15 +35,15 @@ import {
   fieldValues,
   opportunities,
   opportunitiesRelations,
-} from '../../../../adapters/reference/schema.dealbrain';
+} from '../../../../adapters/reference/schema.sales';
 import {
-  DEALBRAIN_ORG,
+  SALES_ORG,
   observationsExt,
   observationsExtRelations,
 } from '../../../../characterization/harness';
 import type { FilterExpression } from '../../../../internal/language/types';
 import { QueryApplicationService, UNSCOPED } from '../../../../query.application-service';
-import { loadDealbrainModel } from '../../../reference/model.dealbrain';
+import { loadSalesModel } from '../../../reference/model.sales';
 import { type DrizzleDb, makeDb } from '../drizzle-db';
 
 const DBURL = process.env.DBURL;
@@ -54,7 +54,7 @@ const suite = DBURL ? describe : describe.skip;
 // the same way, so the engine's query vector == the spec's truth vector by construction.
 const ANCHOR_PHRASE = 'beanmaxxing offered Tabnine a conditional';
 
-suite('relevance-as-filter — aggregate() live dealbrain (ADR-0024 §A / Amendment 2)', () => {
+suite('relevance-as-filter — aggregate() live reference DB (ADR-0024 §A / Amendment 2)', () => {
   let db: DrizzleDb;
   let close: () => Promise<void>;
   let service: QueryApplicationService;
@@ -70,7 +70,7 @@ suite('relevance-as-filter — aggregate() live dealbrain (ADR-0024 §A / Amendm
 
   beforeAll(async () => {
     ({ db, close } = makeDb(DBURL!));
-    // Register the SAME 3 dealbrain entities the harness uses (observations is the EXTENDED table
+    // Register the SAME 3 reference entities the harness uses (observations is the EXTENDED table
     // that carries embedding + normalized_text). The module-global registry must be populated
     // before any compile().
     configureQueryRegistry([
@@ -107,8 +107,8 @@ suite('relevance-as-filter — aggregate() live dealbrain (ADR-0024 §A / Amendm
     service = new QueryApplicationService(db, {
       scope: UNSCOPED,
       actorUserId: POC_ACTOR_USER_ID,
-      actorOrganizationId: DEALBRAIN_ORG,
-      aggregateModel: () => loadDealbrainModel(db),
+      actorOrganizationId: SALES_ORG,
+      aggregateModel: () => loadSalesModel(db),
       semanticColumns: { observations: { normalized_text: 'embedding' } },
       embed,
     });
@@ -500,8 +500,8 @@ suite('relevance-as-filter — aggregate() live dealbrain (ADR-0024 §A / Amendm
   it('R11 fail-closed: a scope that does NOT cover the semantic/cohort entity REFUSES', async () => {
     const scopedService = new QueryApplicationService(db, {
       actorUserId: POC_ACTOR_USER_ID,
-      actorOrganizationId: DEALBRAIN_ORG,
-      aggregateModel: () => loadDealbrainModel(db),
+      actorOrganizationId: SALES_ORG,
+      aggregateModel: () => loadSalesModel(db),
       semanticColumns: { observations: { normalized_text: 'embedding' } },
       embed: async () => JSON.parse(anchorVecLit) as number[],
       // observations (the cohort/semantic entity) gets NO scope answer → coverage gap.
@@ -525,8 +525,8 @@ suite('relevance-as-filter — aggregate() live dealbrain (ADR-0024 §A / Amendm
     // with the scope folded into the inner WHERE.
     const scopedService = new QueryApplicationService(db, {
       actorUserId: POC_ACTOR_USER_ID,
-      actorOrganizationId: DEALBRAIN_ORG,
-      aggregateModel: () => loadDealbrainModel(db),
+      actorOrganizationId: SALES_ORG,
+      aggregateModel: () => loadSalesModel(db),
       semanticColumns: { observations: { normalized_text: 'embedding' } },
       embed: async () => JSON.parse(anchorVecLit) as number[],
       scope: (entity) =>

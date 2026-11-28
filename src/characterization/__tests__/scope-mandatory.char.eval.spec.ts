@@ -16,20 +16,20 @@
 //     so this validates the root/expand/aggregate folds but cannot falsify the ADR-0028
 //     traversed-JOIN gap — that needs a synthetic cross-tenant-FK row.)
 //
-//   DBURL=postgres://postgres:password@localhost:54321/dealbrain \
+//   DBURL=postgres://postgres:password@localhost:54321/<db> \
 //     bun test src/characterization/__tests__/scope-mandatory.char.eval.spec.ts
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { POC_ACTOR_USER_ID } from '../../adapters/drizzle/eav/field-map.ts';
-import { loadDealbrainModel } from '../../adapters/reference/model.dealbrain.ts';
+import { loadSalesModel } from '../../adapters/reference/model.sales.ts';
 import type { EntityName, FilterExpression } from '../../internal/language/types.ts';
 import {
   QueryApplicationService,
   type ScopeResolver,
   UNSCOPED,
 } from '../../query.application-service.ts';
-import { DEALBRAIN_ORG, type QuerySurfaceHarness, makeQuerySurface } from '../harness.ts';
+import { type QuerySurfaceHarness, SALES_ORG, makeQuerySurface } from '../harness.ts';
 
 const DBURL = process.env.DBURL;
 const suite = DBURL ? describe : describe.skip;
@@ -50,9 +50,9 @@ suite('scope mandatory + fail-closed (characterization)', () => {
   const svc = (scope: ScopeResolver | typeof UNSCOPED, withModel = false) =>
     new QueryApplicationService(h.db, {
       actorUserId: POC_ACTOR_USER_ID,
-      actorOrganizationId: DEALBRAIN_ORG,
+      actorOrganizationId: SALES_ORG,
       scope,
-      ...(withModel ? { aggregateModel: () => loadDealbrainModel(h.db) } : {}),
+      ...(withModel ? { aggregateModel: () => loadSalesModel(h.db) } : {}),
     });
 
   // ========================================================================
@@ -64,7 +64,7 @@ suite('scope mandatory + fail-closed (characterization)', () => {
       () =>
         new QueryApplicationService(h.db, {
           actorUserId: POC_ACTOR_USER_ID,
-          actorOrganizationId: DEALBRAIN_ORG,
+          actorOrganizationId: SALES_ORG,
         } as never),
     ).toThrow(/scope.*required/i);
   });
@@ -96,7 +96,7 @@ suite('scope mandatory + fail-closed (characterization)', () => {
   it('A5 a root declared TENANT_GLOBAL reads unscoped without refusal', async () => {
     const s = new QueryApplicationService(h.db, {
       actorUserId: POC_ACTOR_USER_ID,
-      actorOrganizationId: DEALBRAIN_ORG,
+      actorOrganizationId: SALES_ORG,
       scope: () => undefined, // covers nothing…
       tenantGlobalEntities: ['observations'], // …but observations is declared global
     });

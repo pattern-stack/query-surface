@@ -1,26 +1,26 @@
 // B1 falsifiers: scope is folded PRE-aggregation, PER source CTE, and is
-// non-bypassable — proven against live dealbrain data (the engine path AND the
+// non-bypassable — proven against the live reference data (the engine path AND the
 // QueryApplicationService.measure() public path).
 //
-//   DBURL=postgres://postgres:PW@localhost:54321/dealbrain bun test aggregate-scope.eval
+//   DBURL=postgres://postgres:PW@localhost:54321/<db> bun test aggregate-scope.eval
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { TENANT_GLOBAL } from '../../../../internal/analytics/types';
 import type { ScopeFor } from '../../../../internal/analytics/types';
 import { QueryApplicationService, UNSCOPED } from '../../../../query.application-service';
-import { type AggregateModel, loadDealbrainModel } from '../../../reference/model.dealbrain';
+import { type AggregateModel, loadSalesModel } from '../../../reference/model.sales';
 import { type DrizzleDb, makeDb } from '../drizzle-db';
 import { aggregate, runAggregateDrizzle } from '../run-drizzle';
 
 const DBURL = process.env.DBURL;
 const suite = DBURL ? describe : describe.skip;
 // Bean Maxx: the `weighted_amount` measure resolves via eavByKey('ExpectedRevenue')
-// (see model.dealbrain.ts) — key the truth-SQL the SAME way the engine does, not on a
+// (see model.sales.ts) — key the truth-SQL the SAME way the engine does, not on a
 // (now-absent) display label.
 const WA = `(select id from field_definitions where entity_type='opportunity' and key='ExpectedRevenue')`;
 
-// Tenancy stand-in for the dealbrain test tables (no real user/org column): an
+// Tenancy stand-in for the reference test tables (no real user/org column): an
 // ordinary observations column used AS the scope predicate, so the MECHANIC
 // (scope → per-source pre-agg WHERE) is provable on real data. Non-observations
 // sources are EXPLICITLY declared TENANT_GLOBAL — the fail-closed contract refuses
@@ -28,7 +28,7 @@ const WA = `(select id from field_definitions where entity_type='opportunity' an
 const obsScope: ScopeFor = (s) =>
   s === 'observations' ? { on: 'type', op: 'eq', value: 'commitment' } : TENANT_GLOBAL;
 
-suite('aggregate scope — pre-aggregation, per-source, non-bypassable (live dealbrain)', () => {
+suite('aggregate scope — pre-aggregation, per-source, non-bypassable (live reference DB)', () => {
   let db: DrizzleDb;
   let close: () => Promise<void>;
   let model: AggregateModel;
@@ -38,7 +38,7 @@ suite('aggregate scope — pre-aggregation, per-source, non-bypassable (live dea
 
   beforeAll(async () => {
     ({ db, close } = makeDb(DBURL!));
-    model = await loadDealbrainModel(db);
+    model = await loadSalesModel(db);
   });
   afterAll(async () => {
     await close?.();
@@ -171,7 +171,7 @@ suite('aggregate scope — pre-aggregation, per-source, non-bypassable (live dea
 
   it('S6 service path: QueryApplicationService.measure() applies options.scope per source', async () => {
     const svc = new QueryApplicationService(db, {
-      aggregateModel: () => loadDealbrainModel(db),
+      aggregateModel: () => loadSalesModel(db),
       scope: (entity) =>
         entity === 'observations' ? { on: 'type', op: 'eq', value: 'commitment' } : undefined,
     });
@@ -249,7 +249,7 @@ suite('aggregate scope — pre-aggregation, per-source, non-bypassable (live dea
     };
     // Declared global → allowed.
     const ok = new QueryApplicationService(db, {
-      aggregateModel: () => loadDealbrainModel(db),
+      aggregateModel: () => loadSalesModel(db),
       scope: scope as never,
       tenantGlobalEntities: ['opportunities', 'accounts'] as never,
     });
@@ -257,7 +257,7 @@ suite('aggregate scope — pre-aggregation, per-source, non-bypassable (live dea
     expect(res.rows.length).toBeGreaterThan(0);
     // NOT declared → denied (opportunities uncovered + not global).
     const denied = new QueryApplicationService(db, {
-      aggregateModel: () => loadDealbrainModel(db),
+      aggregateModel: () => loadSalesModel(db),
       scope: scope as never,
     });
     expect(denied.measure('opportunities' as never, q)).rejects.toThrow(

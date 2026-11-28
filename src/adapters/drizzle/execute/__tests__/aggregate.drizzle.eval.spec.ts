@@ -2,7 +2,7 @@
 // (real registry from defineRelations(), real PgColumns, parameterized Drizzle sql).
 // The eval is the safety net: behavior is pinned, only the engine underneath changed.
 //
-//   DBURL=postgres://postgres:PW@localhost:54321/dealbrain bun test aggregate.drizzle.eval
+//   DBURL=postgres://postgres:PW@localhost:54321/<db> bun test aggregate.drizzle.eval
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
@@ -11,7 +11,7 @@ import type {
   AtomicMeasureDef,
   RatioMeasureDef,
 } from '../../../../internal/analytics/measure-catalog';
-import { type AggregateModel, loadDealbrainModel } from '../../../reference/model.dealbrain';
+import { type AggregateModel, loadSalesModel } from '../../../reference/model.sales';
 import { compileNaiveDrizzle } from '../../compile/compile-drizzle';
 import { type DrizzleDb, makeDb } from '../drizzle-db';
 import { aggregate, runAggregateDrizzle } from '../run-drizzle';
@@ -21,7 +21,7 @@ const suite = DBURL ? describe : describe.skip;
 const WA = `(select id from field_definitions where entity_type='opportunity' and key='ExpectedRevenue')`;
 const DP = `(select id from field_definitions where entity_type='opportunity' and key='Probability')`;
 
-suite('aggregate engine — Drizzle-native, live dealbrain eval superset', () => {
+suite('aggregate engine — Drizzle-native, live reference-DB eval superset', () => {
   let db: DrizzleDb;
   let close: () => Promise<void>;
   let model: AggregateModel;
@@ -32,7 +32,7 @@ suite('aggregate engine — Drizzle-native, live dealbrain eval superset', () =>
 
   beforeAll(async () => {
     ({ db, close } = makeDb(DBURL!));
-    model = await loadDealbrainModel(db);
+    model = await loadSalesModel(db);
   });
   afterAll(async () => {
     await close?.();
@@ -260,7 +260,7 @@ suite('aggregate engine — Drizzle-native, live dealbrain eval superset', () =>
     expect(num(ninEmpty.rows[0]!.n)).toBe(num(all[0]!.n)); // empty NOT IN matches everything
   });
 
-  it('E16 model.catalog is DERIVED from the dealbrain tags (B2): one field.agg entry per allowed agg', () => {
+  it('E16 model.catalog is DERIVED from the reference tags (B2): one field.agg entry per allowed agg', () => {
     const cat = model.catalog ?? {};
     expect(Object.keys(cat).sort()).toEqual([
       'Amount.avg',

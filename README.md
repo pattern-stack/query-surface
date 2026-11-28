@@ -9,7 +9,7 @@ comes back as an error with a reason, never a silently wrong number.
 
 The package hard-codes **no schema**. The host supplies an `AggregateModel` (entities,
 cardinality graph, EAV strategy, field tags); the reference instance
-(`adapters/reference/model.dealbrain.ts`) doubles as the eval fixture.
+(`adapters/reference/model.sales.ts`) doubles as the eval fixture.
 
 ---
 
@@ -192,7 +192,7 @@ src/
                      retrieval/ snippets
   adapters/        driven adapters:
                      drizzle/   compile/ + execute/ — the ONLY SQL-bound code
-                     reference/ the dealbrain eval fixture (model + schema)
+                     reference/ the reference eval fixture (model + schema)
   presentation/    driving adapters: nest/ (REST). MCP/CLI grow by subpath export.
   characterization/ the char net — a DB-backed contract test pinning backend behavior
 ```
@@ -216,10 +216,10 @@ bun install
 bun run check:type                                   # tsc --noEmit
 bun run lint                                          # biome, whole repo (CI gates this)
 bun test                                              # DB-gated specs skip cleanly
-DBURL=postgres://postgres:password@localhost:54321/dealbrain bun test   # the full eval
+DBURL=postgres://postgres:password@localhost:54321/<db> bun test   # the full eval
 ```
 
-The reference DB (`:54321`) is **dealbrain's** dev DB (the Bean Maxx fixture): `Opp→Account`
+The reference DB (`:54321`) is **the reference app's** dev DB (the Bean Maxx fixture): `Opp→Account`
 is to-one, `Account→Opp` to-many, `observations` carry real 1536-dim embeddings.
 
 ---
@@ -239,7 +239,7 @@ Bun 1.3 · TypeScript 5 (strict) · Drizzle ORM 1.0 (peer `^1.0.0-rc.4`, dev pin
 ## Canonical lineage
 
 This is the **canonical** home for the engine that previously drifted across three copies
-(`dealbrain/packages/query-surface`, `query-surface-poc`, `swe-brain/packages/query-surface`),
+(a previous app's vendored copy, `query-surface-poc`, `swe-brain/packages/query-surface`),
 seeded from the `swe-brain` superset (retrieval + the grain-safe analytics stage). Fixes land
 **only** here; consumers bump.
 

@@ -1,8 +1,8 @@
 // The analytics model the aggregate engine runs against. Host-supplied and
 // treated as opaque by the package: the cardinality/EAV registry, the DERIVED
 // analytics manifest (role/agg/additivity/time tags per field), and the Drizzle
-// table + column refs. See model.dealbrain.ts for the reference instance (the
-// dealbrain loader); a host builds its own and injects it via
+// table + column refs. See model.sales.ts for the reference instance (the
+// reference loader); a host builds its own and injects it via
 // QueryServiceOptions.aggregateModel.
 
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';

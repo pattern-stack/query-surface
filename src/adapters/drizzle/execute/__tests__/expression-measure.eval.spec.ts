@@ -9,7 +9,7 @@
 // Ground truth is computed INDEPENDENTLY via RAW SQL joining field_values directly (twice, for the
 // two EAV cols) — NEVER via the expression path itself.
 //
-//   DBURL=postgres://postgres:password@localhost:54321/dealbrain \
+//   DBURL=postgres://postgres:password@localhost:54321/<db> \
 //     bun test src/adapters/drizzle/execute/__tests__/expression-measure.eval.spec.ts
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
@@ -18,7 +18,7 @@ import {
   type QuerySurfaceHarness,
   makeQuerySurface,
 } from '../../../../characterization/harness.ts';
-import { loadDealbrainModel } from '../../../reference/model.dealbrain';
+import { loadSalesModel } from '../../../reference/model.sales';
 
 const DBURL = process.env.DBURL;
 const suite = DBURL ? describe : describe.skip;
@@ -77,7 +77,7 @@ suite('expression measure — agg(f(col,col)) over local numeric cols (ADR-0029 
   const num = (v: unknown) => Number(v);
   const bucketKey = (v: unknown) => (v == null ? '<null>' : String(v));
 
-  // A field_values CTE for a dealbrain key — the 1:1 (entity → value) the engine joins. We join the
+  // A field_values CTE for a reference key — the 1:1 (entity → value) the engine joins. We join the
   // EAV cols DIRECTLY (twice) to build ground truth WITHOUT the expression path.
   const fv = (key: string, col: 'value_text' | 'value_number') =>
     `(select fv.entity_id eid, fv.${col} v from field_values fv
@@ -375,7 +375,7 @@ suite('expression measure — agg(f(col,col)) over local numeric cols (ADR-0029 
   it('D4-5a FAIL-LOUD: a { col } naming a non-numeric / unregistered field is refused at model load', async () => {
     // 'stage' is a string EAV dimension (type:string), not numeric → arithmetic refused.
     await expect(
-      loadDealbrainModel(h.db, undefined, DIMENSION_SPECS, {
+      loadSalesModel(h.db, undefined, DIMENSION_SPECS, {
         bad_expr: {
           kind: 'atomic',
           on: { op: '*', left: { col: 'Amount' }, right: { col: 'not_a_field' } },
@@ -401,7 +401,7 @@ suite('expression measure — agg(f(col,col)) over local numeric cols (ADR-0029 
     });
     // (i) NON-NUMERIC target: opportunities→accounts is to-one, but accounts.name is a string dim.
     await expect(
-      loadDealbrainModel(
+      loadSalesModel(
         h.db,
         undefined,
         DIMENSION_SPECS,
@@ -410,7 +410,7 @@ suite('expression measure — agg(f(col,col)) over local numeric cols (ADR-0029 
     ).rejects.toThrow(/numeric/i);
     // (ii) UNREGISTERED target col: to-one, but accounts has no 'nope' field.
     await expect(
-      loadDealbrainModel(
+      loadSalesModel(
         h.db,
         undefined,
         DIMENSION_SPECS,
@@ -419,7 +419,7 @@ suite('expression measure — agg(f(col,col)) over local numeric cols (ADR-0029 
     ).rejects.toThrow(/not a registered numeric field|not registered|numeric/i);
     // (iii) HAS_MANY reach: opportunities has_many observations → resolveJoinPlan(role 'filter') = semijoin, not to-one (would fan).
     await expect(
-      loadDealbrainModel(
+      loadSalesModel(
         h.db,
         undefined,
         DIMENSION_SPECS,
@@ -428,7 +428,7 @@ suite('expression measure — agg(f(col,col)) over local numeric cols (ADR-0029 
     ).rejects.toThrow(/to-one|fan/i);
     // (iv) DIAMOND reach: observations→accounts has TWO belongs_to paths (direct + via opportunities) → ambiguous.
     await expect(
-      loadDealbrainModel(
+      loadSalesModel(
         h.db,
         undefined,
         DIMENSION_SPECS,
@@ -439,7 +439,7 @@ suite('expression measure — agg(f(col,col)) over local numeric cols (ADR-0029 
 
   it('D4-5c FAIL-LOUD: a pure-literal expression (no col) is refused at model load', async () => {
     await expect(
-      loadDealbrainModel(h.db, undefined, DIMENSION_SPECS, {
+      loadSalesModel(h.db, undefined, DIMENSION_SPECS, {
         bad_expr: {
           kind: 'atomic',
           on: { op: '+', left: { lit: 1 }, right: { lit: 2 } },

@@ -2,7 +2,7 @@
 // role/agg/additivity/time marks on the field are LIVE (consumed), not
 // validated-and-dropped. Native dimensions/measures come from desc.fieldMeta;
 // EAV measures (whose tags would live on field_definitions, a DB column we don't
-// control on dealbrain) are supplied as an overlay.
+// control on the reference app) are supplied as an overlay.
 
 import { getTableColumns, getTableName } from 'drizzle-orm';
 import type { PgColumn } from 'drizzle-orm/pg-core';
@@ -56,7 +56,7 @@ export function analyticsFromRegistry(
           : {}),
       };
     }
-    // EAV measures (tags can't ride field_definitions on dealbrain → overlay)
+    // EAV measures (tags can't ride field_definitions on the reference app → overlay)
     Object.assign(fields, eavOverlay[name] ?? {});
     out[name] = {
       table: getTableName(desc.table),

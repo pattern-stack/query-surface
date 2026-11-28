@@ -2,7 +2,7 @@
 // list tools, then describe → aggregate → relevance query, asserting the round-trip works and
 // the citation rides along. Run: DBURL=… bun run scripts/mcp/smoke.ts
 //
-// Not a unit test (it hits the live dealbrain fixture); a fast manual end-to-end check.
+// Not a unit test (it hits the live reference fixture); a fast manual end-to-end check.
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -11,7 +11,7 @@ import { createQuerySurfaceMcpServer } from '../../src/presentation/mcp/index.ts
 
 const DBURL = process.env.DBURL;
 if (!DBURL) {
-  console.error('Set DBURL=postgres://postgres:password@localhost:54321/dealbrain');
+  console.error('Set DBURL=postgres://postgres:password@localhost:54321/<db>');
   process.exit(1);
 }
 

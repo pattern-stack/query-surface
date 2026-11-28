@@ -1,13 +1,13 @@
 // Smoke test for the characterization harness — proves makeQuerySurface() boots
-// the query-surface against live dealbrain and the PUBLIC describe() surface
+// the query-surface against the live reference DB and the PUBLIC describe() surface
 // returns the expected catalog. Area *.char.eval.spec.ts files copy this boot.
 //
-//   DBURL=postgres://postgres:password@localhost:54321/dealbrain \
+//   DBURL=postgres://postgres:password@localhost:54321/<db> \
 //     bun test src/characterization/_harness-smoke.char.eval.spec.ts
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from 'drizzle-orm';
-import { DEALBRAIN_ORG, type QuerySurfaceHarness, makeQuerySurface } from '../harness.ts';
+import { type QuerySurfaceHarness, SALES_ORG, makeQuerySurface } from '../harness.ts';
 
 const DBURL = process.env.DBURL;
 const suite = DBURL ? describe : describe.skip;
@@ -29,7 +29,7 @@ suite('characterization harness — smoke', () => {
           where entity_type='opportunity' and organization_id is not null`,
     );
     const orgs = (truth.rows as Array<{ org: string }>).map((r) => r.org);
-    expect(orgs).toEqual([DEALBRAIN_ORG]);
+    expect(orgs).toEqual([SALES_ORG]);
   });
 
   it("describe('accounts') exposes the 'name' field + a relationship to opportunities", async () => {
@@ -46,7 +46,7 @@ suite('characterization harness — smoke', () => {
     expect(rels.find((r) => r.target === 'observations')).toBeDefined();
   });
 
-  it('describe() over all entities returns the 3 registered dealbrain entities', async () => {
+  it('describe() over all entities returns the 3 registered reference entities', async () => {
     const all = await h.service.describe();
     expect(all.map((c) => c.entity).sort()).toEqual(['accounts', 'observations', 'opportunities']);
   });

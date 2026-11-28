@@ -36,5 +36,5 @@ old body revision. Old commits are not reachable from any branch or tag.
 - **Engine frontier unchanged:** ADR-0028 (QueryPlan IR + `QueryBackend` port) is designed, 0% built;
   open engine issues #35, #36 (scope must reach joined tables — a correctness bug), #37; ADR-0027
   waves #12–#14.
-- **DB:** `DBURL=postgres://postgres:password@localhost:54321/dealbrain` (dealbrain's dev DB, the
+- **DB:** `DBURL=postgres://postgres:password@localhost:54321/<db>` (the reference app's dev DB, the
   synthetic Bean Maxx fixture — read-only from here).

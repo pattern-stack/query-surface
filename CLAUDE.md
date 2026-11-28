@@ -4,7 +4,7 @@ The **agent-aware query + aggregation surface** — one composition point
 (`QueryApplicationService`) exposing a few primitives over a host-supplied domain model,
 projected to REST / MCP / agents. This is the **canonical home**: it ended the 3-copy fork
 (query-surface was vendored in `swe-brain/packages/query-surface`, `query-surface-poc`, and
-dealbrain copies). **All query-surface work happens HERE now**, not in those copies.
+a previous app's copies). **All query-surface work happens HERE now**, not in those copies.
 
 **Always read first:**
 1. [`.ai-docs/handoff.md`](.ai-docs/handoff.md) — current state + the actionable next phase
@@ -29,7 +29,7 @@ dealbrain copies). **All query-surface work happens HERE now**, not in those cop
   normalizers, error contract), `analytics/` (the grain oracle, the doctor, **`join-plan.ts`** =
   the conformed-dimension resolver, measure-catalog, normalize, compare), `retrieval/` (snippets).
 - `src/adapters/` — **driven** adapters: `drizzle/` (`compile/` + `execute/` — the ONLY SQL-bound
-  code), `reference/` (the dealbrain eval fixture: `model.dealbrain` + `schema.dealbrain`).
+  code), `reference/` (the reference eval fixture: `model.sales` + `schema.sales`).
 - `src/presentation/` — **driving** adapters: `nest/` (the NestJS module/service/REST). Future
   driving adapters (`/mcp`, `/cli`) grow by subpath export; driven adapters grow by folder.
 - `src/characterization/` — the **char net**: a DB-backed contract test that pins backend behavior
@@ -60,7 +60,7 @@ dealbrain copies). **All query-surface work happens HERE now**, not in those cop
 6. **Catalog by code, instances by data.** Capabilities (measures/dims) register in code; the
    named-measure catalog is derived from the `role`-tagged FieldMeta, not hand-listed.
 7. **The model is host-supplied** (`AggregateModel`); the package hard-codes no schema.
-   `adapters/reference/model.dealbrain.ts` is the reference instance + eval fixture.
+   `adapters/reference/model.sales.ts` is the reference instance + eval fixture.
 
 ## The eval IS the gate
 Behavior is pinned by the `*.eval.spec.ts` + `*.char.eval.spec.ts` suites; DB-backed specs gate on
@@ -68,13 +68,13 @@ Behavior is pinned by the `*.eval.spec.ts` + `*.char.eval.spec.ts` suites; DB-ba
 without behavior drift.
 
 ```bash
-DBURL=postgres://postgres:password@localhost:54321/dealbrain bun test   # 443 pass / 0 fail (2026-09-20)
+DBURL=postgres://postgres:password@localhost:54321/<db> bun test   # 443 pass / 0 fail (2026-09-20)
 bun test                          # 155 pass, DB-gated specs skip cleanly — this is what CI runs
 bunx tsc --noEmit                 # types
 bun run lint                      # biome over the WHOLE repo, src + scripts/ (CI gates this — run before pushing)
 scripts/check-pack.sh             # pack → install in a fresh project → type-check + import (CI gates this)
 ```
-The dealbrain dev DB (`:54321`) is **dealbrain's, not this repo's** — bring it up there if down. It's
+The reference dev DB (`:54321`) is **the reference app's, not this repo's** — bring it up there if down. It's
 the reference fixture: `Opp→Account` is to-one, `Account→Opp` to-many, `observations` carry real
 1536-dim embeddings.
 

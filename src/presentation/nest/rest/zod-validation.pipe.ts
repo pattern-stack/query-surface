@@ -7,7 +7,7 @@ import {
 import type { ZodError, ZodType } from 'zod';
 
 /**
- * Package-local Zod validation pipe — same error contract as the dealbrain
+ * Package-local Zod validation pipe — same error contract as the reference app
  * backend's `core/pipes/zod-validation.pipe.ts` (`{message, error, errors}`),
  * duplicated here so the package presentation has no host imports.
  */

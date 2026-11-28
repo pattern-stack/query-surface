@@ -140,7 +140,7 @@ export interface QueryServiceOptions {
    *  against (cardinality/EAV registry + DERIVED manifest + Drizzle table/column
    *  refs). Lazy-cached on first aggregate() call (the builder may hit the DB for
    *  the EAV field-map). REQUIRED to use aggregate(); query()/fetch() don't need
-   *  it. See the aggregate engine's model.ts / model.dealbrain.ts. */
+   *  it. See the aggregate engine's model.ts / model.sales.ts. */
   aggregateModel?: () => Promise<AggregateModel>;
   /** Entities that intentionally carry NO tenancy (reference/lookup tables). When
    *  `scope` is set, aggregate() FAILS CLOSED on any measure source that `scope`

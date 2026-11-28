@@ -12,9 +12,9 @@ import {
   observationsRelations,
   opportunities,
   opportunitiesRelations,
-} from '../schema.dealbrain';
+} from '../schema.sales';
 
-describe('dealbrain Drizzle registry — cardinality graph from defineRelations()', () => {
+describe('reference Drizzle registry — cardinality graph from defineRelations()', () => {
   const reg = buildRegistry([
     { name: 'accounts', table: accounts, relations: accountsRelations },
     {

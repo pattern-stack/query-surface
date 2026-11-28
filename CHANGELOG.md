@@ -58,7 +58,7 @@ and CI.
 ### Changed
 - **No runtime dependencies** (#47). `sql-formatter` was only ever used by the demo servers under
   `scripts/`; it is now a devDependency and is no longer installed into consumers.
-- **Slimmer tarball** (#47): the dealbrain reference-fixture declarations
+- **Slimmer tarball** (#47): the reference-fixture declarations
   (`dist/adapters/reference/*.d.ts`) are no longer shipped — no entry point exported them.
 - `package.json` gains `homepage`, `bugs`, `keywords`, `author`, `engines` (node ≥ 20, bun ≥ 1.3);
   the description names the current verbs (`describe / select / fetch / measure / compare`).
